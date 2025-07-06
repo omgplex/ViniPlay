@@ -836,7 +836,7 @@
                             }
                         }
 
-                        // --- FIX: Await the URL fetches ---
+                        // --- Await the URL fetches ---
                         if (m3uSourceType === 'url') {
                             const url = UIElements.m3uUrlInput.value.trim();
                             if (url) {
@@ -852,8 +852,8 @@
                             }
                         }
                         
-                        // After all actions, get the final state from the server
-                        const configResponse = await fetch('/api/config');
+                        // --- FIX: Add cache-busting timestamp ---
+                        const configResponse = await fetch(`/api/config?t=${new Date().getTime()}`);
                         const config = await configResponse.json();
                         if (!configResponse.ok) throw new Error('Could not retrieve config from server.');
                         
@@ -916,7 +916,6 @@
             }
 
             // --- Initialization ---
-            // --- FIX: Re-written function to safely set initial UI state from settings ---
             const updateUIFromSettings = () => {
                 const settings = guideState.settings;
                 settings.timezoneOffset = settings.timezoneOffset ?? Math.round(-(new Date().getTimezoneOffset() / 60));
@@ -953,7 +952,7 @@
                 worker = new Worker(window.URL.createObjectURL(blob));
                 populateTimezoneSelector();
                 try {
-                    const response = await fetch('/api/config');
+                    const response = await fetch(`/api/config?t=${new Date().getTime()}`);
                     if (!response.ok) throw new Error('Could not connect to the server.');
                     const config = await response.json();
                     guideState.settings = config.settings || { favorites:[], recentChannels:[], m3uCustomUrls:[], epgCustomUrls:[], m3uSourceType: 'url', epgSourceType: 'url'};
