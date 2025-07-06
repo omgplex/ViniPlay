@@ -694,6 +694,7 @@
                 setupDropdown(UIElements.epgUrlSelect, UIElements.epgCustomContainer);
             }
 
+
             // --- Main Application Logic ---
 
             function setButtonLoadingState(isLoading) {
@@ -1039,25 +1040,24 @@
                     await saveDataToDB('recentChannels', guideState.recentChannels);
                 }
 
-                // --- MODIFIED FOR BACKEND STREAMING ---
-                // The backend now handles fetching and transcoding. We just need to
-                // point our player to our own server's /stream endpoint.
-                const streamEndpoint = `/stream?url=${encodeURIComponent(url)}`;
+                // MODIFIED: All streams now go through the server's /stream endpoint
+                const finalUrl = `/stream?url=${encodeURIComponent(url)}`;
 
                 if (mpegts.isSupported()) {
-                    player = mpegts.createPlayer({ type: 'mse', isLive: true, url: streamEndpoint });
+                    // Note: We use the 'mse' type because our server is now providing a compatible stream.
+                    player = mpegts.createPlayer({ type: 'mse', isLive: true, url: finalUrl });
                     openModal(UIElements.videoModal);
                     UIElements.videoTitle.textContent = name;
                     player.attachMediaElement(UIElements.videoElement);
                     player.load();
                     UIElements.videoElement.volume = parseFloat(localStorage.getItem('iptvPlayerVolume') || 0.5);
                     player.play().catch(e => {
-                        showNotification("Could not play stream. The stream may be offline or incompatible.", true);
+                        showNotification("Could not play stream. Check server logs for ffmpeg errors.", true);
                         closeModal(UIElements.videoModal);
                         stopAndCleanupPlayer(); // Clean up on failure
                     });
                 } else {
-                    showNotification('Your browser does not support MSE for this stream type.', true);
+                    showNotification('Your browser does not support Media Source Extensions (MSE).', true);
                 }
             }
             
@@ -1129,6 +1129,7 @@
                 if (makeActive) selectEl.value = url;
             }
 
+            // FIX: Rewritten function for clarity and robustness
             async function saveCustomUrl(type, selectEl, inputEl) {
                 const url = inputEl.value.trim();
                 if (!url) {
@@ -1192,7 +1193,7 @@
                     renderGuide(undefined, false);
                 });
                  UIElements.todayBtn.addEventListener('click', () => {
-                     guideState.currentDate = new Date();
+                    guideState.currentDate = new Date();
                     renderGuide();
                 });
                 // Jump to Now button
@@ -1328,6 +1329,7 @@
                 // Settings Page Actions
                 UIElements.loadGuideBtn.addEventListener('click', async () => {
                     setButtonLoadingState(true);
+                    // MODIFIED: This function now uses the server endpoints for URL fetching.
                     const getData = async (type) => {
                         const isUrl = document.getElementById(`${type}-tab-url`).classList.contains('active');
                         if (isUrl) {
@@ -1335,14 +1337,20 @@
                             if (url === 'custom') url = document.getElementById(`${type}-url-input`).value.trim();
                             if (!url) return null;
                             try {
-                                // Backend handles CORS, so no proxy needed here
-                                const response = await fetch(url);
-                                if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+                                // Use the new server endpoints instead of a direct fetch
+                                const serverEndpoint = (type === 'm3u') ? '/fetch-m3u' : '/fetch-epg';
+                                const response = await fetch(`${serverEndpoint}?url=${encodeURIComponent(url)}`);
+                                
+                                if (!response.ok) {
+                                    const errorText = await response.text();
+                                    throw new Error(`Server error ${response.status}: ${errorText}`);
+                                }
                                 const content = await response.text();
                                 await saveDataToDB(`last${type.charAt(0).toUpperCase() + type.slice(1)}Url`, url);
                                 return content;
                             } catch (error) {
-                                showNotification(`Failed to fetch ${type.toUpperCase()} from URL. Check if the URL is correct.`, true);
+                                showNotification(`Failed to fetch ${type.toUpperCase()} from URL. Check URL and server logs.`, true);
+                                console.error(error);
                                 throw error;
                             }
                         } else {
@@ -1422,11 +1430,11 @@
                 });
                  UIElements.logoList.addEventListener('scroll', (e) => {
                      if (ignoreLogoScroll) { ignoreLogoScroll = false; return; }
-                    ignoreTimelineScroll = true;
-                    ignoreChannelScroll = true;
-                    UIElements.guideTimelineDiv.scrollTop = e.target.scrollTop;
-                    UIElements.channelListDiv.scrollTop = e.target.scrollTop;
-                });
+                     ignoreTimelineScroll = true;
+                     ignoreChannelScroll = true;
+                     UIElements.guideTimelineDiv.scrollTop = e.target.scrollTop;
+                     UIElements.channelListDiv.scrollTop = e.target.scrollTop;
+                 });
 
 
                 // Panel Resizing for Desktop
