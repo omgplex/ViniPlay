@@ -1,0 +1,24 @@
+# Docker Compose file for ViniPlay
+# Version 3.8 is a modern, stable version of the Compose file format.
+version: "3.8"
+
+services:
+  # Define the main application service.
+  viniplay:
+    # Specify the image to pull. 
+    # This points to the image built by your GitHub Action and stored in the GitHub Container Registry.
+    # IMPORTANT: You must replace 'YOUR_GITHUB_USERNAME' with your actual GitHub username.
+    image: ghcr.io/ardoviniandrea/viniplay:latest
+    
+    # Set a consistent name for the container for easy management.
+    container_name: viniplay
+    
+    # Map port 8998 on your host machine to port 8998 inside the container.
+    # This makes the web player accessible at http://localhost:8998.
+    ports:
+      - "8998:8998"
+      
+    # Define the restart policy.
+    # 'unless-stopped' ensures the container automatically restarts if it crashes,
+    # but not when you manually stop it.
+    restart: unless-stopped
