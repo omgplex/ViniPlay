@@ -22,4 +22,4 @@ CMD [ "npm", "start" ]
 
 # Install ffmpeg, which is available in the Alpine package repository.
 # --no-cache reduces image size.
-RUN apk add --no-cache ffmpeg
+RUN apt-get update && apt-get install -y ffmpeg
