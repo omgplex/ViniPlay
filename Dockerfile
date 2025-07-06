@@ -19,3 +19,7 @@ EXPOSE 8998
 
 # Define the command to run your app
 CMD [ "npm", "start" ]
+
+# Install ffmpeg, which is available in the Alpine package repository.
+# --no-cache reduces image size.
+RUN apk add --no-cache ffmpeg
