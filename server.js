@@ -11,39 +11,47 @@ const app = express();
 const port = 8998;
 
 // Serve the static files (HTML, CSS, JS) from the 'public' directory.
-// This is where your index.html and other assets will live.
 app.use(express.static('public'));
 
 /**
- * NEW: A generic helper function to fetch content from a URL.
- * It handles both HTTP and HTTPS protocols.
+ * A generic helper function to fetch content from a URL.
+ * It handles both HTTP and HTTPS protocols and follows redirects.
  * @param {string} url - The URL to fetch content from.
  * @returns {Promise<string>} - A promise that resolves with the text content of the URL.
  */
 function fetchUrlContent(url) {
     return new Promise((resolve, reject) => {
-        const protocol = url.startsWith('https') ? https : http;
-        protocol.get(url, (res) => {
+        // Handle potential invalid URLs
+        let parsedUrl;
+        try {
+            parsedUrl = new URL(url);
+        } catch (error) {
+            return reject(new Error(`Invalid URL: ${url}`));
+        }
+
+        const protocol = parsedUrl.protocol === 'https:' ? https : http;
+        
+        protocol.get(url, { headers: { 'User-Agent': 'ViniPlay/1.0' } }, (res) => {
+            // Follow redirects
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                return fetchUrlContent(new URL(res.headers.location, url).href).then(resolve, reject);
+            }
+
             if (res.statusCode < 200 || res.statusCode >= 300) {
-                // Follow redirects if necessary
-                if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                    return fetchUrlContent(res.headers.location).then(resolve, reject);
-                }
                 return reject(new Error(`Failed to fetch: Status Code ${res.statusCode}`));
             }
 
             let data = '';
             res.on('data', (chunk) => { data += chunk; });
             res.on('end', () => resolve(data));
+
         }).on('error', (err) => reject(err));
     });
 }
 
 
 /**
- * NEW: Endpoint to fetch M3U file content.
- * It takes a URL from a query parameter, fetches it on the server-side
- * (avoiding browser CORS issues), and pipes the content back to the client.
+ * Endpoint to fetch M3U file content.
  */
 app.get('/fetch-m3u', async (req, res) => {
     const m3uUrl = req.query.url;
@@ -62,8 +70,7 @@ app.get('/fetch-m3u', async (req, res) => {
 });
 
 /**
- * NEW: Endpoint to fetch EPG file content.
- * Works just like the M3U endpoint but for XMLTV files.
+ * Endpoint to fetch EPG file content.
  */
 app.get('/fetch-epg', async (req, res) => {
     const epgUrl = req.query.url;
@@ -81,47 +88,90 @@ app.get('/fetch-epg', async (req, res) => {
     }
 });
 
+/**
+ * Helper function to sanitize custom FFmpeg arguments for security.
+ * It ensures that arguments are simple flags or key-value pairs.
+ * @param {string} customArgs - The string of custom arguments from the user.
+ * @returns {string[]} An array of sanitized arguments.
+ */
+function sanitizeCustomArgs(customArgs) {
+    if (!customArgs || typeof customArgs !== 'string') {
+        return [];
+    }
+    // A simple whitelist of allowed characters for flags and values.
+    // This allows for: -flags, values (alphanumeric, :, /), but prevents shell operators like ;, |, &, etc.
+    const allowedPattern = /^[a-zA-Z0-9-/:_.,]+$/;
+    
+    // Split by space, but handle quoted arguments (though we recommend not using them for simplicity)
+    const parts = customArgs.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
+
+    const sanitized = [];
+    for (const part of parts) {
+        const cleanedPart = part.replace(/"/g, ''); // remove quotes
+        if (allowedPattern.test(cleanedPart)) {
+            sanitized.push(cleanedPart);
+        } else {
+            // Log the unsafe argument for review, but don't add it to the command
+            console.warn(`[SECURITY] Sanitizer blocked unsafe FFmpeg argument: ${cleanedPart}`);
+        }
+    }
+    return sanitized;
+}
 
 /**
- * The main stream proxy endpoint.
- * It takes a channel's stream URL, uses ffmpeg to process it,
- * and pipes the output directly to the client's video player.
+ * The main stream proxy endpoint, now with profiles.
  */
 app.get('/stream', (req, res) => {
     const streamUrl = req.query.url;
+    const profile = req.query.profile || 'transcode'; // Default to transcode
+    const customArgs = req.query.args || '';
+
     if (!streamUrl) {
         return res.status(400).send('Error: `url` query parameter is required.');
     }
 
-    console.log(`Starting stream from: ${streamUrl}`);
+    console.log(`Starting stream from: ${streamUrl} with profile: ${profile}`);
 
-    // These are common ffmpeg arguments for transcoding live streams to a web-friendly format.
-    // -i: input URL
-    // -c:v copy: Tries to copy the video codec without re-encoding to save CPU.
-    // -c:a aac: Re-encodes audio to AAC, which is universally supported.
-    // -f mpegts: The output format is MPEG-TS, which is suitable for streaming.
-    // pipe:1: Tells ffmpeg to send the output to stdout.
-    const ffmpeg = spawn('ffmpeg', [
-        '-i', streamUrl,
-        '-c:v', 'copy',
-        '-c:a', 'aac',
-        '-f', 'mpegts',
-        'pipe:1'
-    ]);
+    let ffmpegArgs = ['-i', streamUrl];
 
-    // Set the proper content type for the video stream.
+    switch (profile) {
+        case 'proxy':
+            // Proxy profile: Copy both video and audio without re-encoding. Most efficient.
+            ffmpegArgs.push('-c', 'copy', '-f', 'mpegts');
+            break;
+        
+        case 'custom':
+            // Custom profile: Use user-provided arguments after sanitizing them.
+            console.log(`Using custom FFmpeg args: ${customArgs}`);
+            const sanitized = sanitizeCustomArgs(customArgs);
+            ffmpegArgs.push(...sanitized);
+            // Always ensure the output format is set for piping
+            if (!sanitized.includes('-f')) {
+                 ffmpegArgs.push('-f', 'mpegts');
+            }
+            break;
+        
+        case 'transcode':
+        default:
+            // Transcode profile (default): Copy video, transcode audio to AAC for compatibility.
+            ffmpegArgs.push('-c:v', 'copy', '-c:a', 'aac', '-f', 'mpegts');
+            break;
+    }
+
+    // The final argument is always 'pipe:1' to direct output to stdout.
+    ffmpegArgs.push('pipe:1');
+    
+    console.log(`Executing ffmpeg with args: ${ffmpegArgs.join(' ')}`);
+
+    const ffmpeg = spawn('ffmpeg', ffmpegArgs);
+
     res.setHeader('Content-Type', 'video/mp2t');
-
-    // Pipe the video data from ffmpeg's output directly to the client's response.
-    // This sends the video data as it's being transcoded.
     ffmpeg.stdout.pipe(res);
 
-    // Log any errors from ffmpeg to the console for debugging.
     ffmpeg.stderr.on('data', (data) => {
         console.error(`ffmpeg stderr: ${data}`);
     });
 
-    // Handle the end of the stream.
     ffmpeg.on('close', (code) => {
         if (code !== 0) {
             console.log(`ffmpeg process exited with code ${code}`);
@@ -129,7 +179,6 @@ app.get('/stream', (req, res) => {
         res.end();
     });
 
-    // If the client closes the connection, stop the ffmpeg process.
     req.on('close', () => {
         console.log('Client closed connection. Stopping ffmpeg.');
         ffmpeg.kill();
@@ -137,5 +186,5 @@ app.get('/stream', (req, res) => {
 });
 
 app.listen(port, () => {
-    console.log(`ARDO IPTV Player server listening at http://localhost:${port}`);
+    console.log(`ViniPlay server listening at http://localhost:${port}`);
 });
