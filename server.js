@@ -1,4 +1,4 @@
-// A simple Node.js server for the ARDO IPTV Player.
+// A simple Node.js server for the ViniPlay IPTV Player.
 // It serves the static front-end files and provides a backend endpoint
 // to proxy and transcode IPTV streams using ffmpeg.
 
@@ -6,6 +6,7 @@ const express = require('express');
 const { spawn } = require('child_process');
 const http = require('http'); // Required to fetch URLs
 const https = require('https'); // Required to fetch HTTPS URLs
+const { URL } = require('url'); // To handle URL parsing and redirects robustly
 
 const app = express();
 const port = 8998;
@@ -16,25 +17,32 @@ app.use(express.static('public'));
 /**
  * A generic helper function to fetch content from a URL.
  * It handles both HTTP and HTTPS protocols and follows redirects.
- * @param {string} url - The URL to fetch content from.
+ * @param {string} urlString - The URL to fetch content from.
+ * @param {string} userAgent - The User-Agent string to use for the request.
  * @returns {Promise<string>} - A promise that resolves with the text content of the URL.
  */
-function fetchUrlContent(url) {
+function fetchUrlContent(urlString, userAgent = 'ViniPlay/1.0') {
     return new Promise((resolve, reject) => {
-        // Handle potential invalid URLs
         let parsedUrl;
         try {
-            parsedUrl = new URL(url);
+            parsedUrl = new URL(urlString);
         } catch (error) {
-            return reject(new Error(`Invalid URL: ${url}`));
+            return reject(new Error(`Invalid URL: ${urlString}`));
         }
 
         const protocol = parsedUrl.protocol === 'https:' ? https : http;
         
-        protocol.get(url, { headers: { 'User-Agent': 'ViniPlay/1.0' } }, (res) => {
+        const options = {
+            headers: { 'User-Agent': userAgent }
+        };
+
+        protocol.get(urlString, options, (res) => {
             // Follow redirects
             if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                return fetchUrlContent(new URL(res.headers.location, url).href).then(resolve, reject);
+                // The location header can be a relative path, so we resolve it against the original URL.
+                const redirectUrl = new URL(res.headers.location, urlString).href;
+                console.log(`Redirecting to: ${redirectUrl}`);
+                return fetchUrlContent(redirectUrl, userAgent).then(resolve, reject);
             }
 
             if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -51,67 +59,56 @@ function fetchUrlContent(url) {
 
 
 /**
- * Endpoint to fetch M3U file content.
+ * Endpoint to fetch M3U file content using a specific User-Agent.
  */
 app.get('/fetch-m3u', async (req, res) => {
-    const m3uUrl = req.query.url;
-    if (!m3uUrl) {
+    const { url, userAgent } = req.query;
+    if (!url) {
         return res.status(400).send('Error: URL query parameter is required.');
     }
-    console.log(`Fetching M3U from: ${m3uUrl}`);
+    console.log(`Fetching M3U from: ${url} with User-Agent: ${userAgent || 'Default'}`);
     try {
-        const content = await fetchUrlContent(m3uUrl);
+        const content = await fetchUrlContent(url, userAgent);
         res.header('Content-Type', 'application/vnd.apple.mpegurl');
         res.send(content);
     } catch (error) {
-        console.error(`Failed to fetch M3U URL: ${m3uUrl}`, error.message);
-        res.status(500).send(`Failed to fetch M3U from URL. Check if the URL is correct. Error: ${error.message}`);
+        console.error(`Failed to fetch M3U URL: ${url}`, error.message);
+        res.status(500).send(`Failed to fetch M3U from URL. Error: ${error.message}`);
     }
 });
 
 /**
- * Endpoint to fetch EPG file content.
+ * Endpoint to fetch EPG file content using a specific User-Agent.
  */
 app.get('/fetch-epg', async (req, res) => {
-    const epgUrl = req.query.url;
-    if (!epgUrl) {
+    const { url, userAgent } = req.query;
+    if (!url) {
         return res.status(400).send('Error: URL query parameter is required.');
     }
-    console.log(`Fetching EPG from: ${epgUrl}`);
+    console.log(`Fetching EPG from: ${url} with User-Agent: ${userAgent || 'Default'}`);
     try {
-        const content = await fetchUrlContent(epgUrl);
+        const content = await fetchUrlContent(url, userAgent);
         res.header('Content-Type', 'application/xml');
         res.send(content);
     } catch (error) {
-        console.error(`Failed to fetch EPG URL: ${epgUrl}`, error.message);
-        res.status(500).send(`Failed to fetch EPG from URL. Check if the URL is correct. Error: ${error.message}`);
+        console.error(`Failed to fetch EPG URL: ${url}`, error.message);
+        res.status(500).send(`Failed to fetch EPG from URL. Error: ${error.message}`);
     }
 });
 
 /**
  * Helper function to sanitize custom FFmpeg arguments for security.
- * It ensures that arguments are simple flags or key-value pairs.
- * @param {string} customArgs - The string of custom arguments from the user.
- * @returns {string[]} An array of sanitized arguments.
  */
 function sanitizeCustomArgs(customArgs) {
-    if (!customArgs || typeof customArgs !== 'string') {
-        return [];
-    }
-    // A simple whitelist of allowed characters for flags and values.
-    // This allows for: -flags, values (alphanumeric, :, /), but prevents shell operators like ;, |, &, etc.
+    if (!customArgs || typeof customArgs !== 'string') return [];
     const allowedPattern = /^[a-zA-Z0-9-/:_.,]+$/;
-    
-    // Split by space, but handle quoted arguments (though we recommend not using them for simplicity)
     const parts = customArgs.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
-
     const sanitized = [];
     for (const part of parts) {
-        const cleanedPart = part.replace(/"/g, ''); // remove quotes
+        const cleanedPart = part.replace(/"/g, '');
         if (allowedPattern.test(cleanedPart)) {
             sanitized.push(cleanedPart);
         } else {
-            // Log the unsafe argument for review, but don't add it to the command
             console.warn(`[SECURITY] Sanitizer blocked unsafe FFmpeg argument: ${cleanedPart}`);
         }
     }
@@ -119,46 +116,45 @@ function sanitizeCustomArgs(customArgs) {
 }
 
 /**
- * The main stream proxy endpoint, now with profiles.
+ * The main stream proxy endpoint, now with profiles and User-Agent support.
  */
 app.get('/stream', (req, res) => {
-    const streamUrl = req.query.url;
-    const profile = req.query.profile || 'transcode'; // Default to transcode
-    const customArgs = req.query.args || '';
+    const { url: streamUrl, profile = 'transcode', args: customArgs = '', userAgent } = req.query;
 
     if (!streamUrl) {
         return res.status(400).send('Error: `url` query parameter is required.');
     }
 
-    console.log(`Starting stream from: ${streamUrl} with profile: ${profile}`);
+    console.log(`Starting stream: ${streamUrl} | Profile: ${profile} | User-Agent: ${userAgent || 'Default'}`);
 
-    let ffmpegArgs = ['-i', streamUrl];
+    let ffmpegArgs = [];
+    
+    // Add User-Agent if provided
+    if (userAgent) {
+        ffmpegArgs.push('-user_agent', userAgent);
+    }
+
+    // Add input URL
+    ffmpegArgs.push('-i', streamUrl);
 
     switch (profile) {
         case 'proxy':
-            // Proxy profile: Copy both video and audio without re-encoding. Most efficient.
             ffmpegArgs.push('-c', 'copy', '-f', 'mpegts');
             break;
-        
         case 'custom':
-            // Custom profile: Use user-provided arguments after sanitizing them.
             console.log(`Using custom FFmpeg args: ${customArgs}`);
             const sanitized = sanitizeCustomArgs(customArgs);
             ffmpegArgs.push(...sanitized);
-            // Always ensure the output format is set for piping
             if (!sanitized.includes('-f')) {
                  ffmpegArgs.push('-f', 'mpegts');
             }
             break;
-        
         case 'transcode':
         default:
-            // Transcode profile (default): Copy video, transcode audio to AAC for compatibility.
             ffmpegArgs.push('-c:v', 'copy', '-c:a', 'aac', '-f', 'mpegts');
             break;
     }
 
-    // The final argument is always 'pipe:1' to direct output to stdout.
     ffmpegArgs.push('pipe:1');
     
     console.log(`Executing ffmpeg with args: ${ffmpegArgs.join(' ')}`);
