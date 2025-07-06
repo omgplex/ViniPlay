@@ -1,12 +1,16 @@
 {
   "name": "ardo-iptv-player",
-  "version": "2.0.0",
-  "description": "A self-hosted IPTV player with FFMPEG transcoding.",
+  "version": "1.0.0",
+  "description": "A simple IPTV player with server-side storage.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
+  "author": "Andrea Ardovini",
+  "license": "MIT",
   "dependencies": {
-    "express": "^4.18.2"
+    "body-parser": "^1.20.2",
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1"
   }
 }
