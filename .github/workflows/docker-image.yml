@@ -32,12 +32,12 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # This step builds the image and pushes it to GHCR.
-      # The 'tolower()' function ensures the repository name is all lowercase,
+      # The 'toLower()' function ensures the repository name is all lowercase,
       # which is required by Docker for image tags.
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ tolower(github.repository) }}:latest
+          tags: ghcr.io/${{ toLower(github.repository) }}:latest
 
