@@ -46,6 +46,9 @@ const upload = multer({ storage: storage });
 // --- API Endpoints for Data Persistence ---
 
 app.get('/api/config', (req, res) => {
+    // --- ADDED THIS LOG ---
+    console.log(`SERVER LOG: /api/config called.`);
+    
     const config = {
         m3uContent: null,
         epgContent: null,
@@ -61,6 +64,10 @@ app.get('/api/config', (req, res) => {
         if (fs.existsSync(SETTINGS_PATH)) {
             config.settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
         }
+        
+        // --- ADDED THIS LOG ---
+        console.log(`SERVER LOG: Sending config. M3U content is ${config.m3uContent ? 'PRESENT' : 'MISSING'}.`);
+        
         res.json(config);
     } catch (error) {
         console.error("Error reading config:", error);
@@ -100,9 +107,7 @@ app.post('/api/save/settings', (req, res) => {
     }
 });
 
-/**
- * NEW: Endpoint to save custom URLs to the settings file.
- */
+
 app.post('/api/save/url', (req, res) => {
     const { type, url } = req.body; // type will be 'm3u' or 'epg'
     if (!type || !url) {
@@ -166,13 +171,18 @@ function fetchUrlContent(url) {
 
 const createFetchEndpoint = (type, filePath) => async (req, res) => {
     const url = req.query.url;
+    // --- ADDED THIS LOG ---
+    console.log(`SERVER LOG: Received request to fetch ${type.toUpperCase()} from: ${url}`);
     if (!url) {
         return res.status(400).send('Error: URL query parameter is required.');
     }
-    console.log(`Fetching ${type.toUpperCase()} from: ${url}`);
+    
     try {
         const content = await fetchUrlContent(url);
         fs.writeFileSync(filePath, content);
+        
+        // --- ADDED THIS LOG ---
+        console.log(`SERVER LOG: Successfully fetched ${type.toUpperCase()}. Size: ${content.length} characters.`);
         
         let settings = {};
         if (fs.existsSync(SETTINGS_PATH)) {
@@ -185,7 +195,8 @@ const createFetchEndpoint = (type, filePath) => async (req, res) => {
         res.header('Content-Type', type === 'm3u' ? 'application/vnd.apple.mpegurl' : 'application/xml');
         res.send(content);
     } catch (error) {
-        console.error(`Failed to fetch ${type.toUpperCase()} URL: ${url}`, error.message);
+        // --- ADDED THIS LOG ---
+        console.error(`SERVER LOG: Error fetching ${type.toUpperCase()} URL:`, error);
         res.status(500).send(`Failed to fetch from URL. Error: ${error.message}`);
     }
 };
