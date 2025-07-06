@@ -336,7 +336,6 @@
             let player, worker, autoRefreshIntervalId, searchDebounceTimer;
             let confirmCallback = null;
             
-            // A helper to quickly grab all UI elements with an ID
             const UIElements = Object.fromEntries(
                 [...document.querySelectorAll('[id]')].map(el => [
                     el.id.replace(/-(\w)/g, (match, letter) => letter.toUpperCase()), 
@@ -394,7 +393,6 @@
                  UIElements.channelPanelContainer.classList.toggle('-translate-x-full', !show);
             };
 
-            // --- FIX: New helper functions for direct UI manipulation on settings page ---
             const setDataSourceTab = (type, source) => {
                 const isFile = source === 'file';
                 UIElements[`${type}TabFile`].classList.toggle('active', isFile);
@@ -406,8 +404,12 @@
             const updateCustomUrlVisibility = (type) => {
                 const selectEl = UIElements[`${type}UrlSelect`];
                 const customContainer = UIElements[`${type}CustomContainer`];
-                const isCustom = selectEl.value === 'custom';
-                customContainer.classList.toggle('hidden', !isCustom);
+                // --- FIX: Using explicit add/remove for robustness ---
+                if (selectEl.value === 'custom') {
+                    customContainer.classList.remove('hidden');
+                } else {
+                    customContainer.classList.add('hidden');
+                }
             };
             
             // --- Main Application Logic ---
@@ -616,8 +618,8 @@
                     const result = await response.json();
                     if (!response.ok) throw new Error(result.error);
                     
-                    guideState.settings = result.settings; // Update local settings with the server's response
-                    updateUIFromSettings(); // Re-render the UI based on the new settings
+                    guideState.settings = result.settings;
+                    updateUIFromSettings();
                     showNotification(`${type.toUpperCase()} URL saved and selected.`);
 
                 } catch (e) {
@@ -636,7 +638,7 @@
                     } else if (selectedGroup === 'recents') {
                         filteredChannels = (guideState.settings.recentChannels || [])
                             .map(id => guideState.channels.find(ch => ch.id === id))
-                            .filter(Boolean); // Filter out undefined if a channel was deleted
+                            .filter(Boolean);
                     } else {
                         filteredChannels = filteredChannels.filter(ch => ch.group === selectedGroup);
                     }
@@ -691,13 +693,10 @@
                 }
             };
 
-            // --- Event Listeners ---
             function setupEventListeners() {
-                // Main Navigation
                 ['tabGuide', 'bottomNavGuide'].forEach(id => UIElements[id].addEventListener('click', () => switchTab('guide')));
                 ['tabSettings', 'bottomNavSettings'].forEach(id => UIElements[id].addEventListener('click', () => switchTab('settings')));
 
-                // Modals & Confirmations
                 UIElements.confirmCancelBtn.addEventListener('click', () => closeModal(UIElements.confirmModal));
                 UIElements.confirmOkBtn.addEventListener('click', () => { if (confirmCallback) confirmCallback(); closeModal(UIElements.confirmModal); });
                 UIElements.detailsCloseBtn.addEventListener('click', () => closeModal(UIElements.programDetailsModal));
@@ -710,7 +709,6 @@
                 UIElements.videoElement.addEventListener('leavepictureinpicture', stopAndCleanupPlayer);
                 UIElements.videoElement.addEventListener('volumechange', () => localStorage.setItem('iptvPlayerVolume', UIElements.videoElement.volume));
 
-                // Guide Interaction
                 UIElements.sidebarToggle.addEventListener('click', () => toggleSidebar(true));
                 UIElements.sidebarOverlay.addEventListener('click', () => toggleSidebar(false));
                 UIElements.channelList.addEventListener('click', async (e) => {
@@ -767,14 +765,13 @@
                     }
                 });
 
-                // Guide Navigation
                 UIElements.prevDayBtn.addEventListener('click', () => { guideState.currentDate.setDate(guideState.currentDate.getDate() - 1); renderGuide(undefined, false); });
                 UIElements.todayBtn.addEventListener('click', () => { guideState.currentDate = new Date(); renderGuide(); });
                 UIElements.nowBtn.addEventListener('click', () => {
                     const now = new Date();
                     if (guideState.currentDate.toDateString() !== now.toDateString()) {
                         guideState.currentDate = now;
-                        renderGuide(); // will auto-scroll
+                        renderGuide();
                     } else {
                         const guideStart = new Date(guideState.currentDate); guideStart.setHours(0,0,0,0);
                         UIElements.guideTimeline.scrollTo({ left: ((now - guideStart) / 3600000) * guideState.hourWidthPixels - (UIElements.guideTimeline.clientWidth / 4), behavior: 'smooth' });
@@ -782,38 +779,29 @@
                 });
                 UIElements.nextDayBtn.addEventListener('click', () => { guideState.currentDate.setDate(guideState.currentDate.getDate() + 1); renderGuide(undefined, false); });
 
-                // --- FIX: Re-written Settings Page Listeners ---
                 ['m3u', 'epg'].forEach(type => {
-                    // Event listener for the "From File" tab button.
                     UIElements[`${type}TabFile`].addEventListener('click', () => {
-                        setDataSourceTab(type, 'file'); // Directly update the UI
-                        guideState.settings[`${type}SourceType`] = 'file'; // Update state
-                        saveSettings(); // Save state to server in the background
+                        setDataSourceTab(type, 'file');
+                        guideState.settings[`${type}SourceType`] = 'file';
+                        saveSettings();
                     });
-
-                    // Event listener for the "From URL" tab button.
                     UIElements[`${type}TabUrl`].addEventListener('click', () => {
-                        setDataSourceTab(type, 'url'); // Directly update the UI
-                        guideState.settings[`${type}SourceType`] = 'url'; // Update state
-                        saveSettings(); // Save state to server in the background
+                        setDataSourceTab(type, 'url');
+                        guideState.settings[`${type}SourceType`] = 'url';
+                        saveSettings();
                     });
-
-                    // Event listener for the URL dropdown selection.
                     UIElements[`${type}UrlSelect`].addEventListener('change', () => {
-                        updateCustomUrlVisibility(type); // Show/hide custom input
+                        updateCustomUrlVisibility(type);
                         const selectedUrl = UIElements[`${type}UrlSelect`].value;
                         if (selectedUrl !== 'custom') {
                             guideState.settings[`${type}Url`] = selectedUrl;
                             UIElements[`${type}UrlInput`].value = selectedUrl;
                         } else {
-                            // If user selects "Custom URL...", clear the setting
                             guideState.settings[`${type}Url`] = '';
                             UIElements[`${type}UrlInput`].value = '';
                         }
-                        saveSettings(); // Save the change
+                        saveSettings();
                     });
-
-                    // Event listener for the "Save" button for custom URLs.
                     UIElements[`save${type.charAt(0).toUpperCase() + type.slice(1)}UrlBtn`].addEventListener('click', () => saveCustomUrl(type));
                 });
                 
@@ -822,7 +810,8 @@
                     try {
                         const { m3uSourceType, epgSourceType } = guideState.settings;
                         
-                        // Handle File Uploads first
+                        console.log('CLIENT LOG: "Load" button clicked. M3U source type is:', m3uSourceType);
+
                         if (m3uSourceType === 'file' || epgSourceType === 'file') {
                             const formData = new FormData();
                             const m3uFile = UIElements.m3uUpload.files[0];
@@ -836,7 +825,6 @@
                             }
                         }
 
-                        // --- Await the URL fetches ---
                         if (m3uSourceType === 'url') {
                             const url = UIElements.m3uUrlInput.value.trim();
                             if (url) {
@@ -852,7 +840,6 @@
                             }
                         }
                         
-                        // --- FIX: Add cache-busting timestamp ---
                         const configResponse = await fetch(`/api/config?t=${new Date().getTime()}`);
                         const config = await configResponse.json();
                         if (!configResponse.ok) throw new Error('Could not retrieve config from server.');
@@ -862,7 +849,7 @@
                         }
 
                         await handleGuideLoad(config.m3uContent, config.epgContent);
-                        guideState.settings = config.settings || {}; // Sync local state with server
+                        guideState.settings = config.settings || {};
                         updateUIFromSettings();
                         switchTab('guide');
                         showNotification('Guide data loaded successfully!');
@@ -890,7 +877,6 @@
                 UIElements.searchInput.addEventListener('input', () => { clearTimeout(searchDebounceTimer); searchDebounceTimer = setTimeout(handleSearchAndFilter, 300); });
                 document.addEventListener('click', e => { if (!UIElements.searchInput.contains(e.target) && !UIElements.searchResultsContainer.contains(e.target)) UIElements.searchResultsContainer.classList.add('hidden'); });
 
-                // Synced Scrolling
                 let ignoreScroll = false;
                 const syncScroll = (source, targets) => {
                     if (ignoreScroll) { ignoreScroll = false; return; }
@@ -904,7 +890,6 @@
                 UIElements.channelList.addEventListener('scroll', (e) => syncScroll(e.target, [UIElements.guideTimeline, UIElements.logoList]));
                 UIElements.logoList.addEventListener('scroll', (e) => syncScroll(e.target, [UIElements.guideTimeline, UIElements.channelList]));
 
-                // Panel Resizing
                 UIElements.resizer.addEventListener('mousedown', e => {
                     e.preventDefault();
                     const startX = e.clientX, startWidth = UIElements.channelPanelContainer.offsetWidth;
@@ -918,14 +903,18 @@
             // --- Initialization ---
             const updateUIFromSettings = () => {
                 const settings = guideState.settings;
+                
                 settings.timezoneOffset = settings.timezoneOffset ?? Math.round(-(new Date().getTimezoneOffset() / 60));
-                UIElements.timezoneOffsetSelect.value = settings.timezoneOffset;
                 settings.autoRefresh = settings.autoRefresh || 0;
+                settings.m3uSourceType = settings.m3uSourceType || 'url';
+                settings.epgSourceType = settings.epgSourceType || 'url';
+                
+                UIElements.timezoneOffsetSelect.value = settings.timezoneOffset;
                 UIElements.autoRefreshSelect.value = settings.autoRefresh;
                 setupAutoRefresh(settings.autoRefresh);
                 
                 ['m3u', 'epg'].forEach(type => {
-                    const sourceType = settings[`${type}SourceType`] || 'url';
+                    const sourceType = settings[`${type}SourceType`];
                     setDataSourceTab(type, sourceType);
                     
                     const selectEl = UIElements[`${type}UrlSelect`];
@@ -942,7 +931,6 @@
                     }
 
                     UIElements[`${type}UrlInput`].value = activeUrl || '';
-                    
                     updateCustomUrlVisibility(type);
                 });
             };
@@ -955,8 +943,9 @@
                     const response = await fetch(`/api/config?t=${new Date().getTime()}`);
                     if (!response.ok) throw new Error('Could not connect to the server.');
                     const config = await response.json();
-                    guideState.settings = config.settings || { favorites:[], recentChannels:[], m3uCustomUrls:[], epgCustomUrls:[], m3uSourceType: 'url', epgSourceType: 'url'};
+                    guideState.settings = config.settings || { favorites:[], recentChannels:[], m3uCustomUrls:[], epgCustomUrls:[] };
                     updateUIFromSettings();
+                    
                     if (config.m3uContent) {
                         showNotification("Loading guide from server...", false, 1500);
                         setButtonLoadingState(true);
@@ -965,7 +954,7 @@
                         setButtonLoadingState(false);
                     } else {
                         switchTab('settings');
-                        renderGuide([]); // Render an empty guide to show the placeholder
+                        renderGuide([]);
                     }
                 } catch (e) {
                     showNotification("Initialization failed: " + e.message, true);
