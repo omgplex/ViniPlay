@@ -1,0 +1,12 @@
+{
+  "name": "ardo-iptv-player",
+  "version": "2.0.0",
+  "description": "A self-hosted IPTV player with FFMPEG transcoding.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
