@@ -1,0 +1,1605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARDO IPTV Player</title>
+    <link rel="icon" type="image/png" href="https://i.imgur.com/o1cAhBo.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mpegts.js/dist/mpegts.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* gray-900 */
+            color: #d1d5db; /* gray-300 */
+        }
+        /* Custom scrollbar for desktop */
+        .custom-scrollbar::-webkit-scrollbar { height: 8px; width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #1f2937; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+        
+        /* Active state for tabs */
+        .tab-button.active { background-color: #3b82f6; color: white; }
+        .bottom-nav-btn.active { color: #3b82f6; }
+        .data-tab-button.active { color: #3b82f6; font-weight: 600; border-bottom-color: #3b82f6; }
+
+        .programme-item { border-left: 3px solid #3b82f6; transition: background-color 0.3s, border-color 0.3s, opacity 0.3s; }
+        .programme-item:hover { background-color: #374151; cursor: pointer; }
+        html, body { height: 100%; overflow: hidden; }
+        
+        .favorite-star { transition: color 0.2s, transform 0.2s; }
+        .favorite-star.favorited { color: #facc15; /* yellow-400 */ transform: scale(1.2); }
+        
+        /* Progress bar inside the programme item */
+        .programme-progress {
+            position: absolute;
+            top: 0; left: 0; bottom: 0;
+            background-color: rgba(59, 130, 246, 0.3); /* blue-500 with opacity */
+            border-radius: 2px 0 0 2px;
+            pointer-events: none;
+            transition: width 0.3s linear;
+        }
+
+        /* Style for past programs */
+        .programme-item.past {
+            background-color: #374151; /* gray-700 */
+            border-left-color: #6b7280; /* gray-500 */
+            opacity: 0.6;
+        }
+        
+        /* Visual Hierarchy Improvements */
+        .programme-item.live {
+            border-left: 4px solid #fb923c; /* orange-400 */
+            background-color: #374151;
+        }
+        .programme-item.live::after {
+            content: 'LIVE';
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background-color: #ef4444; /* red-500 */
+            color: white;
+            padding: 1px 4px;
+            font-size: 0.65rem; /* 10.4px */
+            font-weight: 700;
+            border-radius: 4px;
+            z-index: 20;
+        }
+        .programme-item .prog-title {
+            font-size: 0.9rem; /* 14.4px */
+            font-weight: 600;
+        }
+        .programme-item .prog-time {
+            font-size: 0.75rem; /* 12px */
+        }
+        
+        /* Interactive Feedback */
+        #group-filter, #search-input, #timezone-offset-select {
+            transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        #group-filter:hover, #search-input:hover, #timezone-offset-select:hover {
+            background-color: #4b5563; /* gray-600 */
+        }
+
+        /* Transition for off-canvas sidebar */
+        #channel-panel-container { transition: transform 0.3s ease-in-out; }
+        #sidebar-overlay { transition: opacity 0.3s ease-in-out; }
+
+        /* Prevent scrolling on the body when a modal is open */
+        body.modal-open {
+            overflow: hidden;
+        }
+
+        /* NEW: Highlight for jumped-to program */
+        .programme-item.highlighted {
+            outline: 3px solid #facc15; /* yellow-400 */
+            z-index: 15; /* Ensure highlight is on top */
+            transition: outline 0.2s ease-in-out;
+        }
+
+    </style>
+</head>
+<body class="flex flex-col h-screen">
+
+    <!-- Header -->
+    <header class="bg-gray-800 text-white p-4 shadow-md z-30 flex-shrink-0 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <img src="https://i.imgur.com/o1cAhBo.png" alt="ARDO IPTV Player Logo" class="h-8 w-8">
+            <h1 class="text-xl sm:text-2xl font-bold">ARDO IPTV Player</h1>
+        </div>
+        <!-- Mobile Sidebar Toggle -->
+        <button id="sidebar-toggle" class="lg:hidden p-2 rounded-md hover:bg-gray-700">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+        </button>
+    </header>
+
+    <!-- Desktop Main Tabs -->
+    <div class="hidden lg:flex border-b border-gray-700 bg-gray-800 flex-shrink-0 z-20">
+        <button id="tab-guide" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700 transition-colors duration-200">TV Guide</button>
+        <button id="tab-settings" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700 transition-colors duration-200 active">Settings</button>
+    </div>
+
+    <!-- Main Content -->
+    <main class="flex-grow flex flex-col overflow-hidden">
+        <!-- TV Guide Page -->
+        <div id="page-guide" class="hidden flex-grow flex-col overflow-hidden">
+             <!-- Guide Controls -->
+            <div class="flex flex-wrap items-center justify-between gap-4 p-2 sm:p-4 border-b border-gray-700 flex-shrink-0">
+                <div class="flex items-center gap-2">
+                    <button id="prev-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&lt;</button>
+                    <button id="now-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">Now</button>
+                    <button id="next-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&gt;</button>
+                </div>
+                <div id="guide-date-display" class="text-base sm:text-lg font-semibold text-center flex-grow"></div>
+                <div class="relative w-full sm:w-auto flex items-center gap-2">
+                    <input type="search" id="search-input" placeholder="Search channels & programs..." class="w-full sm:w-64 bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500">
+                    <button id="today-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors flex-shrink-0">Reset view</button>
+                    <!-- Enhanced Search Results Container -->
+                    <div id="search-results-container" class="hidden absolute top-full right-0 w-full sm:w-96 max-h-80 overflow-y-auto bg-gray-800 border border-gray-600 rounded-md mt-1 z-50 custom-scrollbar shadow-lg">
+                        <!-- Search results will be populated here -->
+                    </div>
+                </div>
+            </div>
+            <!-- Guide Container -->
+            <div id="guide-container" class="flex-grow flex bg-gray-900 overflow-hidden relative">
+                <div id="guide-placeholder" class="absolute inset-0 flex items-center justify-center z-40">
+                    <div id="placeholder-content" class="text-center text-gray-500 p-4">
+                        <svg class="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                        <h3 class="mt-2 text-sm font-medium">No Data Loaded</h3>
+                        <p class="mt-1 text-sm">Go to the Settings tab to load your M3U and EPG files.</p>
+                    </div>
+                </div>
+
+                <!-- Channel Panel (Sidebar on mobile, column on desktop) -->
+                <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-40 hidden lg:hidden"></div>
+                <div id="channel-panel-container" class="absolute lg:relative inset-y-0 left-0 w-64 sm:w-80 bg-gray-800/80 lg:bg-gray-800 backdrop-blur-sm lg:backdrop-blur-none z-50 transform -translate-x-full lg:transform-none lg:translate-x-0 min-w-[250px] max-w-[80vw] lg:max-w-[30vw] flex-shrink-0 flex flex-col hidden lg:flex">
+                    <div class="h-16 flex items-center justify-between p-2 border-b border-gray-700/80 flex-shrink-0">
+                         <select id="group-filter" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select>
+                    </div>
+                    <div id="channel-list" class="overflow-y-auto custom-scrollbar flex-grow"></div>
+                </div>
+            
+                <div id="resizer" class="hidden lg:block w-1.5 cursor-col-resize bg-gray-700 hover:bg-blue-500 transition-colors duration-200 z-10"></div>
+                
+                 <!-- Mobile-only sticky Logo Column -->
+                <div id="logo-column" class="flex flex-col lg:hidden w-20 flex-shrink-0 bg-gray-900 border-r border-gray-700/50">
+                    <div class="h-16 flex-shrink-0 border-b border-gray-700/80"></div> <!-- Spacer for time bar -->
+                    <div id="logo-list" class="overflow-y-auto custom-scrollbar flex-grow"></div>
+                </div>
+
+                <div id="timeline-container" class="flex-grow flex flex-col overflow-hidden">
+                    <div id="time-bar" class="h-16 bg-gray-800/80 flex-shrink-0 relative z-10 overflow-x-hidden"></div>
+                    <div id="guide-timeline" class="overflow-auto custom-scrollbar relative flex-grow">
+                        <div id="now-line" class="absolute top-0 bottom-0 bg-red-500 w-0.5 z-20 hidden"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Page -->
+        <div id="page-settings" class="flex-grow flex-col items-center p-4 overflow-y-auto custom-scrollbar">
+            <div class="w-full max-w-4xl mx-auto space-y-8 pb-16"> <!-- Padding bottom for mobile nav -->
+                <!-- File Upload and Loading Section -->
+                <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
+                    <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Load Guide Data</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400 mb-2">1. M3U Source</label>
+                            <div class="flex border-b border-gray-600">
+                                <button id="m3u-tab-file" class="data-tab-button flex-1 py-2 text-sm">From File</button>
+                                <button id="m3u-tab-url" class="data-tab-button active flex-1 py-2 text-sm">From URL</button>
+                            </div>
+                            <div id="m3u-content-file" class="hidden mt-4"><input type="file" id="m3u-upload" accept=".m3u,.m3u8" class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-500 file:text-white hover:file:bg-blue-600 cursor-pointer"></div>
+                            <div id="m3u-content-url" class="mt-4">
+                                <div class="space-y-2">
+                                    <select id="m3u-url-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500">
+                                        <option value="custom">Custom URL...</option>
+                                    </select>
+                                    <div id="m3u-custom-container" class="hidden flex gap-2">
+                                        <input type="url" id="m3u-url-input" placeholder="Enter custom M3U URL..." class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500">
+                                        <button id="save-m3u-url-btn" title="Save URL to list" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-md flex-shrink-0">Save</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400 mb-2">2. EPG Source (Optional)</label>
+                                <div class="flex border-b border-gray-600">
+                                    <button id="epg-tab-file" class="data-tab-button flex-1 py-2 text-sm">From File</button>
+                                    <button id="epg-tab-url" class="data-tab-button active flex-1 py-2 text-sm">From URL</button>
+                                </div>
+                            <div id="epg-content-file" class="hidden mt-4"><input type="file" id="epg-upload" accept=".xml,.xmltv" class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-500 file:text-white hover:file:bg-blue-600 cursor-pointer"></div>
+                            <div id="epg-content-url" class="mt-4">
+                                <div class="space-y-2">
+                                    <select id="epg-url-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500">
+                                        <option value="custom">Custom URL...</option>
+                                    </select>
+                                    <div id="epg-custom-container" class="hidden flex gap-2">
+                                        <input type="url" id="epg-url-input" placeholder="Enter custom EPG URL..." class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500">
+                                        <button id="save-epg-url-btn" title="Save URL to list" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-md flex-shrink-0">Save</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="md:col-span-2">
+                            <button id="load-guide-btn" class="w-full bg-green-600 hover:bg-green-700 disabled:bg-green-800 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-md transition-colors flex items-center justify-center gap-2">
+                                <span id="load-guide-btn-content">
+                                    <svg class="w-5 h-5 inline-block -mt-1 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                                    <span>Load Guide & View</span>
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- App Settings Section -->
+                <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
+                    <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">App Settings</h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label for="auto-refresh-select" class="block text-sm font-medium text-gray-400 mb-1">Auto Refresh URL Data</label>
+                            <select id="auto-refresh-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500">
+                                <option value="0">Disabled</option>
+                                <option value="1">Every 1 Hour</option>
+                                <option value="4">Every 4 Hours</option>
+                                <option value="12">Every 12 Hours</option>
+                                <option value="24">Every 24 Hours</option>
+                            </select>
+                        </div>
+                        <!-- NEW: Timezone Correction Setting -->
+                        <div>
+                            <label for="timezone-offset-select" class="block text-sm font-medium text-gray-400 mb-1">EPG Timezone Correction</label>
+                             <p class="text-xs text-gray-500 mb-2">Use this if EPG times are wrong. It only affects programs that don't have their own timezone info.</p>
+                            <select id="timezone-offset-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500">
+                                <!-- Options will be populated by JS -->
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            
+                <!-- Danger Zone Section -->
+                <div class="bg-red-900/50 border border-red-700/50 p-4 sm:p-6 rounded-xl shadow-lg">
+                    <h2 class="text-xl font-bold text-red-300 mb-4 border-b border-red-700/50 pb-2">Danger Zone</h2>
+                    <p class="text-sm text-gray-400 mb-4">This will permanently delete all saved application data from this browser.</p>
+                    <button id="clear-data-btn" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center gap-2"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg><span>Clear All Data & Reset</span></button>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <!-- Mobile Bottom Navigation -->
+    <nav class="lg:hidden bg-gray-800 border-t border-gray-700 flex justify-around flex-shrink-0 z-20">
+        <button id="bottom-nav-guide" class="bottom-nav-btn flex-1 p-3 text-gray-400">
+            <svg class="mx-auto h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+            <span class="text-xs">Guide</span>
+        </button>
+        <button id="bottom-nav-settings" class="bottom-nav-btn flex-1 p-3 text-gray-400 active">
+            <svg class="mx-auto h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+            <span class="text-xs">Settings</span>
+        </button>
+    </nav>
+
+
+    <!-- Modals -->
+    <div id="video-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+        <div class="bg-gray-900 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center p-3 border-b border-gray-700">
+                <h3 id="video-title" class="text-lg font-semibold text-white truncate"></h3>
+                <div class="flex items-center gap-2">
+                    <button id="pip-btn" class="text-gray-400 hover:text-white p-2 rounded-md hover:bg-gray-700" title="Picture-in-Picture">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M12.5 5.5h-5a1 1 0 00-1 1v2.5a.5.5 0 001 0v-2a.5.5 0 01.5-.5h4a.5.5 0 01.5.5v4a.5.5 0 01-.5.5h-2a.5.5 0 000 1h2.5a1 1 0 001-1v-5a1 1 0 00-1-1z"></path><path d="M3.5 3A1.5 1.5 0 002 4.5v11A1.5 1.5 0 003.5 17h13a1.5 1.5 0 001.5-1.5v-11A1.5 1.5 0 0016.5 3h-13zm0 1h13a.5.5 0 01.5.5v11a.5.5 0 01-.5.5h-13a.5.5 0 01-.5-.5v-11a.5.5 0 01.5-.5z"></path></svg>
+                    </button>
+                    <button id="close-modal" class="text-gray-400 hover:text-white text-3xl leading-none font-bold">&times;</button>
+                </div>
+            </div>
+            <div class="flex-grow p-1 bg-black"><video id="videoElement" controls autoplay class="w-full h-full"></video></div>
+        </div>
+    </div>
+    
+    <div id="program-details-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+        <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-lg p-6">
+            <h3 id="details-title" class="text-xl font-bold text-white mb-2">Program Title</h3>
+            <p id="details-time" class="text-sm text-gray-400 mb-4">Time Info</p>
+            <p id="details-desc" class="text-base text-gray-300 mb-6 max-h-40 overflow-y-auto custom-scrollbar"></p>
+            <div class="flex justify-between items-center gap-4">
+                <button id="details-play-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Play Channel</button>
+                <button id="details-close-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Close</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="notification-modal" class="hidden fixed top-5 right-5 bg-red-500 text-white py-2 px-4 rounded-lg shadow-lg z-[100]">
+        <p id="notification-message"></p>
+    </div>
+
+    <div id="confirm-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+        <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6">
+            <h3 id="confirm-title" class="text-lg font-bold text-white mb-2">Are you sure?</h3>
+            <p id="confirm-message" class="text-gray-400 mb-6">This action cannot be undone.</p>
+            <div class="flex justify-end gap-4">
+                <button id="confirm-cancel-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Cancel</button>
+                <button id="confirm-ok-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md">Confirm</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- This script tag contains the parser logic which will be run in a separate thread -->
+    <script id="parser-worker" type="javascript/worker">
+        // --- Web Worker for Parsing M3U and EPG files ---
+        
+        // This function is defined once and reused
+        function parseEpgTime(timeStr, offsetHours = 0) {
+            // Updated regex to be more forgiving with whitespace
+            const match = timeStr.match(/(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s*(([+-])(\d{2})(\d{2}))?/);
+            if (match) {
+                const [ , year, month, day, hours, minutes, seconds, , sign, tzHours, tzMinutes] = match;
+                let date;
+                if (sign && tzHours && tzMinutes) {
+                    // EPG time has timezone info, so we use it and ignore manual offset
+                    const epgOffsetMinutes = (parseInt(tzHours) * 60 + parseInt(tzMinutes)) * (sign === '+' ? 1 : -1);
+                    date = new Date(Date.UTC(year, parseInt(month) - 1, day, hours, minutes, seconds));
+                    // The date is created in UTC, so we subtract the EPG's offset to get the correct UTC time.
+                    date.setUTCMinutes(date.getUTCMinutes() - epgOffsetMinutes);
+                } else {
+                    // No timezone info in EPG string, assume it's "local" to wherever it was generated.
+                    // We apply the user's manual offset to correct it to UTC.
+                    date = new Date(Date.UTC(year, parseInt(month) - 1, day, hours, minutes, seconds));
+                    // Subtract the user-defined offset to normalize to true UTC
+                    date.setUTCHours(date.getUTCHours() - offsetHours);
+                }
+                return date;
+            }
+             // Fallback for simple formats without timezone, assuming local time and applying offset
+            if (timeStr.length >= 14) {
+                 const date = new Date(Date.UTC(
+                    timeStr.substring(0, 4), parseInt(timeStr.substring(4, 6)) - 1, timeStr.substring(6, 8),
+                    timeStr.substring(8, 10), timeStr.substring(10, 12), timeStr.substring(12, 14)
+                ));
+                date.setUTCHours(date.getUTCHours() - offsetHours);
+                return date;
+            }
+            return new Date(); // Invalid format
+        }
+
+
+        function parseM3U(data) {
+            const lines = data.split('\n');
+            const channels = [];
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (line.startsWith('#EXTINF:')) {
+                    const nextLine = lines[i + 1]?.trim();
+                    if (nextLine && (nextLine.startsWith('http') || nextLine.startsWith('rtp'))) {
+                        const idMatch = line.match(/tvg-id="([^"]*)"/);
+                        const logoMatch = line.match(/tvg-logo="([^"]*)"/);
+                        const nameMatch = line.match(/tvg-name="([^"]*)"/);
+                        const groupMatch = line.match(/group-title="([^"]*)"/);
+                        const commaIndex = line.lastIndexOf(',');
+                        const displayName = (commaIndex !== -1) ? line.substring(commaIndex + 1).trim() : 'Unknown Channel';
+
+                        channels.push({
+                            id: idMatch ? idMatch[1] : `unknown-${channels.length}`,
+                            logo: logoMatch ? logoMatch[1] : '',
+                            name: nameMatch ? nameMatch[1] : displayName,
+                            group: groupMatch ? groupMatch[1] : 'Uncategorized',
+                            displayName: displayName,
+                            url: nextLine
+                        });
+                        i++;
+                    }
+                }
+            }
+            return channels;
+        }
+
+        function parseEPG(xmlString, timezoneOffset) {
+            const programData = {};
+            // This regex is a simplified parser. A full XML parser would be more robust but heavier.
+            const programmeRegex = /<programme([^>]+)>([\s\S]*?)<\/programme>/g;
+            
+            const channelRegex = /channel="([^"]+)"/;
+            const startRegex = /start="([^"]+)"/;
+            const stopRegex = /stop="([^"]+)"/;
+
+            const titleRegex = /<title[^>]*>([\s\S]*?)<\/title>/;
+            const descRegex = /<desc[^>]*>([\s\S]*?)<\/desc>/;
+
+            let match;
+            while ((match = programmeRegex.exec(xmlString)) !== null) {
+                const [ , attributes, content] = match;
+
+                const channelMatch = attributes.match(channelRegex);
+                const startMatch = attributes.match(startRegex);
+                const stopMatch = attributes.match(stopRegex);
+
+                if (!channelMatch || !startMatch || !stopMatch) continue;
+
+                const channelId = channelMatch[1];
+                const startStr = startMatch[1];
+                const stopStr = stopMatch[1];
+
+                const titleMatch = content.match(titleRegex);
+                const descMatch = content.match(descRegex);
+                
+                // Remove CDATA tags if present
+                const title = titleMatch ? titleMatch[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim() : 'No Title';
+                const desc = descMatch ? descMatch[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim() : '';
+
+                if (!programData[channelId]) {
+                    programData[channelId] = [];
+                }
+                
+                programData[channelId].push({
+                    start: parseEpgTime(startStr, timezoneOffset),
+                    stop: parseEpgTime(stopStr, timezoneOffset),
+                    title,
+                    desc
+                });
+            }
+
+            // Sort programs by start time for each channel
+            for (const channelId in programData) {
+                programData[channelId].sort((a, b) => a.start - b.start);
+            }
+            return programData;
+        }
+
+        self.onmessage = function(e) {
+            const { type, data, timezoneOffset } = e.data;
+            try {
+                if (type === 'm3u') {
+                    const channels = parseM3U(data);
+                    self.postMessage({ type: 'm3u-success', data: channels });
+                } else if (type === 'epg') {
+                    const programs = parseEPG(data, timezoneOffset);
+                    self.postMessage({ type: 'epg-success', data: programs });
+                }
+            } catch (error) {
+                self.postMessage({ type: 'parse-error', error: error.message });
+            }
+        };
+    </script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Globals
+            const guideState = {
+                channels: [],
+                programs: {},
+                favorites: [],
+                recentChannels: [], // For recently watched channels
+                timezoneOffset: 0, // For EPG timezone correction
+                guideDurationHours: 48, // Extended to 48 hours for better navigation
+                hourWidthPixels: window.innerWidth < 768 ? 200 : 300,
+                currentDate: new Date(),
+                channelGroups: new Set(),
+            };
+            let player;
+            let worker;
+            let autoRefreshIntervalId = null;
+            let searchDebounceTimer = null;
+
+
+            // --- IndexedDB Storage Helper ---
+            const dbName = 'iptvGuideDB';
+            const storeName = 'guideData';
+            let db;
+
+            function initDB() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(dbName, 3);
+                    request.onerror = (event) => reject("IndexedDB error: " + request.error);
+                    request.onsuccess = (event) => { db = event.target.result; resolve(db); };
+                    request.onupgradeneeded = (event) => {
+                        const dbHandle = event.target.result;
+                        if (!dbHandle.objectStoreNames.contains(storeName)) {
+                            dbHandle.createObjectStore(storeName, { keyPath: 'id' });
+                        }
+                    };
+                });
+            }
+
+            function saveDataToDB(id, content) {
+                return new Promise((resolve, reject) => {
+                    if (!db) { reject("DB not initialized"); return; }
+                    const transaction = db.transaction([storeName], 'readwrite');
+                    const store = transaction.objectStore(storeName);
+                    const request = store.put({ id, content });
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject(request.error);
+                });
+            }
+
+            function loadDataFromDB(id) {
+                return new Promise((resolve, reject) => {
+                    if (!db) { reject("DB not initialized"); return; }
+                    const transaction = db.transaction([storeName], 'readonly');
+                    const store = transaction.objectStore(storeName);
+                    const request = store.get(id);
+                    request.onsuccess = () => resolve(request.result ? request.result.content : null);
+                    request.onerror = () => reject(request.error);
+                });
+            }
+
+            function clearDB() {
+                return new Promise((resolve, reject) => {
+                    if (!db) { reject("DB not initialized"); return; }
+                    const transaction = db.transaction([storeName], 'readwrite');
+                    const store = transaction.objectStore(storeName);
+                    const request = store.clear();
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject(request.error);
+                });
+            }
+
+            // --- Get All DOM Elements ---
+            const UIElements = {
+                body: document.body,
+                guideContainer: document.getElementById('guide-container'),
+                tabGuide: document.getElementById('tab-guide'),
+                tabSettings: document.getElementById('tab-settings'),
+                bottomNavGuide: document.getElementById('bottom-nav-guide'),
+                bottomNavSettings: document.getElementById('bottom-nav-settings'),
+                pageGuide: document.getElementById('page-guide'),
+                pageSettings: document.getElementById('page-settings'),
+                loadGuideBtn: document.getElementById('load-guide-btn'),
+                loadGuideBtnContent: document.getElementById('load-guide-btn-content'),
+                m3uTabFile: document.getElementById('m3u-tab-file'),
+                m3uTabUrl: document.getElementById('m3u-tab-url'),
+                m3uContentFile: document.getElementById('m3u-content-file'),
+                m3uContentUrl: document.getElementById('m3u-content-url'),
+                m3uUrlSelect: document.getElementById('m3u-url-select'),
+                m3uCustomContainer: document.getElementById('m3u-custom-container'),
+                m3uUrlInput: document.getElementById('m3u-url-input'),
+                saveM3uUrlBtn: document.getElementById('save-m3u-url-btn'),
+                epgTabFile: document.getElementById('epg-tab-file'),
+                epgTabUrl: document.getElementById('epg-tab-url'),
+                epgContentFile: document.getElementById('epg-content-file'),
+                epgContentUrl: document.getElementById('epg-content-url'),
+                epgUrlSelect: document.getElementById('epg-url-select'),
+                epgCustomContainer: document.getElementById('epg-custom-container'),
+                epgUrlInput: document.getElementById('epg-url-input'),
+                saveEpgUrlBtn: document.getElementById('save-epg-url-btn'),
+                clearDataBtn: document.getElementById('clear-data-btn'),
+                channelPanelContainer: document.getElementById('channel-panel-container'),
+                searchInput: document.getElementById('search-input'),
+                searchResultsContainer: document.getElementById('search-results-container'),
+                channelListDiv: document.getElementById('channel-list'),
+                logoColumn: document.getElementById('logo-column'),
+                logoList: document.getElementById('logo-list'),
+                resizer: document.getElementById('resizer'),
+                timeBarDiv: document.getElementById('time-bar'),
+                guideTimelineDiv: document.getElementById('guide-timeline'),
+                guidePlaceholder: document.getElementById('guide-placeholder'),
+                placeholderContent: document.getElementById('placeholder-content'),
+                videoModal: document.getElementById('video-modal'),
+                videoElement: document.getElementById('videoElement'),
+                videoTitle: document.getElementById('video-title'),
+                closeModalBtn: document.getElementById('close-modal'),
+                pipBtn: document.getElementById('pip-btn'),
+                notificationModal: document.getElementById('notification-modal'),
+                notificationMessage: document.getElementById('notification-message'),
+                confirmModal: document.getElementById('confirm-modal'),
+                confirmTitle: document.getElementById('confirm-title'),
+                confirmMessage: document.getElementById('confirm-message'),
+                confirmCancelBtn: document.getElementById('confirm-cancel-btn'),
+                confirmOkBtn: document.getElementById('confirm-ok-btn'),
+                prevDayBtn: document.getElementById('prev-day-btn'),
+                todayBtn: document.getElementById('today-btn'),
+                nowBtn: document.getElementById('now-btn'),
+                nextDayBtn: document.getElementById('next-day-btn'),
+                guideDateDisplay: document.getElementById('guide-date-display'),
+                groupFilter: document.getElementById('group-filter'),
+                programDetailsModal: document.getElementById('program-details-modal'),
+                detailsTitle: document.getElementById('details-title'),
+                detailsTime: document.getElementById('details-time'),
+                detailsDesc: document.getElementById('details-desc'),
+                detailsPlayBtn: document.getElementById('details-play-btn'),
+                detailsCloseBtn: document.getElementById('details-close-btn'),
+                autoRefreshSelect: document.getElementById('auto-refresh-select'),
+                timezoneOffsetSelect: document.getElementById('timezone-offset-select'),
+                sidebarToggle: document.getElementById('sidebar-toggle'),
+                sidebarOverlay: document.getElementById('sidebar-overlay'),
+            };
+
+            let confirmCallback = null;
+            
+            // --- General Functions (Tabs, Modals, Notifications) ---
+            function showNotification(message, isError = false, duration = 3000) {
+                UIElements.notificationMessage.textContent = message;
+                UIElements.notificationModal.classList.remove('hidden', 'bg-red-500', 'bg-green-500');
+                UIElements.notificationModal.classList.add(isError ? 'bg-red-500' : 'bg-green-500');
+                setTimeout(() => UIElements.notificationModal.classList.add('hidden'), duration);
+            }
+
+            function switchTab(activeTab) {
+                const isGuide = activeTab === 'guide';
+                // Desktop Tabs
+                UIElements.tabGuide.classList.toggle('active', isGuide);
+                UIElements.tabSettings.classList.toggle('active', !isGuide);
+                // Mobile Nav
+                UIElements.bottomNavGuide.classList.toggle('active', isGuide);
+                UIElements.bottomNavSettings.classList.toggle('active', !isGuide);
+                // Pages
+                UIElements.pageGuide.classList.toggle('hidden', !isGuide);
+                UIElements.pageGuide.classList.toggle('flex', isGuide);
+                UIElements.pageSettings.classList.toggle('hidden', isGuide);
+                UIElements.pageSettings.classList.toggle('flex', !isGuide);
+                // Show/hide mobile sidebar toggle
+                UIElements.sidebarToggle.classList.toggle('hidden', !isGuide);
+            }
+
+            function openModal(modal) {
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+                UIElements.body.classList.add('modal-open');
+            }
+
+            function closeModal(modal) {
+                 modal.classList.add('hidden');
+                 modal.classList.remove('flex');
+                 // Check if any other modals are open before removing the class
+                 const anyModalOpen = document.querySelector('#video-modal.flex, #program-details-modal.flex, #confirm-modal.flex');
+                 if (!anyModalOpen) {
+                     UIElements.body.classList.remove('modal-open');
+                 }
+            }
+            
+            function showConfirm(title, message, callback) {
+                UIElements.confirmTitle.textContent = title;
+                UIElements.confirmMessage.textContent = message;
+                confirmCallback = callback;
+                openModal(UIElements.confirmModal);
+            }
+            
+            function toggleSidebar(show) {
+                 if (show) {
+                     UIElements.sidebarOverlay.classList.remove('hidden');
+                     UIElements.sidebarOverlay.classList.add('opacity-100');
+                     UIElements.channelPanelContainer.classList.remove('-translate-x-full');
+                     UIElements.channelPanelContainer.classList.add('translate-x-0');
+                 } else {
+                     UIElements.sidebarOverlay.classList.add('hidden');
+                     UIElements.sidebarOverlay.classList.remove('opacity-100');
+                     UIElements.channelPanelContainer.classList.add('-translate-x-full');
+                     UIElements.channelPanelContainer.classList.remove('translate-x-0');
+                 }
+            }
+
+
+            function setupDataSourceTabs() {
+                const setup = (fileTab, urlTab, fileContent, urlContent) => {
+                    fileTab.addEventListener('click', () => {
+                        fileTab.classList.add('active'); urlTab.classList.remove('active');
+                        fileContent.classList.remove('hidden'); urlContent.classList.add('hidden');
+                    });
+                    urlTab.addEventListener('click', () => {
+                        urlTab.classList.add('active'); fileTab.classList.remove('active');
+                        urlContent.classList.remove('hidden'); fileContent.classList.add('hidden');
+                    });
+                };
+                const setupDropdown = (selectEl, customContainerEl) => {
+                    selectEl.addEventListener('change', () => {
+                        const isCustom = selectEl.value === 'custom';
+                        customContainerEl.classList.toggle('hidden', !isCustom);
+                        if(isCustom) customContainerEl.querySelector('input').focus();
+                    });
+                    customContainerEl.classList.toggle('hidden', selectEl.value !== 'custom');
+                };
+                setup(UIElements.m3uTabFile, UIElements.m3uTabUrl, UIElements.m3uContentFile, UIElements.m3uContentUrl);
+                setup(UIElements.epgTabFile, UIElements.epgTabUrl, UIElements.epgContentFile, UIElements.epgContentUrl);
+                setupDropdown(UIElements.m3uUrlSelect, UIElements.m3uCustomContainer);
+                setupDropdown(UIElements.epgUrlSelect, UIElements.epgCustomContainer);
+            }
+
+            // --- Main Application Logic ---
+
+            function setButtonLoadingState(isLoading) {
+                UIElements.loadGuideBtn.disabled = isLoading;
+                if (isLoading) {
+                    UIElements.loadGuideBtnContent.innerHTML = `
+                        <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span>Loading...</span>`;
+                } else {
+                    UIElements.loadGuideBtnContent.innerHTML = `
+                        <svg class="w-5 h-5 inline-block -mt-1 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                        <span>Load Guide & View</span>`;
+                }
+            }
+            
+            async function handleGuideLoad(m3uContent, epgContent) {
+                if (!worker) {
+                    console.error("Worker not initialized!");
+                    return false;
+                }
+
+                return new Promise((resolve) => {
+                    let m3uParsed = false;
+                    let epgParsed = !epgContent || !epgContent.trim(); // EPG is "done" if not provided
+
+                    const checkCompletion = () => {
+                        if (m3uParsed && epgParsed) {
+                            finalizeGuideLoad();
+                            resolve(true);
+                            worker.onmessage = null; // Clean up listener
+                        }
+                    };
+
+                    worker.onmessage = (e) => {
+                        const { type, data, error } = e.data;
+                        if (error) {
+                            showNotification(`Error parsing data: ${error}`, true);
+                            worker.onmessage = null;
+                            resolve(false);
+                            return;
+                        }
+
+                        if (type === 'm3u-success') {
+                            guideState.channels = data;
+                            guideState.favorites.forEach(favId => {
+                                const channel = guideState.channels.find(c => c.id === favId);
+                                if (channel) channel.isFavorite = true;
+                            });
+                            m3uParsed = true;
+                        } else if (type === 'epg-success') {
+                            guideState.programs = data;
+                            epgParsed = true;
+                        }
+                        checkCompletion();
+                    };
+                    
+                    guideState.programs = {}; // Always reset programs
+                    
+                    // Post messages to the worker
+                    worker.postMessage({ type: 'm3u', data: m3uContent });
+                    if (!epgParsed) {
+                        // Pass timezone offset to the worker
+                        worker.postMessage({ type: 'epg', data: epgContent, timezoneOffset: guideState.timezoneOffset });
+                    }
+                });
+            }
+
+            function finalizeGuideLoad() {
+                guideState.channelGroups.clear();
+                guideState.channels.forEach(ch => guideState.channelGroups.add(ch.group));
+                populateGroupFilter();
+
+                if (guideState.channels.length > 0) {
+                    renderGuide();
+                } else {
+                    showNotification('Could not parse any channels from M3U file.', true);
+                }
+            }
+            
+            function populateGroupFilter() {
+                // Added "Recents" group
+                UIElements.groupFilter.innerHTML = `<option value="all">All Groups</option><option value="recents">Recents</option><option value="favorites">Favorites</option>`;
+                const sortedGroups = [...guideState.channelGroups].sort((a, b) => a.localeCompare(b));
+                sortedGroups.forEach(group => {
+                    const option = document.createElement('option');
+                    option.value = group;
+                    option.textContent = group;
+                    UIElements.groupFilter.appendChild(option);
+                });
+                UIElements.groupFilter.classList.remove('hidden');
+            }
+
+            // Function to jump the guide to a specific program
+            function jumpToProgram(programStartTimeStr, channelId) {
+                const programStart = new Date(programStartTimeStr);
+
+                // 1. Reset view to show all channels to ensure the target is visible
+                UIElements.groupFilter.value = 'all';
+                
+                // 2. Set the guide to the correct date
+                guideState.currentDate = programStart;
+
+                // 3. Render the full guide for that date. This ensures the channel order is predictable for scrolling.
+                renderGuide(guideState.channels, false); 
+
+                // 4. After rendering, calculate positions and scroll.
+                // Use a setTimeout to ensure the DOM has updated from renderGuide's own timeout.
+                setTimeout(() => {
+                    // Find the index of the channel in the full, unfiltered list
+                    const channelIndex = guideState.channels.findIndex(ch => ch.id === channelId);
+                    if (channelIndex === -1) {
+                        showNotification('Could not find the channel for this program.', true);
+                        return;
+                    }
+
+                    // Calculate vertical scroll
+                    const verticalScroll = channelIndex * 80; // h-20 is 5rem = 80px
+
+                    // Calculate horizontal scroll
+                    const guideStart = new Date(guideState.currentDate);
+                    guideStart.setHours(0, 0, 0, 0);
+                    const offsetMs = programStart.getTime() - guideStart.getTime();
+                    const horizontalScroll = (offsetMs / 3600000) * guideState.hourWidthPixels;
+
+                    // Apply scroll with smooth behavior
+                    UIElements.guideTimelineDiv.scrollTo({
+                        top: verticalScroll,
+                        left: horizontalScroll - (UIElements.guideTimelineDiv.clientWidth / 4), // Center it a bit
+                        behavior: 'smooth'
+                    });
+
+                    // Highlight the program item briefly
+                    // Use another timeout to ensure the element is scrolled into view before highlighting
+                    setTimeout(() => {
+                        const targetProgramEl = document.querySelector(`.programme-item[data-prog-start="${programStart.toISOString()}"][data-channel-id="${channelId}"]`);
+                        if (targetProgramEl) {
+                            targetProgramEl.classList.add('highlighted');
+                            setTimeout(() => {
+                                targetProgramEl.classList.remove('highlighted');
+                            }, 2500);
+                        }
+                    }, 500); // Wait for smooth scroll to be mostly done
+
+                }, 150); // A small delay to let the DOM update from renderGuide.
+            }
+
+            function renderGuide(channelsToRender = guideState.channels, resetScroll = true) {
+                UIElements.guidePlaceholder.classList.add('hidden');
+                UIElements.channelPanelContainer.classList.remove('hidden'); 
+                UIElements.resizer.classList.remove('hidden');
+
+                const currentScrollTop = UIElements.channelListDiv.scrollTop;
+                UIElements.channelListDiv.innerHTML = '';
+                UIElements.logoList.innerHTML = '';
+                UIElements.guideTimelineDiv.innerHTML = '<div id="now-line" class="absolute top-0 bottom-0 bg-red-500 w-0.5 z-20 hidden"></div>';
+                UIElements.timeBarDiv.innerHTML = '';
+                
+                UIElements.guideDateDisplay.textContent = guideState.currentDate.toLocaleDateString([], { weekday: 'short', month: 'long', day: 'numeric' });
+
+                const timeBarContent = document.createElement('div');
+                const totalTimelineWidth = guideState.guideDurationHours * guideState.hourWidthPixels;
+                timeBarContent.className = 'relative h-full';
+                timeBarContent.style.width = `${totalTimelineWidth}px`;
+                UIElements.timeBarDiv.appendChild(timeBarContent);
+                
+                const guideStart = new Date(guideState.currentDate);
+                guideStart.setHours(0, 0, 0, 0);
+
+                for (let i = 0; i < guideState.guideDurationHours; i++) {
+                    const time = new Date(guideStart); time.setHours(guideStart.getHours() + i);
+                    const timeMarker = document.createElement('div');
+                    timeMarker.className = 'absolute top-0 bottom-0 flex items-center justify-start px-2 text-xs text-gray-400 border-r border-gray-700/50';
+                    timeMarker.style.left = `${i * guideState.hourWidthPixels}px`;
+                    timeMarker.style.width = `${guideState.hourWidthPixels}px`;
+                    timeMarker.textContent = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    timeBarContent.appendChild(timeMarker);
+                }
+                
+                const now = new Date();
+
+                channelsToRender.forEach(channel => {
+                    // 1. Create cell for the slide-out sidebar (always populated)
+                    const channelCell = document.createElement('div');
+                    channelCell.className = 'h-20 flex items-center justify-between p-2 border-b border-gray-700/50 flex-shrink-0';
+                    channelCell.innerHTML = `
+                        <div class="flex items-center overflow-hidden cursor-pointer flex-grow min-w-0" data-url="${channel.url}" data-name="${channel.displayName || channel.name}" data-id="${channel.id}">
+                            <img src="${channel.logo || 'data:image/svg+xml,...'}" onerror="this.onerror=null; this.src='https://placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-3 flex-shrink-0 rounded-md bg-gray-700">
+                            <span class="font-semibold text-sm truncate">${channel.displayName || channel.name}</span>
+                        </div>
+                        <svg data-channel-id="${channel.id}" class="w-6 h-6 text-gray-500 hover:text-yellow-400 favorite-star cursor-pointer flex-shrink-0 ml-2 ${channel.isFavorite ? 'favorited' : ''}" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>
+                    `;
+                    UIElements.channelListDiv.appendChild(channelCell);
+                    
+                    // 2. Create cell for the mobile sticky logo column
+                    const logoCell = document.createElement('div');
+                    logoCell.className = 'h-20 flex items-center justify-center p-1 border-b border-gray-700/50 flex-shrink-0 cursor-pointer';
+                    logoCell.dataset.url = channel.url;
+                    logoCell.dataset.name = channel.displayName || channel.name;
+                    logoCell.dataset.id = channel.id;
+                    logoCell.innerHTML = `<img src="${channel.logo || 'data:image/svg+xml,...'}" onerror="this.onerror=null; this.src='https://placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-14 h-14 object-contain pointer-events-none">`;
+                    UIElements.logoList.appendChild(logoCell);
+
+
+                    // 3. Create the row for the main timeline grid
+                    const channelRowContainer = document.createElement('div');
+                    channelRowContainer.className = 'h-20 border-b border-gray-700/50 relative';
+                    UIElements.guideTimelineDiv.appendChild(channelRowContainer);
+                    
+                    const programs = guideState.programs[channel.id] || [];
+                    const guideEnd = new Date(guideStart.getTime() + guideState.guideDurationHours * 3600 * 1000);
+                    programs.forEach(prog => {
+                        if (!prog.start || !prog.stop || prog.stop < guideStart || prog.start > guideEnd) return;
+                        const startOffsetMs = prog.start - guideStart;
+                        const durationMs = prog.stop - prog.start;
+                        if (durationMs <= 0) return;
+
+                        const left = (startOffsetMs / 3600000) * guideState.hourWidthPixels;
+                        const width = (durationMs / 3600000) * guideState.hourWidthPixels;
+
+                        const progItem = document.createElement('div');
+                        progItem.className = 'programme-item absolute top-1 bottom-1 bg-gray-800 rounded-md p-2 overflow-hidden flex flex-col justify-center z-5';
+                        if (prog.stop < now) {
+                            progItem.classList.add('past');
+                        }
+
+                        progItem.style.left = `${left}px`;
+                        progItem.style.width = `${Math.max(0, width - 2)}px`;
+                        progItem.dataset.channelUrl = channel.url;
+                        progItem.dataset.channelId = channel.id; // Store channel ID for recents
+                        progItem.dataset.channelName = channel.name;
+                        progItem.dataset.progTitle = prog.title;
+                        progItem.dataset.progDesc = prog.desc;
+                        progItem.dataset.progStart = prog.start.toISOString();
+                        progItem.dataset.progStop = prog.stop.toISOString();
+                        
+                        let progressWidth = 0;
+                        if (now > prog.start && now < prog.stop) {
+                            progItem.classList.add('live'); // Add live class
+                            const elapsed = now - prog.start;
+                            progressWidth = (elapsed / durationMs) * 100;
+                        }
+
+                        progItem.innerHTML = `
+                            <div class="programme-progress" style="width: ${progressWidth}%"></div>
+                            <p class="prog-title text-white font-semibold truncate relative z-10">${prog.title}</p>
+                            <p class="prog-time text-gray-400 truncate relative z-10">${prog.start.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} - ${prog.stop.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</p>
+                        `;
+                        channelRowContainer.appendChild(progItem);
+                    });
+                });
+                
+                const totalGuideHeight = channelsToRender.length * 80;
+                setTimeout(() => {
+                    UIElements.channelListDiv.scrollTop = resetScroll ? 0 : currentScrollTop;
+                    UIElements.guideTimelineDiv.scrollTop = UIElements.channelListDiv.scrollTop;
+                    UIElements.logoList.scrollTop = UIElements.channelListDiv.scrollTop;
+                    updateNowLine(guideStart, resetScroll, totalGuideHeight);
+                }, 0);
+            }
+
+            function updateNowLine(guideStart, shouldScroll, totalGuideHeight) {
+                const nowLineEl = document.getElementById('now-line');
+                if (!nowLineEl) return;
+                nowLineEl.style.height = `${totalGuideHeight}px`;
+
+                const now = new Date();
+                const guideEnd = new Date(guideStart.getTime() + guideState.guideDurationHours * 3600 * 1000);
+                if (now < guideStart || now > guideEnd) {
+                    nowLineEl.classList.add('hidden');
+                } else {
+                    const nowOffsetMs = now - guideStart;
+                    const left = (nowOffsetMs / 3600000) * guideState.hourWidthPixels;
+                    nowLineEl.style.left = `${left}px`;
+                    nowLineEl.classList.remove('hidden');
+
+                    if (shouldScroll) {
+                        UIElements.guideTimelineDiv.scrollLeft = left - (UIElements.guideTimelineDiv.clientWidth / 4);
+                    }
+                }
+
+                // Update styles of ALL programs (past, present, future)
+                document.querySelectorAll('.programme-item').forEach(progItem => {
+                    const startTime = new Date(progItem.dataset.progStart);
+                    const stopTime = new Date(progItem.dataset.progStop);
+                    const progressDiv = progItem.querySelector('.programme-progress');
+                    if (!progressDiv) return;
+
+                    if (stopTime < now) {
+                        progItem.classList.add('past');
+                        progItem.classList.remove('live');
+                        progressDiv.style.width = '0%';
+                    } else if (startTime > now) {
+                        progItem.classList.remove('past', 'live');
+                        progressDiv.style.width = '0%';
+                    } else {
+                        progItem.classList.remove('past');
+                        progItem.classList.add('live');
+                        const durationMs = stopTime - startTime;
+                        const elapsedMs = now - startTime;
+                        if (durationMs > 0) {
+                            const progressWidth = (elapsedMs / durationMs) * 100;
+                            progressDiv.style.width = `${Math.min(100, progressWidth)}%`;
+                        }
+                    }
+                });
+
+                setTimeout(() => updateNowLine(guideStart, false, totalGuideHeight), 60000);
+            }
+
+            /**
+             * NEW: Centralized function to stop the player, clean up resources, and exit PiP.
+             */
+            function stopAndCleanupPlayer() {
+                if (player) {
+                    try { player.destroy(); } catch (e) { console.error("Error destroying player:", e); }
+                    player = null;
+                }
+                // Fully reset the video element to prevent it from holding onto the old stream
+                UIElements.videoElement.src = "";
+                UIElements.videoElement.removeAttribute('src');
+                UIElements.videoElement.load();
+                
+                // If we are in PiP mode when cleaning up, we should exit it.
+                if (document.pictureInPictureElement) {
+                    document.exitPictureInPicture().catch(e => console.error("Failed to exit PiP on cleanup:", e));
+                }
+            }
+
+
+            async function playChannel(url, name, channelId) {
+                // MODIFIED: If a player is already active (in modal or PiP),
+                // destroy it completely before starting a new stream.
+                if (player) {
+                    stopAndCleanupPlayer();
+                }
+                
+                // Handle recent channels
+                if(channelId) {
+                    guideState.recentChannels = [channelId, ...guideState.recentChannels.filter(id => id !== channelId)].slice(0, 10);
+                    await saveDataToDB('recentChannels', guideState.recentChannels);
+                }
+
+                // --- MODIFIED FOR BACKEND STREAMING ---
+                // The backend now handles fetching and transcoding. We just need to
+                // point our player to our own server's /stream endpoint.
+                const streamEndpoint = `/stream?url=${encodeURIComponent(url)}`;
+
+                if (mpegts.isSupported()) {
+                    player = mpegts.createPlayer({ type: 'mse', isLive: true, url: streamEndpoint });
+                    openModal(UIElements.videoModal);
+                    UIElements.videoTitle.textContent = name;
+                    player.attachMediaElement(UIElements.videoElement);
+                    player.load();
+                    UIElements.videoElement.volume = parseFloat(localStorage.getItem('iptvPlayerVolume') || 0.5);
+                    player.play().catch(e => {
+                        showNotification("Could not play stream. The stream may be offline or incompatible.", true);
+                        closeModal(UIElements.videoModal);
+                        stopAndCleanupPlayer(); // Clean up on failure
+                    });
+                } else {
+                    showNotification('Your browser does not support MSE for this stream type.', true);
+                }
+            }
+            
+            async function toggleFavorite(channelId) {
+                const channel = guideState.channels.find(c => c.id === channelId);
+                if (!channel) return;
+                
+                channel.isFavorite = !channel.isFavorite;
+                if(channel.isFavorite) {
+                    if(!guideState.favorites.includes(channelId)) guideState.favorites.push(channelId);
+                } else {
+                    guideState.favorites = guideState.favorites.filter(id => id !== channelId);
+                }
+                
+                const starEl = document.querySelector(`.favorite-star[data-channel-id="${channelId}"]`);
+                if(starEl) starEl.classList.toggle('favorited', channel.isFavorite);
+                
+                await saveDataToDB('favorites', guideState.favorites);
+
+                // If currently viewing favorites, re-render to remove/add the channel
+                if (UIElements.groupFilter.value === 'favorites') {
+                    handleSearchAndFilter();
+                }
+            }
+            
+            function setupAutoRefresh(hours) {
+                clearInterval(autoRefreshIntervalId);
+                if (hours > 0) {
+                    const interval = hours * 60 * 60 * 1000;
+                    autoRefreshIntervalId = setInterval(async () => {
+                        showNotification(`Automatically refreshing guide data...`);
+                        const m3uIsUrl = !UIElements.m3uTabFile.classList.contains('active');
+                        const epgIsUrl = !UIElements.epgTabFile.classList.contains('active');
+
+                        if (m3uIsUrl || epgIsUrl) {
+                            UIElements.loadGuideBtn.click();
+                        } else {
+                            showNotification(`Auto-refresh skipped: Data was loaded from local files.`);
+                        }
+                    }, interval);
+                }
+            }
+            
+            function populateTimezoneSelector() {
+                const select = UIElements.timezoneOffsetSelect;
+                select.innerHTML = '';
+                for (let i = 14; i >= -12; i--) {
+                    const option = document.createElement('option');
+                    option.value = i;
+                    const sign = i >= 0 ? '+' : '-';
+                    const hours = Math.abs(i).toString().padStart(2, '0');
+                    option.textContent = `UTC${sign}${hours}:00`;
+                    select.appendChild(option);
+                }
+                select.value = guideState.timezoneOffset;
+            }
+
+            // --- Save/Load Custom URLs ---
+            function addUrlToSelect(selectEl, url, makeActive = true) {
+                if ([...selectEl.options].some(opt => opt.value === url)) {
+                    if (makeActive) selectEl.value = url;
+                    return;
+                }
+                const option = document.createElement('option');
+                option.value = url;
+                option.textContent = url.length > 60 ? url.substring(0, 57) + '...' : url;
+                const customOption = selectEl.querySelector('option[value="custom"]');
+                selectEl.insertBefore(option, customOption);
+                if (makeActive) selectEl.value = url;
+            }
+
+            async function saveCustomUrl(type, selectEl, inputEl) {
+                const url = inputEl.value.trim();
+                if (!url) {
+                    showNotification('URL field cannot be empty.', true);
+                    return;
+                }
+                try {
+                    new URL(url); // Basic URL validation
+                } catch (_) {
+                    showNotification('Please enter a valid URL.', true);
+                    return;
+                }
+
+                try {
+                    const dbKey = `custom${type.charAt(0).toUpperCase() + type.slice(1)}Urls`;
+                    let urls = await loadDataFromDB(dbKey) || [];
+                    
+                    if (urls.includes(url)) {
+                        showNotification('This URL is already saved in the list.', false);
+                        selectEl.value = url;
+                        selectEl.dispatchEvent(new Event('change'));
+                        return;
+                    }
+
+                    urls.push(url);
+                    await saveDataToDB(dbKey, urls);
+                    addUrlToSelect(selectEl, url, true);
+                    showNotification(`${type.toUpperCase()} URL saved and selected!`);
+                    
+                    selectEl.dispatchEvent(new Event('change'));
+
+                } catch (dbError) {
+                    console.error("Failed to save custom URL:", dbError);
+                    showNotification('Error saving URL to the database.', true);
+                }
+            }
+
+
+            // --- Event Listeners ---
+            function setupEventListeners() {
+                // Main Tab Listeners
+                UIElements.tabGuide.addEventListener('click', () => switchTab('guide'));
+                UIElements.tabSettings.addEventListener('click', () => switchTab('settings'));
+                UIElements.bottomNavGuide.addEventListener('click', () => switchTab('guide'));
+                UIElements.bottomNavSettings.addEventListener('click', () => switchTab('settings'));
+
+                // Mobile Sidebar
+                UIElements.sidebarToggle.addEventListener('click', () => toggleSidebar(true));
+                UIElements.sidebarOverlay.addEventListener('click', () => toggleSidebar(false));
+
+                // Modal & Confirm Listeners
+                UIElements.confirmCancelBtn.addEventListener('click', () => { closeModal(UIElements.confirmModal); confirmCallback = null; });
+                UIElements.confirmOkBtn.addEventListener('click', () => {
+                    if (typeof confirmCallback === 'function') confirmCallback();
+                    closeModal(UIElements.confirmModal); confirmCallback = null;
+                });
+                
+                // Guide Navigation
+                UIElements.prevDayBtn.addEventListener('click', () => {
+                    guideState.currentDate.setDate(guideState.currentDate.getDate() - 1);
+                    renderGuide(undefined, false);
+                });
+                 UIElements.todayBtn.addEventListener('click', () => {
+                     guideState.currentDate = new Date();
+                    renderGuide();
+                });
+                // Jump to Now button
+                UIElements.nowBtn.addEventListener('click', () => {
+                    const guideStart = new Date(guideState.currentDate);
+                    guideStart.setHours(0, 0, 0, 0);
+                    const now = new Date();
+                    // If not on today's view, switch to it first
+                    if (guideState.currentDate.toDateString() !== now.toDateString()) {
+                        guideState.currentDate = now;
+                        renderGuide(); // This will auto-scroll to now
+                    } else {
+                        const nowOffsetMs = now - guideStart;
+                        const left = (nowOffsetMs / 3600000) * guideState.hourWidthPixels;
+                        UIElements.guideTimelineDiv.scrollTo({
+                            left: left - (UIElements.guideTimelineDiv.clientWidth / 4),
+                            behavior: 'smooth'
+                        });
+                    }
+                });
+
+                UIElements.nextDayBtn.addEventListener('click', () => {
+                    guideState.currentDate.setDate(guideState.currentDate.getDate() + 1);
+                    renderGuide(undefined, false);
+                });
+                
+                // Filtering & Enhanced Search
+                UIElements.searchInput.addEventListener('input', () => {
+                    clearTimeout(searchDebounceTimer);
+                    searchDebounceTimer = setTimeout(handleSearchAndFilter, 300);
+                });
+                 // Hide search results when clicking outside
+                document.addEventListener('click', (e) => {
+                    if (!UIElements.searchInput.contains(e.target) && !UIElements.searchResultsContainer.contains(e.target)) {
+                        UIElements.searchResultsContainer.classList.add('hidden');
+                    }
+                });
+
+                UIElements.groupFilter.addEventListener('change', handleSearchAndFilter);
+
+                // Guide Interaction
+                UIElements.channelListDiv.addEventListener('click', (e) => {
+                    const favoriteStar = e.target.closest('.favorite-star');
+                    if (favoriteStar) {
+                        toggleFavorite(favoriteStar.dataset.channelId);
+                        return;
+                    }
+                    const channelItem = e.target.closest('div[data-url]');
+                    if (channelItem) {
+                        playChannel(channelItem.dataset.url, channelItem.dataset.name, channelItem.dataset.id);
+                        toggleSidebar(false); // Close sidebar on mobile after selection
+                    }
+                });
+
+                UIElements.logoList.addEventListener('click', (e) => {
+                    const logoItem = e.target.closest('div[data-url]');
+                    if (logoItem) {
+                        playChannel(logoItem.dataset.url, logoItem.dataset.name, logoItem.dataset.id);
+                    }
+                });
+                
+                const showProgramDetails = (progItem) => {
+                    const start = new Date(progItem.dataset.progStart);
+                    const stop = new Date(progItem.dataset.progStop);
+                    UIElements.detailsTitle.textContent = progItem.dataset.progTitle;
+                    UIElements.detailsTime.textContent = `${start.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} - ${stop.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`;
+                    UIElements.detailsDesc.textContent = progItem.dataset.progDesc || "No description available.";
+                    UIElements.detailsPlayBtn.onclick = () => {
+                        playChannel(progItem.dataset.channelUrl, `${progItem.dataset.channelName} - ${progItem.dataset.progTitle}`, progItem.dataset.channelId);
+                        closeModal(UIElements.programDetailsModal);
+                    };
+                    openModal(UIElements.programDetailsModal);
+                }
+
+                UIElements.guideTimelineDiv.addEventListener('click', (e) => {
+                    const progItem = e.target.closest('.programme-item');
+                    if (progItem) {
+                       showProgramDetails(progItem);
+                    }
+                });
+
+                // Delegate clicks from search results container
+                 UIElements.searchResultsContainer.addEventListener('click', (e) => {
+                     const progItemData = e.target.closest('.search-result-program');
+                     if (progItemData) {
+                         const programStartTimeStr = progItemData.dataset.progStart;
+                         const channelId = progItemData.dataset.channelId;
+                         jumpToProgram(programStartTimeStr, channelId);
+                         UIElements.searchResultsContainer.classList.add('hidden');
+                         UIElements.searchInput.value = ''; // Clear search after jumping
+                     }
+                 });
+                
+                UIElements.detailsCloseBtn.addEventListener('click', () => closeModal(UIElements.programDetailsModal));
+
+                // Video Player
+                UIElements.closeModalBtn.addEventListener('click', () => {
+                    // MODIFIED: Check for PiP mode before closing.
+                    if (document.pictureInPictureElement === UIElements.videoElement) {
+                        // If in PiP, just hide the modal. The player keeps running in the PiP window.
+                        closeModal(UIElements.videoModal);
+                    } else {
+                        // If not in PiP, stop the player completely and then close the modal.
+                        stopAndCleanupPlayer();
+                        closeModal(UIElements.videoModal);
+                    }
+                });
+                
+                UIElements.pipBtn.addEventListener('click', async () => {
+                    try {
+                        if (document.pictureInPictureElement) {
+                            await document.exitPictureInPicture();
+                        } else if (document.pictureInPictureEnabled && UIElements.videoElement.readyState === 4) {
+                            await UIElements.videoElement.requestPictureInPicture();
+                            // When PiP is successfully entered, close the main modal.
+                            closeModal(UIElements.videoModal);
+                        }
+                    } catch(error) {
+                        console.error("PiP Error:", error);
+                        showNotification("Picture-in-Picture failed.", true);
+                    }
+                });
+                
+                // NEW: Listen for when the user closes the PiP window directly.
+                UIElements.videoElement.addEventListener('leavepictureinpicture', () => {
+                    // This event fires when PiP is exited for any reason (e.g., user closes the PiP window).
+                    // We must clean up the player to stop the stream from running in the background.
+                    stopAndCleanupPlayer();
+                });
+
+                UIElements.videoElement.addEventListener('volumechange', () => { localStorage.setItem('iptvPlayerVolume', UIElements.videoElement.volume); });
+
+                // Settings Page Actions
+                UIElements.loadGuideBtn.addEventListener('click', async () => {
+                    setButtonLoadingState(true);
+                    const getData = async (type) => {
+                        const isUrl = document.getElementById(`${type}-tab-url`).classList.contains('active');
+                        if (isUrl) {
+                            let url = document.getElementById(`${type}-url-select`).value;
+                            if (url === 'custom') url = document.getElementById(`${type}-url-input`).value.trim();
+                            if (!url) return null;
+                            try {
+                                // Backend handles CORS, so no proxy needed here
+                                const response = await fetch(url);
+                                if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+                                const content = await response.text();
+                                await saveDataToDB(`last${type.charAt(0).toUpperCase() + type.slice(1)}Url`, url);
+                                return content;
+                            } catch (error) {
+                                showNotification(`Failed to fetch ${type.toUpperCase()} from URL. Check if the URL is correct.`, true);
+                                throw error;
+                            }
+                        } else {
+                            const file = document.getElementById(`${type}-upload`).files[0];
+                            if (!file) return null;
+                            return await file.text();
+                        }
+                    };
+                    try {
+                        const [m3uContent, epgContent] = await Promise.all([getData('m3u'), getData('epg')]);
+                        if (!m3uContent) { 
+                            showNotification('Please select an M3U source.', true); 
+                            setButtonLoadingState(false);
+                            return; 
+                        }
+                        if (await handleGuideLoad(m3uContent, epgContent)) {
+                            switchTab('guide');
+                            await saveDataToDB('parsedChannels', guideState.channels);
+                            await saveDataToDB('parsedPrograms', guideState.programs);
+                            showNotification('Guide data loaded and cached!');
+                        }
+                    } catch (error) { 
+                        console.error("Error loading guide data:", error); 
+                    } finally { 
+                        setButtonLoadingState(false); 
+                    }
+                });
+                
+                UIElements.autoRefreshSelect.addEventListener('change', async (e) => {
+                    const hours = parseInt(e.target.value, 10);
+                    setupAutoRefresh(hours);
+                    await saveDataToDB('autoRefresh', hours);
+                    showNotification(hours > 0 ? `Auto-refresh set to every ${hours} hours.` : 'Auto-refresh disabled.');
+                });
+                
+                // Timezone setting listener
+                UIElements.timezoneOffsetSelect.addEventListener('change', async (e) => {
+                    const offset = parseInt(e.target.value, 10);
+                    guideState.timezoneOffset = offset;
+                    await saveDataToDB('timezoneOffset', offset);
+                    showNotification(`Timezone offset set to UTC${offset >= 0 ? '+' : ''}${offset}. Reload guide data to apply.`);
+                });
+                
+                UIElements.clearDataBtn.addEventListener('click', () => {
+                    showConfirm('Clear All Data?', 'This will permanently delete ALL settings and saved URLs. The page will reload.', async () => {
+                        try {
+                            await clearDB();
+                            localStorage.removeItem('iptvPlayerVolume');
+                            showNotification('All data cleared. Reloading...');
+                            setTimeout(() => window.location.reload(), 1500);
+                        } catch (e) { showNotification('Could not clear saved data.', true); }
+                    });
+                });
+
+                // URL saving listeners
+                UIElements.saveM3uUrlBtn.addEventListener('click', () => saveCustomUrl('m3u', UIElements.m3uUrlSelect, UIElements.m3uUrlInput));
+                UIElements.saveEpgUrlBtn.addEventListener('click', () => saveCustomUrl('epg', UIElements.epgUrlSelect, UIElements.epgUrlInput));
+
+                // Synced Scrolling
+                let ignoreChannelScroll = false, ignoreTimelineScroll = false, ignoreLogoScroll = false;
+                UIElements.guideTimelineDiv.addEventListener('scroll', (e) => {
+                    // Horizontal scroll
+                    UIElements.timeBarDiv.scrollLeft = e.target.scrollLeft;
+                    // Vertical scroll
+                    if (ignoreTimelineScroll) { ignoreTimelineScroll = false; return; }
+                    ignoreChannelScroll = true;
+                    ignoreLogoScroll = true;
+                    UIElements.channelListDiv.scrollTop = e.target.scrollTop;
+                    UIElements.logoList.scrollTop = e.target.scrollTop;
+                });
+                UIElements.channelListDiv.addEventListener('scroll', (e) => {
+                    if (ignoreChannelScroll) { ignoreChannelScroll = false; return; }
+                    ignoreTimelineScroll = true;
+                    ignoreLogoScroll = true;
+                    UIElements.guideTimelineDiv.scrollTop = e.target.scrollTop;
+                    UIElements.logoList.scrollTop = e.target.scrollTop;
+                });
+                 UIElements.logoList.addEventListener('scroll', (e) => {
+                     if (ignoreLogoScroll) { ignoreLogoScroll = false; return; }
+                    ignoreTimelineScroll = true;
+                    ignoreChannelScroll = true;
+                    UIElements.guideTimelineDiv.scrollTop = e.target.scrollTop;
+                    UIElements.channelListDiv.scrollTop = e.target.scrollTop;
+                });
+
+
+                // Panel Resizing for Desktop
+                UIElements.resizer.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    const startX = e.clientX, startWidth = UIElements.channelPanelContainer.offsetWidth;
+                    const doResize = (e) => {
+                        const newWidth = startWidth + e.clientX - startX;
+                        if (newWidth >= 250 && newWidth <= window.innerWidth * 0.5) {
+                            UIElements.channelPanelContainer.style.flexBasis = newWidth + 'px';
+                        }
+                    };
+                    const stopResize = () => { window.removeEventListener('mousemove', doResize); window.removeEventListener('mouseup', stopResize); };
+                    window.addEventListener('mousemove', doResize);
+                    window.addEventListener('mouseup', stopResize);
+                }, false);
+            }
+
+            // Enhanced Search and Filter Handler
+            function handleSearchAndFilter() {
+                const searchTerm = UIElements.searchInput.value.toLowerCase().trim();
+                const selectedGroup = UIElements.groupFilter.value;
+                let filteredChannels = guideState.channels;
+
+                // 1. Filter by Group
+                if (selectedGroup !== 'all') {
+                    if (selectedGroup === 'favorites') {
+                        filteredChannels = filteredChannels.filter(ch => ch.isFavorite);
+                    } else if (selectedGroup === 'recents') {
+                        // Order by most recent
+                        filteredChannels = guideState.recentChannels
+                            .map(id => guideState.channels.find(ch => ch.id === id))
+                            .filter(Boolean); // remove undefined if a channel was deleted
+                    } else {
+                        filteredChannels = filteredChannels.filter(ch => ch.group === selectedGroup);
+                    }
+                }
+                
+                UIElements.searchResultsContainer.innerHTML = '';
+
+                // 2. Filter by Search Term
+                if (searchTerm) {
+                    // Filter the already group-filtered channels list
+                    const matchingChannels = filteredChannels.filter(ch => (ch.displayName || ch.name).toLowerCase().includes(searchTerm));
+                    renderGuide(matchingChannels, false);
+
+                    // Now, search for programs across ALL channels
+                    const programResults = [];
+                    const guideStart = new Date(guideState.currentDate);
+                    guideStart.setHours(0, 0, 0, 0);
+                    const guideEnd = new Date(guideStart.getTime() + guideState.guideDurationHours * 3600 * 1000);
+
+                    for (const channel of guideState.channels) {
+                        const programs = guideState.programs[channel.id] || [];
+                        for (const prog of programs) {
+                            if (prog.stop < guideStart || prog.start > guideEnd) continue; // Only search in current view
+                            if (prog.title.toLowerCase().includes(searchTerm) || (prog.desc && prog.desc.toLowerCase().includes(searchTerm))) {
+                                programResults.push({ channel, program: prog });
+                                if (programResults.length >= 50) break; // Limit results
+                            }
+                        }
+                        if (programResults.length >= 50) break;
+                    }
+
+                    if (programResults.length > 0) {
+                        const resultsHeader = `<div class="p-2 bg-gray-700 text-xs font-bold text-gray-400">PROGRAM RESULTS</div>`;
+                        const resultsHTML = programResults.map(({ channel, program }) => `
+                            <div class="search-result-program p-3 border-b border-gray-700 hover:bg-gray-700 cursor-pointer" 
+                                 data-channel-url="${channel.url}" data-channel-id="${channel.id}" data-channel-name="${channel.name}" 
+                                 data-prog-title="${program.title}" data-prog-desc="${program.desc}"
+                                 data-prog-start="${program.start.toISOString()}" data-prog-stop="${program.stop.toISOString()}">
+                                <p class="font-semibold text-white text-sm truncate">${program.title}</p>
+                                <p class="text-gray-400 text-xs truncate">${channel.name}</p>
+                            </div>
+                        `).join('');
+                        UIElements.searchResultsContainer.innerHTML = resultsHeader + resultsHTML;
+                        UIElements.searchResultsContainer.classList.remove('hidden');
+                    } else {
+                         UIElements.searchResultsContainer.classList.add('hidden');
+                    }
+
+                } else {
+                    // No search term, just render the group-filtered list
+                    renderGuide(filteredChannels, false);
+                    UIElements.searchResultsContainer.classList.add('hidden');
+                }
+            }
+
+
+            // --- App Initialization ---
+            async function initApp() {
+                try {
+                    await initDB();
+                    const blob = new Blob([document.querySelector('#parser-worker').textContent], { type: 'text/javascript' });
+                    worker = new Worker(window.URL.createObjectURL(blob));
+
+                    const [
+                        loadedChannels, loadedPrograms, favorites, autoRefresh,
+                        customM3uUrls, customEpgUrls, lastM3uUrl, lastEpgUrl,
+                        recentChannels, timezoneOffset
+                    ] = await Promise.all([
+                        loadDataFromDB('parsedChannels'), loadDataFromDB('parsedPrograms'),
+                        loadDataFromDB('favorites'), loadDataFromDB('autoRefresh'),
+                        loadDataFromDB('customM3uUrls'), loadDataFromDB('customEpgUrls'),
+                        loadDataFromDB('lastM3uUrl'), loadDataFromDB('lastEpgUrl'),
+                        loadDataFromDB('recentChannels'), loadDataFromDB('timezoneOffset')
+                    ]);
+                    
+                    // Populate custom URLs
+                    if(customM3uUrls) customM3uUrls.forEach(url => addUrlToSelect(UIElements.m3uUrlSelect, url, false));
+                    if(customEpgUrls) customEpgUrls.forEach(url => addUrlToSelect(UIElements.epgUrlSelect, url, false));
+                    
+                    // Restore last used URLs and trigger UI updates
+                    if(lastM3uUrl && [...UIElements.m3uUrlSelect.options].some(o => o.value === lastM3uUrl)) UIElements.m3uUrlSelect.value = lastM3uUrl;
+                    UIElements.m3uUrlSelect.dispatchEvent(new Event('change'));
+                    
+                    if(lastEpgUrl && [...UIElements.epgUrlSelect.options].some(o => o.value === lastEpgUrl)) UIElements.epgUrlSelect.value = lastEpgUrl;
+                    UIElements.epgUrlSelect.dispatchEvent(new Event('change'));
+
+                    guideState.favorites = favorites || [];
+                    guideState.recentChannels = recentChannels || [];
+                    
+                    // MODIFIED: Detect browser timezone as a default
+                    const browserTimezoneOffsetHours = - (new Date().getTimezoneOffset() / 60);
+                    // Use the saved offset if it exists, otherwise use the detected browser offset.
+                    guideState.timezoneOffset = (timezoneOffset !== null && typeof timezoneOffset !== 'undefined')
+                        ? timezoneOffset
+                        : Math.round(browserTimezoneOffsetHours);
+
+                    populateTimezoneSelector();
+                    
+                    const refreshHours = autoRefresh || 0;
+                    UIElements.autoRefreshSelect.value = refreshHours;
+                    setupAutoRefresh(refreshHours);
+                    
+                    if (loadedChannels && loadedChannels.length > 0) {
+                        showNotification("Loading cached guide...");
+                        setButtonLoadingState(true);
+                        
+                        guideState.channels = loadedChannels;
+                        // For programs, we need to re-parse Date objects from ISO strings
+                        const parsedPrograms = loadedPrograms || {};
+                        for (const chId in parsedPrograms) {
+                            guideState.programs[chId] = parsedPrograms[chId].map(p => ({
+                                ...p,
+                                start: new Date(p.start),
+                                stop: new Date(p.stop)
+                            }));
+                        }
+                        
+                        // Re-apply favorite status from saved favorites
+                        guideState.channels.forEach(channel => {
+                            channel.isFavorite = guideState.favorites.includes(channel.id);
+                        });
+
+                        // Render the guide directly from cached data
+                        finalizeGuideLoad();
+                        switchTab('guide');
+                        setButtonLoadingState(false);
+                    } else {
+                        switchTab('settings');
+                    }
+                } catch (e) {
+                    showNotification("Initialization failed. Could not load saved data.", true);
+                    console.error("Initialization failed:", e);
+                    switchTab('settings');
+                }
+                setupDataSourceTabs();
+                setupEventListeners();
+            }
+            
+            initApp();
+        });
+    </script>
+</body>
+</html>
