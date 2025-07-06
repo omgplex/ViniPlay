@@ -1,0 +1,42 @@
+# This is a basic workflow to help you get started with Actions
+name: Build and Push Docker Image to GHCR
+
+# Controls when the workflow will run
+on:
+  # Triggers the workflow on push events but only for the "main" branch
+  push:
+    branches: [ "main" ]
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    # Grant the GITHUB_TOKEN permissions to write to packages
+    permissions:
+      contents: read
+      packages: write
+      
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # Logs into the GitHub Container Registry (GHCR)
+      # The GITHUB_TOKEN is automatically created and passed by GitHub Actions.
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # This step builds the image and pushes it to GHCR.
+      # The image will be tagged with the repository name and 'latest'.
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}:latest
+
