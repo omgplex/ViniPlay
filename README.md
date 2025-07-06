@@ -1,13 +1,13 @@
 <div align="center">
 
-# ARDO IPTV Player
+# ViniPlay
 
 A simple, self-hosted IPTV player with a clean web interface and powerful backend transcoding using FFMPEG.
 
 <p>
     <img src="https://img.shields.io/badge/docker-ready-blue.svg?style=for-the-badge&logo=docker" alt="Docker Ready">
     <img src="https://img.shields.io/badge/platform-node-green.svg?style=for-the-badge&logo=node.js" alt="Node.js Backend">
-    <img src="https://img.shields.io/github/license/YOUR_GITHUB_USERNAME/ardo-iptv-player?style=for-the-badge" alt="License">
+    <img src="https://img.shields.io/github/license/YOUR_GITHUB_USERNAME/viniplay?style=for-the-badge" alt="License">
 </p>
 
 </div>
@@ -53,14 +53,14 @@ This application is distributed as a Docker image. To run it, you will need [Doc
 
     Pull the latest version of the player from the GitHub Container Registry.
     ```bash
-    docker pull ghcr.io/YOUR_GITHUB_USERNAME/ardo-iptv-player:latest
+    docker pull ghcr.io/YOUR_GITHUB_USERNAME/viniplay:latest
     ```
 
 3.  **Run the Container**
 
     Start the container, mapping port `8998` to your host machine.
     ```bash
-    docker run -d -p 8998:8998 --name ardovini_tvplayer ghcr.io/YOUR_GITHUB_USERNAME/ardo-iptv-player:latest
+    docker run -d -p 8998:8998 --name viniplay ghcr.io/YOUR_GITHUB_USERNAME/viniplay:latest
     ```
 
 Remember to replace **YOUR_GITHUB_USERNAME** in the commands above with your actual GitHub username.
