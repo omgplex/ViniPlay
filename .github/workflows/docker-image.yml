@@ -31,13 +31,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # This new step reliably converts the repository name to lowercase
+      # using a standard shell command and saves it as an output.
+      - name: Prepare repository name
+        id: prep
+        run: echo "repo_name=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+      
       # This step builds the image and pushes it to GHCR.
-      # The 'toLower()' function ensures the repository name is all lowercase,
-      # which is required by Docker for image tags.
+      # It now uses the output from the 'prep' step for the tag.
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ toLower(github.repository) }}:latest
+          tags: ghcr.io/${{ steps.prep.outputs.repo_name }}:latest
 
