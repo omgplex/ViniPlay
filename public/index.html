@@ -323,6 +323,7 @@
     
     <script>
         document.addEventListener('DOMContentLoaded', () => {
+            // --- Global State & Configuration ---
             const guideState = {
                 channels: [],
                 programs: {},
@@ -335,6 +336,7 @@
             let player, worker, autoRefreshIntervalId, searchDebounceTimer;
             let confirmCallback = null;
             
+            // A helper to quickly grab all UI elements with an ID
             const UIElements = Object.fromEntries(
                 [...document.querySelectorAll('[id]')].map(el => [
                     el.id.replace(/-(\w)/g, (match, letter) => letter.toUpperCase()), 
@@ -342,7 +344,7 @@
                 ])
             );
 
-            // --- Server Communication & State ---
+            // --- Server Communication ---
             async function saveSettings() {
                 try {
                     await fetch('/api/save/settings', {
@@ -356,7 +358,7 @@
                 }
             }
             
-            // --- UI Functions ---
+            // --- UI Helper Functions ---
             const showNotification = (message, isError = false, duration = 3000) => {
                 UIElements.notificationMessage.textContent = message;
                 UIElements.notificationModal.className = `fixed top-5 right-5 text-white py-2 px-4 rounded-lg shadow-lg z-[100] ${isError ? 'bg-red-500' : 'bg-green-500'}`;
@@ -379,6 +381,7 @@
                 modal.classList.replace('flex', 'hidden');
                 if (!document.querySelector('.fixed.inset-0.flex')) document.body.classList.remove('modal-open');
             };
+            
             const showConfirm = (title, message, callback) => {
                 UIElements.confirmTitle.textContent = title;
                 UIElements.confirmMessage.textContent = message;
@@ -389,6 +392,22 @@
             const toggleSidebar = (show) => {
                  UIElements.sidebarOverlay.classList.toggle('hidden', !show);
                  UIElements.channelPanelContainer.classList.toggle('-translate-x-full', !show);
+            };
+
+            // --- FIX: New helper functions for direct UI manipulation on settings page ---
+            const setDataSourceTab = (type, source) => {
+                const isFile = source === 'file';
+                UIElements[`${type}TabFile`].classList.toggle('active', isFile);
+                UIElements[`${type}TabUrl`].classList.toggle('active', !isFile);
+                UIElements[`${type}ContentFile`].classList.toggle('hidden', !isFile);
+                UIElements[`${type}ContentUrl`].classList.toggle('hidden', isFile);
+            };
+
+            const updateCustomUrlVisibility = (type) => {
+                const selectEl = UIElements[`${type}UrlSelect`];
+                const customContainer = UIElements[`${type}CustomContainer`];
+                const isCustom = selectEl.value === 'custom';
+                customContainer.classList.toggle('hidden', !isCustom);
             };
             
             // --- Main Application Logic ---
@@ -405,15 +424,15 @@
                     guideState.channels = [];
                     guideState.programs = {};
                     finalizeGuideLoad();
-                    return resolve(true);
+                    return resolve();
                 }
                 let m3uParsed = false;
                 let epgParsed = !epgContent;
                 const checkCompletion = () => {
-                    if (m3uParsed && epgParsed) { finalizeGuideLoad(); resolve(true); worker.onmessage = null; }
+                    if (m3uParsed && epgParsed) { finalizeGuideLoad(); resolve(); worker.onmessage = null; }
                 };
                 worker.onmessage = ({ data: { type, data, error } }) => {
-                    if (error) { reject(error); worker.onmessage = null; return; }
+                    if (error) { reject(new Error(error)); worker.onmessage = null; return; }
                     if (type === 'm3u-success') {
                         guideState.channels = data;
                         (guideState.settings.favorites || []).forEach(favId => {
@@ -455,9 +474,9 @@
                 ['channelPanelContainer', 'resizer', 'logoColumn', 'timelineContainer'].forEach(id => UIElements[id].classList.toggle('hidden', showPlaceholder));
                 if (showPlaceholder) return;
                 
-                const currentScrollTop = UIElements.channelListDiv.scrollTop;
-                ['channelList', 'logoList', 'guideTimelineDiv', 'timeBarDiv'].forEach(id => UIElements[id].innerHTML = '');
-                UIElements.guideTimelineDiv.innerHTML = '<div id="now-line" class="absolute top-0 bottom-0 bg-red-500 w-0.5 z-20 hidden"></div>';
+                const currentScrollTop = UIElements.channelList.scrollTop;
+                ['channelList', 'logoList', 'guideTimeline', 'timeBar'].forEach(id => UIElements[id].innerHTML = '');
+                UIElements.guideTimeline.innerHTML = '<div id="now-line" class="absolute top-0 bottom-0 bg-red-500 w-0.5 z-20 hidden"></div>';
                 
                 UIElements.guideDateDisplay.textContent = guideState.currentDate.toLocaleDateString([], { weekday: 'short', month: 'long', day: 'numeric' });
                 const timeBarContent = document.createElement('div');
@@ -469,13 +488,13 @@
                     const time = new Date(guideStart); time.setHours(guideStart.getHours() + i);
                     timeBarContent.innerHTML += `<div class="absolute top-0 bottom-0 flex items-center justify-start px-2 text-xs text-gray-400 border-r border-gray-700/50" style="left: ${i * guideState.hourWidthPixels}px; width: ${guideState.hourWidthPixels}px;">${time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>`;
                 }
-                UIElements.timeBarDiv.appendChild(timeBarContent);
+                UIElements.timeBar.appendChild(timeBarContent);
                 
                 const now = new Date();
                 const guideEnd = new Date(guideStart.getTime() + guideState.guideDurationHours * 3600 * 1000);
                 let channelRowsHTML = '';
                 channelsToRender.forEach(channel => {
-                    UIElements.channelListDiv.innerHTML += `<div class="h-20 flex items-center justify-between p-2 border-b border-gray-700/50 flex-shrink-0"><div class="flex items-center overflow-hidden cursor-pointer flex-grow min-w-0" data-url="${channel.url}" data-name="${channel.displayName || channel.name}" data-id="${channel.id}"><img src="${channel.logo}" onerror="this.onerror=null; this.src='https://placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-3 flex-shrink-0 rounded-md bg-gray-700"><span class="font-semibold text-sm truncate">${channel.displayName || channel.name}</span></div><svg data-channel-id="${channel.id}" class="w-6 h-6 text-gray-500 hover:text-yellow-400 favorite-star cursor-pointer flex-shrink-0 ml-2 ${channel.isFavorite ? 'favorited' : ''}" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg></div>`;
+                    UIElements.channelList.innerHTML += `<div class="h-20 flex items-center justify-between p-2 border-b border-gray-700/50 flex-shrink-0"><div class="flex items-center overflow-hidden cursor-pointer flex-grow min-w-0" data-url="${channel.url}" data-name="${channel.displayName || channel.name}" data-id="${channel.id}"><img src="${channel.logo}" onerror="this.onerror=null; this.src='https://placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-3 flex-shrink-0 rounded-md bg-gray-700"><span class="font-semibold text-sm truncate">${channel.displayName || channel.name}</span></div><svg data-channel-id="${channel.id}" class="w-6 h-6 text-gray-500 hover:text-yellow-400 favorite-star cursor-pointer flex-shrink-0 ml-2 ${channel.isFavorite ? 'favorited' : ''}" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg></div>`;
                     UIElements.logoList.innerHTML += `<div class="h-20 flex items-center justify-center p-1 border-b border-gray-700/50 flex-shrink-0 cursor-pointer" data-url="${channel.url}" data-name="${channel.displayName || channel.name}" data-id="${channel.id}"><img src="${channel.logo}" onerror="this.onerror=null; this.src='https://placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-14 h-14 object-contain pointer-events-none"></div>`;
                     let programsHTML = '';
                     (guideState.programs[channel.id] || []).forEach(prog => {
@@ -492,13 +511,13 @@
                     });
                     channelRowsHTML += `<div class="h-20 border-b border-gray-700/50 relative">${programsHTML}</div>`;
                 });
-                UIElements.guideTimelineDiv.insertAdjacentHTML('beforeend', channelRowsHTML);
+                UIElements.guideTimeline.insertAdjacentHTML('beforeend', channelRowsHTML);
                 
                 const totalGuideHeight = channelsToRender.length * 80;
                 setTimeout(() => {
-                    UIElements.channelListDiv.scrollTop = resetScroll ? 0 : currentScrollTop;
-                    UIElements.guideTimelineDiv.scrollTop = UIElements.channelListDiv.scrollTop;
-                    UIElements.logoList.scrollTop = UIElements.channelListDiv.scrollTop;
+                    UIElements.channelList.scrollTop = resetScroll ? 0 : currentScrollTop;
+                    UIElements.guideTimeline.scrollTop = UIElements.channelList.scrollTop;
+                    UIElements.logoList.scrollTop = UIElements.channelList.scrollTop;
                     updateNowLine(guideStart, resetScroll, totalGuideHeight);
                 }, 0);
             };
@@ -513,7 +532,7 @@
                     const left = ((now - guideStart) / 3600000) * guideState.hourWidthPixels;
                     nowLineEl.style.left = `${left}px`;
                     nowLineEl.classList.remove('hidden');
-                    if (shouldScroll) UIElements.guideTimelineDiv.scrollLeft = left - (UIElements.guideTimelineDiv.clientWidth / 4);
+                    if (shouldScroll) UIElements.guideTimeline.scrollLeft = left - (UIElements.guideTimeline.clientWidth / 4);
                 } else {
                     nowLineEl.classList.add('hidden');
                 }
@@ -534,6 +553,7 @@
                 UIElements.videoElement.removeAttribute('src');
                 UIElements.videoElement.load();
                 if (document.pictureInPictureElement) document.exitPictureInPicture().catch(console.error);
+                closeModal(UIElements.videoModal);
             };
 
             const playChannel = async (url, name, channelId) => {
@@ -551,7 +571,6 @@
                     UIElements.videoElement.volume = parseFloat(localStorage.getItem('iptvPlayerVolume') || 0.5);
                     player.play().catch(() => {
                         showNotification("Could not play stream. Check server logs.", true);
-                        closeModal(UIElements.videoModal);
                         stopAndCleanupPlayer();
                     });
                 } else {
@@ -597,9 +616,10 @@
                     const result = await response.json();
                     if (!response.ok) throw new Error(result.error);
                     
-                    addUrlToSelect(UIElements[`${type}UrlSelect`], url, true);
-                    UIElements[`${type}UrlSelect`].dispatchEvent(new Event('change'));
+                    guideState.settings = result.settings; // Update local settings with the server's response
+                    updateUIFromSettings(); // Re-render the UI based on the new settings
                     showNotification(`${type.toUpperCase()} URL saved and selected.`);
+
                 } catch (e) {
                     showNotification(`Error: ${e.message}`, true);
                 }
@@ -616,7 +636,7 @@
                     } else if (selectedGroup === 'recents') {
                         filteredChannels = (guideState.settings.recentChannels || [])
                             .map(id => guideState.channels.find(ch => ch.id === id))
-                            .filter(Boolean);
+                            .filter(Boolean); // Filter out undefined if a channel was deleted
                     } else {
                         filteredChannels = filteredChannels.filter(ch => ch.group === selectedGroup);
                     }
@@ -681,15 +701,19 @@
                 UIElements.confirmCancelBtn.addEventListener('click', () => closeModal(UIElements.confirmModal));
                 UIElements.confirmOkBtn.addEventListener('click', () => { if (confirmCallback) confirmCallback(); closeModal(UIElements.confirmModal); });
                 UIElements.detailsCloseBtn.addEventListener('click', () => closeModal(UIElements.programDetailsModal));
-                UIElements.closeModalBtn.addEventListener('click', () => document.pictureInPictureElement ? closeModal(UIElements.videoModal) : stopAndCleanupPlayer());
-                UIElements.pipBtn.addEventListener('click', () => UIElements.videoElement.requestPictureInPicture().catch(console.error));
+                UIElements.closeModal.addEventListener('click', () => document.pictureInPictureElement ? closeModal(UIElements.videoModal) : stopAndCleanupPlayer());
+                UIElements.pipBtn.addEventListener('click', () => {
+                    if(document.pictureInPictureEnabled && UIElements.videoElement.readyState === 4) {
+                        UIElements.videoElement.requestPictureInPicture().catch(console.error);
+                    }
+                });
                 UIElements.videoElement.addEventListener('leavepictureinpicture', stopAndCleanupPlayer);
                 UIElements.videoElement.addEventListener('volumechange', () => localStorage.setItem('iptvPlayerVolume', UIElements.videoElement.volume));
 
                 // Guide Interaction
                 UIElements.sidebarToggle.addEventListener('click', () => toggleSidebar(true));
                 UIElements.sidebarOverlay.addEventListener('click', () => toggleSidebar(false));
-                UIElements.channelListDiv.addEventListener('click', (e) => {
+                UIElements.channelList.addEventListener('click', async (e) => {
                     const favoriteStar = e.target.closest('.favorite-star');
                     if (favoriteStar) {
                         const channelId = favoriteStar.dataset.channelId;
@@ -698,7 +722,7 @@
                         channel.isFavorite = !channel.isFavorite;
                         favoriteStar.classList.toggle('favorited', channel.isFavorite);
                         guideState.settings.favorites = guideState.channels.filter(c => c.isFavorite).map(c => c.id);
-                        saveSettings();
+                        await saveSettings();
                         if (UIElements.groupFilter.value === 'favorites') handleSearchAndFilter();
                         return;
                     }
@@ -709,11 +733,13 @@
                     }
                 });
                 
-                UIElements.guideTimelineDiv.addEventListener('click', (e) => {
+                UIElements.guideTimeline.addEventListener('click', (e) => {
                     const progItem = e.target.closest('.programme-item');
                     if (!progItem) return;
                     UIElements.detailsTitle.textContent = progItem.dataset.progTitle;
-                    UIElements.detailsTime.textContent = `${new Date(progItem.dataset.progStart).toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})} - ${new Date(progItem.dataset.progStop).toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})}`;
+                    const progStart = new Date(progItem.dataset.progStart);
+                    const progStop = new Date(progItem.dataset.progStop);
+                    UIElements.detailsTime.textContent = `${progStart.toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})}`;
                     UIElements.detailsDesc.textContent = progItem.dataset.progDesc || "No description available.";
                     UIElements.detailsPlayBtn.onclick = () => {
                         playChannel(progItem.dataset.channelUrl, `${progItem.dataset.channelName} - ${progItem.dataset.progTitle}`, progItem.dataset.channelId);
@@ -725,13 +751,16 @@
                 UIElements.searchResultsContainer.addEventListener('click', e => {
                     const progItemData = e.target.closest('.search-result-program');
                     if (progItemData) {
-                        guideState.currentDate = new Date(progItemData.dataset.progStart);
+                        const progStart = new Date(progItemData.dataset.progStart);
+                        guideState.currentDate = progStart;
                         renderGuide(guideState.channels, false); 
                         setTimeout(() => {
+                            const guideStartTime = new Date(guideState.currentDate);
+                            guideStartTime.setHours(0,0,0,0);
                             const channelIndex = guideState.channels.findIndex(ch => ch.id === progItemData.dataset.channelId);
                             if (channelIndex === -1) return;
-                            const hScroll = ((new Date(progItemData.dataset.progStart) - guideStart) / 3600000) * guideState.hourWidthPixels;
-                            UIElements.guideTimelineDiv.scrollTo({ top: channelIndex * 80, left: hScroll, behavior: 'smooth' });
+                            const hScroll = ((progStart - guideStartTime) / 3600000) * guideState.hourWidthPixels;
+                            UIElements.guideTimeline.scrollTo({ top: channelIndex * 80, left: hScroll - (UIElements.guideTimeline.clientWidth / 4), behavior: 'smooth' });
                         }, 150);
                         UIElements.searchResultsContainer.classList.add('hidden');
                         UIElements.searchInput.value = '';
@@ -742,72 +771,98 @@
                 UIElements.prevDayBtn.addEventListener('click', () => { guideState.currentDate.setDate(guideState.currentDate.getDate() - 1); renderGuide(undefined, false); });
                 UIElements.todayBtn.addEventListener('click', () => { guideState.currentDate = new Date(); renderGuide(); });
                 UIElements.nowBtn.addEventListener('click', () => {
-                    if (guideState.currentDate.toDateString() !== new Date().toDateString()) {
-                        guideState.currentDate = new Date();
-                        renderGuide();
+                    const now = new Date();
+                    if (guideState.currentDate.toDateString() !== now.toDateString()) {
+                        guideState.currentDate = now;
+                        renderGuide(); // will auto-scroll
                     } else {
                         const guideStart = new Date(guideState.currentDate); guideStart.setHours(0,0,0,0);
-                        UIElements.guideTimelineDiv.scrollTo({ left: ((new Date() - guideStart) / 3600000) * guideState.hourWidthPixels - (UIElements.guideTimelineDiv.clientWidth / 4), behavior: 'smooth' });
+                        UIElements.guideTimeline.scrollTo({ left: ((now - guideStart) / 3600000) * guideState.hourWidthPixels - (UIElements.guideTimeline.clientWidth / 4), behavior: 'smooth' });
                     }
                 });
                 UIElements.nextDayBtn.addEventListener('click', () => { guideState.currentDate.setDate(guideState.currentDate.getDate() + 1); renderGuide(undefined, false); });
 
-                // Settings Page
+                // --- FIX: Re-written Settings Page Listeners ---
                 ['m3u', 'epg'].forEach(type => {
-                    const selectEl = UIElements[`${type}UrlSelect`], customContainer = UIElements[`${type}CustomContainer`], inputEl = UIElements[`${type}UrlInput`];
-                    UIElements[`${type}TabFile`].addEventListener('click', () => { guideState.settings[`${type}SourceType`] = 'file'; updateUIFromSettings(); });
-                    UIElements[`${type}TabUrl`].addEventListener('click', () => { guideState.settings[`${type}SourceType`] = 'url'; updateUIFromSettings(); });
-                    selectEl.addEventListener('change', () => {
-                        const isCustom = selectEl.value === 'custom';
-                        customContainer.classList.toggle('hidden', !isCustom);
-                        if (!isCustom) {
-                             inputEl.value = selectEl.value;
-                             guideState.settings[`${type}Url`] = selectEl.value;
-                             saveSettings();
-                        }
+                    // Event listener for the "From File" tab button.
+                    UIElements[`${type}TabFile`].addEventListener('click', () => {
+                        setDataSourceTab(type, 'file'); // Directly update the UI
+                        guideState.settings[`${type}SourceType`] = 'file'; // Update state
+                        saveSettings(); // Save state to server in the background
                     });
+
+                    // Event listener for the "From URL" tab button.
+                    UIElements[`${type}TabUrl`].addEventListener('click', () => {
+                        setDataSourceTab(type, 'url'); // Directly update the UI
+                        guideState.settings[`${type}SourceType`] = 'url'; // Update state
+                        saveSettings(); // Save state to server in the background
+                    });
+
+                    // Event listener for the URL dropdown selection.
+                    UIElements[`${type}UrlSelect`].addEventListener('change', () => {
+                        updateCustomUrlVisibility(type); // Show/hide custom input
+                        const selectedUrl = UIElements[`${type}UrlSelect`].value;
+                        if (selectedUrl !== 'custom') {
+                            guideState.settings[`${type}Url`] = selectedUrl;
+                            UIElements[`${type}UrlInput`].value = selectedUrl;
+                        } else {
+                            // If user selects "Custom URL...", clear the setting
+                            guideState.settings[`${type}Url`] = '';
+                            UIElements[`${type}UrlInput`].value = '';
+                        }
+                        saveSettings(); // Save the change
+                    });
+
+                    // Event listener for the "Save" button for custom URLs.
                     UIElements[`save${type.charAt(0).toUpperCase() + type.slice(1)}UrlBtn`].addEventListener('click', () => saveCustomUrl(type));
                 });
                 
                 UIElements.loadGuideBtn.addEventListener('click', async () => {
                     setButtonLoadingState(true);
                     try {
-                        const m3uIsUrl = guideState.settings.m3uSourceType === 'url';
-                        const epgIsUrl = guideState.settings.epgSourceType === 'url';
-
-                        if (!m3uIsUrl) {
-                            const file = UIElements.m3uUpload.files[0];
-                            if (file) {
-                                const formData = new FormData();
-                                formData.append('m3u-file', file);
-                                if (!epgIsUrl && UIElements.epgUpload.files[0]) {
-                                    formData.append('epg-file', UIElements.epgUpload.files[0]);
-                                }
+                        const { m3uSourceType, epgSourceType } = guideState.settings;
+                        
+                        // Handle File Uploads first
+                        if (m3uSourceType === 'file' || epgSourceType === 'file') {
+                            const formData = new FormData();
+                            const m3uFile = UIElements.m3uUpload.files[0];
+                            const epgFile = UIElements.epgUpload.files[0];
+                            if (m3uSourceType === 'file' && m3uFile) formData.append('m3u-file', m3uFile);
+                            if (epgSourceType === 'file' && epgFile) formData.append('epg-file', epgFile);
+                            
+                            if (formData.has('m3u-file') || formData.has('epg-file')) {
                                 const res = await fetch('/api/upload', { method: 'POST', body: formData });
-                                if (!res.ok) throw new Error('File upload failed.');
+                                if (!res.ok) throw new Error('File upload failed on server.');
                             }
-                        } else {
+                        }
+
+                        // Handle URL Fetches
+                        if (m3uSourceType === 'url') {
                             const url = UIElements.m3uUrlInput.value.trim();
                             if (url) {
                                 const res = await fetch(`/fetch-m3u?url=${encodeURIComponent(url)}`);
-                                if (!res.ok) throw new Error(await res.text());
+                                if (!res.ok) throw new Error(`M3U Fetch Failed: ${await res.text()}`);
                             }
                         }
-                        
-                        if (epgIsUrl) {
+                        if (epgSourceType === 'url') {
                             const url = UIElements.epgUrlInput.value.trim();
                             if (url) {
                                 const res = await fetch(`/fetch-epg?url=${encodeURIComponent(url)}`);
-                                if (!res.ok) throw new Error(await res.text());
+                                if (!res.ok) throw new Error(`EPG Fetch Failed: ${await res.text()}`);
                             }
                         }
                         
+                        // After all actions, get the final state from the server
                         const configResponse = await fetch('/api/config');
                         const config = await configResponse.json();
-                        if (!config.m3uContent) throw new Error("No M3U data found on server after loading.");
+                        if (!configResponse.ok) throw new Error('Could not retrieve config from server.');
+                        
+                        if (!config.m3uContent) {
+                            throw new Error("No M3U data found on server. Please select a valid source.");
+                        }
 
                         await handleGuideLoad(config.m3uContent, config.epgContent);
-                        guideState.settings = { ...guideState.settings, ...config.settings };
+                        guideState.settings = config.settings || {}; // Sync local state with server
                         updateUIFromSettings();
                         switchTab('guide');
                         showNotification('Guide data loaded successfully!');
@@ -822,29 +877,32 @@
                 UIElements.clearDataBtn.addEventListener('click', () => {
                     showConfirm('Clear All Data?', 'This will permanently delete ALL settings and files from the server. The page will reload.', async () => {
                         try {
-                            await fetch('/api/data', { method: 'DELETE' });
+                            const res = await fetch('/api/data', { method: 'DELETE' });
+                            if (!res.ok) throw new Error('Failed to clear data on server.');
                             showNotification('All data cleared. Reloading...');
                             setTimeout(() => window.location.reload(), 1500);
                         } catch (e) { showNotification(e.message, true); }
                     });
                 });
                 
-                UIElements.autoRefreshSelect.addEventListener('change', e => { guideState.settings.autoRefresh = parseInt(e.target.value, 10); saveSettings(); setupAutoRefresh(guideState.settings.autoRefresh); });
-                UIElements.timezoneOffsetSelect.addEventListener('change', e => { guideState.settings.timezoneOffset = parseInt(e.target.value, 10); saveSettings(); showNotification(`Timezone offset set. Reload guide to apply.`); });
+                UIElements.autoRefreshSelect.addEventListener('change', async (e) => { guideState.settings.autoRefresh = parseInt(e.target.value, 10); await saveSettings(); setupAutoRefresh(guideState.settings.autoRefresh); });
+                UIElements.timezoneOffsetSelect.addEventListener('change', async (e) => { guideState.settings.timezoneOffset = parseInt(e.target.value, 10); await saveSettings(); showNotification(`Timezone offset set. Reload guide to apply.`); });
                 UIElements.searchInput.addEventListener('input', () => { clearTimeout(searchDebounceTimer); searchDebounceTimer = setTimeout(handleSearchAndFilter, 300); });
-                document.addEventListener('click', e => { if (!UIElements.searchInput.contains(e.target)) UIElements.searchResultsContainer.classList.add('hidden'); });
+                document.addEventListener('click', e => { if (!UIElements.searchInput.contains(e.target) && !UIElements.searchResultsContainer.contains(e.target)) UIElements.searchResultsContainer.classList.add('hidden'); });
 
                 // Synced Scrolling
                 let ignoreScroll = false;
                 const syncScroll = (source, targets) => {
                     if (ignoreScroll) { ignoreScroll = false; return; }
                     ignoreScroll = true;
-                    targets.forEach(target => { target.scrollTop = source.scrollTop; });
+                    targets.forEach(target => { if (target) target.scrollTop = source.scrollTop; });
                 };
-                UIElements.guideTimelineDiv.addEventListener('scroll', () => syncScroll(UIElements.guideTimelineDiv, [UIElements.channelListDiv, UIElements.logoList]));
-                UIElements.channelListDiv.addEventListener('scroll', () => syncScroll(UIElements.channelListDiv, [UIElements.guideTimelineDiv, UIElements.logoList]));
-                UIElements.logoList.addEventListener('scroll', () => syncScroll(UIElements.logoList, [UIElements.guideTimelineDiv, UIElements.channelListDiv]));
-                UIElements.timeBarDiv.addEventListener('scroll', () => { UIElements.guideTimelineDiv.scrollLeft = UIElements.timeBarDiv.scrollLeft; });
+                UIElements.guideTimeline.addEventListener('scroll', (e) => {
+                    UIElements.timeBar.scrollLeft = e.target.scrollLeft;
+                    syncScroll(e.target, [UIElements.channelList, UIElements.logoList]);
+                });
+                UIElements.channelList.addEventListener('scroll', (e) => syncScroll(e.target, [UIElements.guideTimeline, UIElements.logoList]));
+                UIElements.logoList.addEventListener('scroll', (e) => syncScroll(e.target, [UIElements.guideTimeline, UIElements.channelList]));
 
                 // Panel Resizing
                 UIElements.resizer.addEventListener('mousedown', e => {
@@ -858,6 +916,7 @@
             }
 
             // --- Initialization ---
+            // --- FIX: Re-written function to safely set initial UI state from settings ---
             const updateUIFromSettings = () => {
                 const settings = guideState.settings;
                 settings.timezoneOffset = settings.timezoneOffset ?? Math.round(-(new Date().getTimezoneOffset() / 60));
@@ -867,18 +926,25 @@
                 setupAutoRefresh(settings.autoRefresh);
                 
                 ['m3u', 'epg'].forEach(type => {
-                    const isFile = settings[`${type}SourceType`] === 'file';
-                    UIElements[`${type}TabFile`].classList.toggle('active', isFile);
-                    UIElements[`${type}TabUrl`].classList.toggle('active', !isFile);
-                    UIElements[`${type}ContentFile`].classList.toggle('hidden', !isFile);
-                    UIElements[`${type}ContentUrl`].classList.toggle('hidden', isFile);
+                    const sourceType = settings[`${type}SourceType`] || 'url';
+                    setDataSourceTab(type, sourceType);
+                    
                     const selectEl = UIElements[`${type}UrlSelect`];
                     selectEl.innerHTML = '<option value="custom">Custom URL...</option>';
-                    (settings[`${type}CustomUrls`] || []).forEach(url => addUrlToSelect(selectEl, url, false));
+                    const customUrls = settings[`${type}CustomUrls`] || [];
+                    customUrls.forEach(url => addUrlToSelect(selectEl, url, false));
+                    
                     const activeUrl = settings[`${type}Url`];
-                    if (activeUrl) addUrlToSelect(selectEl, activeUrl, true);
-                    UIElements[`${type}UrlInput`].value = (selectEl.value === 'custom' || !activeUrl) ? '' : activeUrl;
-                    selectEl.dispatchEvent(new Event('change'));
+                    
+                    if (activeUrl && customUrls.includes(activeUrl)) {
+                        selectEl.value = activeUrl;
+                    } else {
+                        selectEl.value = 'custom';
+                    }
+
+                    UIElements[`${type}UrlInput`].value = activeUrl || '';
+                    
+                    updateCustomUrlVisibility(type);
                 });
             };
 
@@ -888,18 +954,19 @@
                 populateTimezoneSelector();
                 try {
                     const response = await fetch('/api/config');
+                    if (!response.ok) throw new Error('Could not connect to the server.');
                     const config = await response.json();
-                    guideState.settings = config.settings || { favorites:[], recentChannels:[], m3uCustomUrls:[], epgCustomUrls:[] };
+                    guideState.settings = config.settings || { favorites:[], recentChannels:[], m3uCustomUrls:[], epgCustomUrls:[], m3uSourceType: 'url', epgSourceType: 'url'};
                     updateUIFromSettings();
                     if (config.m3uContent) {
-                        showNotification("Loading guide from server...");
+                        showNotification("Loading guide from server...", false, 1500);
                         setButtonLoadingState(true);
                         await handleGuideLoad(config.m3uContent, config.epgContent);
                         switchTab('guide');
                         setButtonLoadingState(false);
                     } else {
                         switchTab('settings');
-                        renderGuide([]);
+                        renderGuide([]); // Render an empty guide to show the placeholder
                     }
                 } catch (e) {
                     showNotification("Initialization failed: " + e.message, true);
