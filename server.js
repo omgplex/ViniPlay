@@ -15,7 +15,9 @@ const app = express();
 const port = 8998;
 
 // --- Configuration ---
-const DATA_DIR = path.join(__dirname, 'public', 'data');
+// MODIFIED: Point to the /data directory, which will be a mounted volume.
+// This is the single most important change for data persistence.
+const DATA_DIR = '/data'; 
 const M3U_PATH = path.join(DATA_DIR, 'playlist.m3u');
 const EPG_PATH = path.join(DATA_DIR, 'epg.xml');
 const SETTINGS_PATH = path.join(DATA_DIR, 'settings.json');
@@ -26,7 +28,8 @@ if (!fs.existsSync(DATA_DIR)) {
 }
 
 // --- Middleware ---
-app.use(express.static('public'));
+// We serve the 'public' directory which contains index.html
+app.use(express.static('public')); 
 app.use(bodyParser.json());
 
 // --- File Upload Setup (using multer) ---
@@ -62,12 +65,14 @@ app.get('/api/config', (req, res) => {
             config.settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
         }
 
-        // --- NEW: Initialize Player Settings if they don't exist ---
+        // --- Initialize Player Settings if they don't exist ---
+        let settingsChanged = false;
         if (!config.settings.userAgents || config.settings.userAgents.length === 0) {
             config.settings.userAgents = [
-                { id: `default-${Date.now()}`, name: 'ViniPlay Default', value: 'VLC/3.0.20 (Linux; x86_64)' }
+                { id: `default-ua-${Date.now()}`, name: 'ViniPlay Default', value: 'VLC/3.0.20 (Linux; x86_64)' }
             ];
             config.settings.activeUserAgentId = config.settings.userAgents[0].id;
+            settingsChanged = true;
         }
         if (!config.settings.streamProfiles || config.settings.streamProfiles.length === 0) {
             config.settings.streamProfiles = [
@@ -75,9 +80,13 @@ app.get('/api/config', (req, res) => {
                 { id: 'redirect-default', name: 'Redirect', command: 'redirect', isDefault: true }
             ];
             config.settings.activeStreamProfileId = 'ffmpeg-default';
+            settingsChanged = true;
         }
 
-        fs.writeFileSync(SETTINGS_PATH, JSON.stringify(config.settings, null, 2));
+        // Save settings back if we initialized them
+        if (settingsChanged) {
+            fs.writeFileSync(SETTINGS_PATH, JSON.stringify(config.settings, null, 2));
+        }
         
         res.json(config);
     } catch (error) {
@@ -168,12 +177,16 @@ function fetchUrlContent(url) {
         const protocol = url.startsWith('https') ? https : http;
         protocol.get(url, (res) => {
             if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                return fetchUrlContent(res.headers.location).then(resolve, reject);
+                // Handle redirects
+                const redirectUrl = new URL(res.headers.location, url).href;
+                return fetchUrlContent(redirectUrl).then(resolve, reject);
             }
             if (res.statusCode < 200 || res.statusCode >= 300) {
                 return reject(new Error(`Failed to fetch: Status Code ${res.statusCode}`));
             }
             let data = '';
+            // Set encoding to handle all character sets
+            res.setEncoding('utf8');
             res.on('data', (chunk) => { data += chunk; });
             res.on('end', () => resolve(data));
         }).on('error', (err) => reject(err));
@@ -198,8 +211,8 @@ const createFetchEndpoint = (type, filePath) => async (req, res) => {
         settings[`${type}Url`] = url;
         fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
         
-        res.header('Content-Type', type === 'm3u' ? 'application/vnd.apple.mpegurl' : 'application/xml');
-        res.send(content);
+        // This endpoint is just for fetching and saving, client will get it via /api/config
+        res.json({ success: true, message: `${type.toUpperCase()} fetched and saved.` });
     } catch (error) {
         console.error(`Error fetching ${type.toUpperCase()} URL:`, error);
         res.status(500).send(`Failed to fetch from URL. Error: ${error.message}`);
@@ -254,7 +267,6 @@ app.get('/stream', (req, res) => {
     console.log(`> User Agent: "${userAgent.name}"`);
 
     // Replace placeholders in the command template.
-    // MODIFIED: Now replaces both {userAgent} and {clientUserAgent} placeholders.
     const commandTemplate = profile.command
         .replace(/{streamUrl}/g, streamUrl)
         .replace(/{userAgent}|{clientUserAgent}/g, userAgent.value);
@@ -272,7 +284,9 @@ app.get('/stream', (req, res) => {
     ffmpeg.stdout.pipe(res);
 
     ffmpeg.stderr.on('data', (data) => {
-        console.error(`ffmpeg stderr: ${data}`);
+        // Log ffmpeg's progress/errors. It's often very verbose.
+        // You might want to sample this or log it to a file in a real-world scenario.
+        // console.error(`ffmpeg stderr: ${data}`);
     });
 
     ffmpeg.on('close', (code) => {
@@ -288,6 +302,13 @@ app.get('/stream', (req, res) => {
     });
 });
 
+// Serve the main index.html for the root route
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+
 app.listen(port, () => {
     console.log(`VINI PLAY server listening at http://localhost:${port}`);
+    console.log(`Data will be stored in the host directory mapped to ${DATA_DIR} in the container.`);
 });
