@@ -82,6 +82,12 @@ app.get('/api/config', (req, res) => {
             config.settings.activeStreamProfileId = 'ffmpeg-default';
             settingsChanged = true;
         }
+        // NEW: Initialize search scope setting
+        if (typeof config.settings.searchScope === 'undefined') {
+            config.settings.searchScope = 'channels_programs'; // Default value
+            settingsChanged = true;
+        }
+
 
         // Save settings back if we initialized them
         if (settingsChanged) {
@@ -285,8 +291,6 @@ app.get('/stream', (req, res) => {
 
     ffmpeg.stderr.on('data', (data) => {
         // Log ffmpeg's progress/errors. It's often very verbose.
-        // You might want to sample this or log it to a file in a real-world scenario.
-        // console.error(`ffmpeg stderr: ${data}`);
     });
 
     ffmpeg.on('close', (code) => {
@@ -302,8 +306,10 @@ app.get('/stream', (req, res) => {
     });
 });
 
-// Serve the main index.html for the root route
-app.get('/', (req, res) => {
+// --- NEW: Route Handling ---
+// Serve the main index.html for the root and specific routes
+// This ensures that refreshing on /tvguide or /settings still loads the app
+app.get(['/', '/tvguide', '/settings'], (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
