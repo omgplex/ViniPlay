@@ -410,7 +410,7 @@
                 hourWidthPixels: window.innerWidth < 768 ? 200 : 300,
                 currentDate: new Date(),
                 channelGroups: new Set(),
-                visibleChannels: [], // FIX: Keep track of currently visible channels
+                visibleChannels: [], 
             };
             let player, worker, autoRefreshIntervalId, searchDebounceTimer;
             let confirmCallback = null;
@@ -498,7 +498,6 @@
                 setTimeout(() => { UIElements.notificationModal.classList.add('hidden'); }, duration);
             };
             
-            // NEW: Client-side routing logic
             const navigate = (path) => {
                 window.history.pushState({}, path, window.location.origin + path);
                 handleRouteChange();
@@ -526,7 +525,7 @@
                 UIElements.pageSettings.classList.toggle('hidden', isGuide);
                 UIElements.pageSettings.classList.toggle('flex', !isGuide);
                 
-                UIElements.sidebarToggle.classList.toggle('hidden', !isGuide); // Hide hamburger on settings
+                UIElements.sidebarToggle.classList.toggle('hidden', !isGuide); 
             };
             
             const openModal = (modal) => { modal.classList.replace('hidden', 'flex'); document.body.classList.add('modal-open'); };
@@ -623,7 +622,7 @@
                 guideState.channelGroups.clear();
                 guideState.channels.forEach(ch => { if(ch.group) guideState.channelGroups.add(ch.group) });
                 populateGroupFilter();
-                handleSearchAndFilter(); // FIX: Call this to render the initial full list
+                handleSearchAndFilter(); 
             };
             
             const populateGroupFilter = () => {
@@ -638,7 +637,7 @@
             };
 
             const renderGuide = (channelsToRender, resetScroll = true) => {
-                guideState.visibleChannels = channelsToRender; // FIX: Update the visible channels state
+                guideState.visibleChannels = channelsToRender; 
                 const showPlaceholder = channelsToRender.length === 0 && guideState.channels.length > 0;
                 const showNoData = guideState.channels.length === 0;
 
@@ -725,12 +724,13 @@
             };
 
             const stopAndCleanupPlayer = () => {
-                if (player) { player.destroy(); player = null; }
+                if (player) { 
+                    player.destroy(); 
+                    player = null; 
+                }
                 UIElements.videoElement.src = "";
                 UIElements.videoElement.removeAttribute('src');
                 UIElements.videoElement.load();
-                if (document.pictureInPictureElement) document.exitPictureInPicture().catch(console.error);
-                closeModal(UIElements.videoModal);
             };
 
             const playChannel = async (url, name, channelId) => {
@@ -771,6 +771,7 @@
                         console.error("MPEGTS Player Error:", err)
                         showNotification("Could not play stream. Check browser console & server logs.", true);
                         stopAndCleanupPlayer();
+                        closeModal(UIElements.videoModal);
                     });
                 } else {
                     showNotification('Your browser does not support MSE.', true);
@@ -829,7 +830,6 @@
                 const selectedGroup = UIElements.groupFilter.value;
                 let filteredChannels = guideState.channels;
                 
-                // FIX: Correctly filter by group, favorites, and recents
                 if (selectedGroup !== 'all') {
                     if (selectedGroup === 'favorites') {
                         const favoriteIds = new Set(guideState.settings.favorites || []);
@@ -927,19 +927,36 @@
                 // Main Navigation
                 ['tabGuide', 'bottomNavGuide'].forEach(id => UIElements[id].addEventListener('click', () => switchTab('guide')));
                 ['tabSettings', 'bottomNavSettings'].forEach(id => UIElements[id].addEventListener('click', () => switchTab('settings')));
-                window.addEventListener('popstate', handleRouteChange); // NEW: Handle browser back/forward
+                window.addEventListener('popstate', handleRouteChange); 
 
                 // Modals
                 UIElements.confirmCancelBtn.addEventListener('click', () => closeModal(UIElements.confirmModal));
                 UIElements.confirmOkBtn.addEventListener('click', () => { if (confirmCallback) confirmCallback(); closeModal(UIElements.confirmModal); });
                 UIElements.detailsCloseBtn.addEventListener('click', () => closeModal(UIElements.programDetailsModal));
-                UIElements.closeModal.addEventListener('click', () => document.pictureInPictureElement ? closeModal(UIElements.videoModal) : stopAndCleanupPlayer());
+                
+                // --- NEW: Picture-in-Picture Logic ---
+                UIElements.closeModal.addEventListener('click', () => {
+                    if (document.pictureInPictureElement) {
+                        document.exitPictureInPicture().catch(console.error);
+                    }
+                    stopAndCleanupPlayer();
+                    closeModal(UIElements.videoModal);
+                });
+
                 UIElements.pipBtn.addEventListener('click', () => {
                     if(document.pictureInPictureEnabled && UIElements.videoElement.readyState === 4) {
-                        UIElements.videoElement.requestPictureInPicture().catch(console.error);
+                        UIElements.videoElement.requestPictureInPicture()
+                            .then(() => closeModal(UIElements.videoModal))
+                            .catch(console.error);
                     }
                 });
-                UIElements.videoElement.addEventListener('leavepictureinpicture', stopAndCleanupPlayer);
+
+                UIElements.videoElement.addEventListener('leavepictureinpicture', () => {
+                    // When exiting PiP, just show the modal again. Do not stop the player.
+                    openModal(UIElements.videoModal);
+                });
+                // --- End NEW PiP Logic ---
+
                 UIElements.videoElement.addEventListener('volumechange', () => localStorage.setItem('iptvPlayerVolume', UIElements.videoElement.volume));
 
                 // Guide Interaction
@@ -983,7 +1000,7 @@
                     if (progItemData) {
                         const progStart = new Date(progItemData.dataset.progStart);
                         guideState.currentDate = progStart;
-                        handleSearchAndFilter(); // Re-render guide for the correct date
+                        handleSearchAndFilter(); 
                         setTimeout(() => {
                             const guideStartTime = new Date(guideState.currentDate);
                             guideStartTime.setHours(0,0,0,0);
@@ -1012,7 +1029,6 @@
                 });
                 UIElements.nextDayBtn.addEventListener('click', () => { guideState.currentDate.setDate(guideState.currentDate.getDate() + 1); handleSearchAndFilter(); });
                 
-                // FIX: Add event listener for group filter
                 UIElements.groupFilter.addEventListener('change', handleSearchAndFilter);
 
                 // Settings: Data Sources
@@ -1058,7 +1074,7 @@
                         
                         guideState.settings = config.settings || {};
                         updateUIFromSettings();
-                        navigate('/tvguide'); // Navigate to guide after load
+                        navigate('/tvguide'); 
                         showNotification('Guide data loaded successfully!');
                     } catch (error) {
                         showNotification(`Error: ${error.message}`, true);
@@ -1085,7 +1101,6 @@
                     await clearDB(); 
                     showNotification(`Timezone offset set. Reload guide to apply changes.`); 
                 });
-                // NEW: Search scope listener
                 UIElements.searchScopeSelect.addEventListener('change', async (e) => {
                     guideState.settings.searchScope = e.target.value;
                     await saveSettings();
@@ -1137,13 +1152,13 @@
                 UIElements.userAgentSelect.addEventListener('change', async (e) => {
                     guideState.settings.activeUserAgentId = e.target.value;
                     await saveSettings();
-                    showNotification('Active User Agent set.', false, 2000); // NEW: Confirmation
+                    showNotification('Active User Agent set.', false, 2000); 
                 });
                 UIElements.streamProfileSelect.addEventListener('change', async (e) => {
                     guideState.settings.activeStreamProfileId = e.target.value;
                     updateUIFromSettings(); 
                     await saveSettings();
-                    showNotification('Active Stream Profile set.', false, 2000); // NEW: Confirmation
+                    showNotification('Active Stream Profile set.', false, 2000); 
                 });
 
                 // Settings: Editor Modal
@@ -1173,7 +1188,6 @@
                     await saveSettings();
                     updateUIFromSettings();
                     closeModal(UIElements.editorModal);
-                    // NEW: Confirmation on save
                     const typeName = type === 'userAgent' ? 'User Agent' : 'Stream Profile';
                     showNotification(isNew ? `${typeName} created.` : `${typeName} updated.`);
                 });
@@ -1286,7 +1300,7 @@
                         setButtonLoadingState(false);
                     }
                     
-                    handleRouteChange(); // NEW: Set initial page based on URL
+                    handleRouteChange(); 
 
                 } catch (e) {
                     showNotification("Initialization failed: " + e.message, true);
