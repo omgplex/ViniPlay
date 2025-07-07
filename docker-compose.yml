@@ -5,10 +5,9 @@ version: "3.8"
 services:
   # Define the main application service.
   viniplay:
-    # Specify the image to pull. 
-    # This points to the image built by your GitHub Action and stored in the GitHub Container Registry.
-    # IMPORTANT: You must replace 'YOUR_GITHUB_USERNAME' with your actual GitHub username.
-    image: ghcr.io/ardoviniandrea/viniplay:latest
+    # Build from the Dockerfile in the current directory.
+    # We use build instead of image so changes to the Dockerfile are applied.
+    build: .
     
     # Set a consistent name for the container for easy management.
     container_name: viniplay
@@ -22,3 +21,10 @@ services:
     # 'unless-stopped' ensures the container automatically restarts if it crashes,
     # but not when you manually stop it.
     restart: unless-stopped
+    
+    # NEW: Add a volume for persistent data.
+    # This maps the './viniplay-data' directory on your host to the '/data'
+    # directory inside the container. All M3U, EPG, and settings files
+    # will be stored here, persisting across container restarts and updates.
+    volumes:
+      - ./viniplay-data:/data
