@@ -26,7 +26,7 @@ RUN apt-get update && apt-get install -y ffmpeg --no-install-recommends && \
 # The server.js file is now configured to use /data as its storage root.
 # This instruction ensures the directory is created and tells Docker that this
 # path is intended for persistent data storage.
-RUN mkdir /data
+RUN mkdir /data 
 VOLUME /data
 
 # Define the command to run your app
