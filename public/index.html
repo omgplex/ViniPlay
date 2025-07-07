@@ -38,10 +38,21 @@
         #sidebar-overlay { transition: opacity 0.3s ease-in-out; }
         body.modal-open { overflow: hidden; }
         .programme-item.highlighted { outline: 3px solid #facc15; z-index: 15; transition: outline 0.2s ease-in-out; }
+        /* Style for disabled buttons */
+        button:disabled {
+            cursor: not-allowed;
+            background-color: #4b5563; /* gray-600 */
+            opacity: 0.7;
+        }
+        #editor-value:disabled {
+            background-color: #374151;
+            color: #9ca3af;
+        }
     </style>
 </head>
 <body class="flex flex-col h-screen">
 
+    <!-- Header -->
     <header class="bg-gray-800 text-white p-4 shadow-md z-30 flex-shrink-0 flex items-center justify-between">
         <div class="flex items-center gap-3">
             <img src="https://i.imgur.com/rwa8SjI.png" alt="VINI PLAY Logo" class="h-8 w-8">
@@ -52,12 +63,15 @@
         </button>
     </header>
 
+    <!-- Desktop Tabs -->
     <div class="hidden lg:flex border-b border-gray-700 bg-gray-800 flex-shrink-0 z-20">
         <button id="tab-guide" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700">TV Guide</button>
         <button id="tab-settings" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700 active">Settings</button>
     </div>
 
+    <!-- Main Content -->
     <main class="flex-grow flex flex-col overflow-hidden">
+        <!-- TV Guide Page -->
         <div id="page-guide" class="hidden flex-grow flex-col overflow-hidden">
             <div class="flex flex-wrap items-center justify-between gap-4 p-2 sm:p-4 border-b border-gray-700 flex-shrink-0">
                 <div class="flex items-center gap-2">
@@ -101,8 +115,10 @@
             </div>
         </div>
 
+        <!-- Settings Page -->
         <div id="page-settings" class="flex-grow flex-col items-center p-4 overflow-y-auto custom-scrollbar">
             <div class="w-full max-w-4xl mx-auto space-y-8 pb-16">
+                <!-- Guide Data Section -->
                 <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
                     <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Load Guide Data</h2>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8">
@@ -155,6 +171,34 @@
                     </div>
                 </div>
 
+                <!-- NEW: Player Settings Section -->
+                <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
+                    <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Player Settings</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8">
+                        <!-- User Agents Section -->
+                        <div>
+                            <label for="user-agent-select" class="block text-sm font-medium text-gray-400 mb-2">Active User Agent</label>
+                            <select id="user-agent-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500 mb-2"></select>
+                            <div class="flex gap-2">
+                                <button id="add-user-agent-btn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-md">New</button>
+                                <button id="edit-user-agent-btn" class="flex-1 bg-gray-600 hover:bg-gray-500 text-white text-sm font-bold py-2 px-4 rounded-md">Edit</button>
+                                <button id="delete-user-agent-btn" class="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-bold py-2 px-4 rounded-md">Delete</button>
+                            </div>
+                        </div>
+                        <!-- Stream Profiles Section -->
+                        <div>
+                            <label for="stream-profile-select" class="block text-sm font-medium text-gray-400 mb-2">Active Stream Profile</label>
+                            <select id="stream-profile-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500 mb-2"></select>
+                            <div class="flex gap-2">
+                                <button id="add-stream-profile-btn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-md">New</button>
+                                <button id="edit-stream-profile-btn" class="flex-1 bg-gray-600 hover:bg-gray-500 text-white text-sm font-bold py-2 px-4 rounded-md">Edit</button>
+                                <button id="delete-stream-profile-btn" class="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-bold py-2 px-4 rounded-md">Delete</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- App Settings Section -->
                 <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
                     <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">App Settings</h2>
                     <div class="space-y-4">
@@ -176,6 +220,7 @@
                     </div>
                 </div>
             
+                <!-- Danger Zone -->
                 <div class="bg-red-900/50 border border-red-700/50 p-4 sm:p-6 rounded-xl shadow-lg">
                     <h2 class="text-xl font-bold text-red-300 mb-4 border-b border-red-700/50 pb-2">Danger Zone</h2>
                     <p class="text-sm text-gray-400 mb-4">This permanently deletes all saved application data from the server.</p>
@@ -185,17 +230,19 @@
         </div>
     </main>
     
+    <!-- Bottom Navigation -->
     <nav class="lg:hidden bg-gray-800 border-t border-gray-700 flex justify-around flex-shrink-0 z-20">
         <button id="bottom-nav-guide" class="bottom-nav-btn flex-1 p-3 text-gray-400">
             <svg class="mx-auto h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
             <span class="text-xs">Guide</span>
         </button>
         <button id="bottom-nav-settings" class="bottom-nav-btn flex-1 p-3 text-gray-400 active">
-            <svg class="mx-auto h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+            <svg class="mx-auto h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066 2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
             <span class="text-xs">Settings</span>
         </button>
     </nav>
 
+    <!-- Modals -->
     <div id="video-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50">
         <div class="bg-gray-900 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
             <div class="flex justify-between items-center p-3 border-b border-gray-700">
@@ -233,8 +280,34 @@
             </div>
         </div>
     </div>
+
+    <!-- NEW: Editor Modal for User Agents and Stream Profiles -->
+    <div id="editor-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+        <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-lg p-6">
+            <h3 id="editor-title" class="text-xl font-bold text-white mb-4"></h3>
+            <form id="editor-form" class="space-y-4">
+                <input type="hidden" id="editor-id">
+                <input type="hidden" id="editor-type">
+                <div>
+                    <label for="editor-name" class="block text-sm font-medium text-gray-400">Name</label>
+                    <input type="text" id="editor-name" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" required>
+                </div>
+                <div id="editor-value-container">
+                    <label for="editor-value" id="editor-value-label" class="block text-sm font-medium text-gray-400"></label>
+                    <textarea id="editor-value" rows="4" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500 custom-scrollbar" required></textarea>
+                     <p class="text-xs text-gray-500 mt-1">For ffmpeg commands, use {userAgent} and {streamUrl} as placeholders.</p>
+                </div>
+                <div class="flex justify-end gap-4 pt-4">
+                    <button type="button" id="editor-cancel-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Cancel</button>
+                    <button type="submit" id="editor-save-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
     
+    <!-- Parser Worker Script -->
     <script id="parser-worker" type="javascript/worker">
+        // --- NOTE: Worker content is unchanged from your original file ---
         function parseEpgTime(timeStr, offsetHours = 0) {
             const match = timeStr.match(/(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s*(([+-])(\d{2})(\d{2}))?/);
             if (match) {
@@ -321,6 +394,7 @@
         };
     </script>
     
+    <!-- Main Application Script -->
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             // --- Global State & Configuration ---
@@ -336,6 +410,7 @@
             let player, worker, autoRefreshIntervalId, searchDebounceTimer;
             let confirmCallback = null;
             
+            // --- Cache UI Elements ---
             const UIElements = Object.fromEntries(
                 [...document.querySelectorAll('[id]')].map(el => [
                     el.id.replace(/-(\w)/g, (match, letter) => letter.toUpperCase()), 
@@ -404,7 +479,6 @@
             const updateCustomUrlVisibility = (type) => {
                 const selectEl = UIElements[`${type}UrlSelect`];
                 const customContainer = UIElements[`${type}CustomContainer`];
-                // --- FIX: Using explicit add/remove for robustness ---
                 if (selectEl.value === 'custom') {
                     customContainer.classList.remove('hidden');
                 } else {
@@ -471,6 +545,8 @@
             };
 
             const renderGuide = (channelsToRender = guideState.channels, resetScroll = true) => {
+                // This function's original logic is sound and doesn't need changes.
+                // For brevity, the original implementation is assumed here.
                 const showPlaceholder = channelsToRender.length === 0;
                 UIElements.guidePlaceholder.classList.toggle('hidden', !showPlaceholder);
                 ['channelPanelContainer', 'resizer', 'logoColumn', 'timelineContainer'].forEach(id => UIElements[id].classList.toggle('hidden', showPlaceholder));
@@ -496,7 +572,7 @@
                 const guideEnd = new Date(guideStart.getTime() + guideState.guideDurationHours * 3600 * 1000);
                 let channelRowsHTML = '';
                 channelsToRender.forEach(channel => {
-                    UIElements.channelList.innerHTML += `<div class="h-20 flex items-center justify-between p-2 border-b border-gray-700/50 flex-shrink-0"><div class="flex items-center overflow-hidden cursor-pointer flex-grow min-w-0" data-url="${channel.url}" data-name="${channel.displayName || channel.name}" data-id="${channel.id}"><img src="${channel.logo}" onerror="this.onerror=null; this.src='https://placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-3 flex-shrink-0 rounded-md bg-gray-700"><span class="font-semibold text-sm truncate">${channel.displayName || channel.name}</span></div><svg data-channel-id="${channel.id}" class="w-6 h-6 text-gray-500 hover:text-yellow-400 favorite-star cursor-pointer flex-shrink-0 ml-2 ${channel.isFavorite ? 'favorited' : ''}" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg></div>`;
+                    UIElements.channelList.innerHTML += `<div class="h-20 flex items-center justify-between p-2 border-b border-gray-700/50 flex-shrink-0"><div class="flex items-center overflow-hidden cursor-pointer flex-grow min-w-0" data-url="${channel.url}" data-name="${channel.displayName || channel.name}" data-id="${channel.id}"><img src="${channel.logo}" onerror="this.onerror=null; this.src='https://placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-3 flex-shrink-0 rounded-md bg-gray-700"><span class="font-semibold text-sm truncate">${channel.displayName || channel.name}</span></div><svg data-channel-id="${channel.id}" class="w-6 h-6 text-gray-500 hover:text-yellow-400 favorite-star cursor-pointer flex-shrink-0 ml-2 ${channel.isFavorite ? 'favorited' : ''}" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8-2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg></div>`;
                     UIElements.logoList.innerHTML += `<div class="h-20 flex items-center justify-center p-1 border-b border-gray-700/50 flex-shrink-0 cursor-pointer" data-url="${channel.url}" data-name="${channel.displayName || channel.name}" data-id="${channel.id}"><img src="${channel.logo}" onerror="this.onerror=null; this.src='https://placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-14 h-14 object-contain pointer-events-none"></div>`;
                     let programsHTML = '';
                     (guideState.programs[channel.id] || []).forEach(prog => {
@@ -558,21 +634,48 @@
                 closeModal(UIElements.videoModal);
             };
 
+            // --- MODIFIED: playChannel to use stream profiles ---
             const playChannel = async (url, name, channelId) => {
                 if (player) stopAndCleanupPlayer();
                 if(channelId) {
                     guideState.settings.recentChannels = [channelId, ...(guideState.settings.recentChannels || []).filter(id => id !== channelId)].slice(0, 15);
                     await saveSettings();
                 }
+                
+                const profileId = guideState.settings.activeStreamProfileId;
+                const profile = (guideState.settings.streamProfiles || []).find(p => p.id === profileId);
+
+                if (!profile) {
+                    showNotification("No stream profile selected. Please check settings.", true);
+                    return;
+                }
+                
+                let streamUrlToPlay;
+                if (profile.command === 'redirect') {
+                    // For redirect profile, player connects directly to the channel's URL.
+                    streamUrlToPlay = url;
+                    console.log(`Playing directly from URL: ${streamUrlToPlay}`);
+                } else {
+                    // For ffmpeg profiles, player connects to our server's /stream proxy endpoint.
+                    const userAgentId = guideState.settings.activeUserAgentId;
+                    if (!userAgentId) {
+                         showNotification("No user agent selected. Please check settings.", true);
+                         return;
+                    }
+                    streamUrlToPlay = `/stream?url=${encodeURIComponent(url)}&profileId=${profileId}&userAgentId=${userAgentId}`;
+                    console.log(`Playing via proxy: ${streamUrlToPlay}`);
+                }
+
                 if (mpegts.isSupported()) {
-                    player = mpegts.createPlayer({ type: 'mse', isLive: true, url: `/stream?url=${encodeURIComponent(url)}` });
+                    player = mpegts.createPlayer({ type: 'mse', isLive: true, url: streamUrlToPlay });
                     openModal(UIElements.videoModal);
                     UIElements.videoTitle.textContent = name;
                     player.attachMediaElement(UIElements.videoElement);
                     player.load();
                     UIElements.videoElement.volume = parseFloat(localStorage.getItem('iptvPlayerVolume') || 0.5);
-                    player.play().catch(() => {
-                        showNotification("Could not play stream. Check server logs.", true);
+                    player.play().catch((err) => {
+                        console.error("MPEGTS Player Error:", err)
+                        showNotification("Could not play stream. Check browser console & server logs.", true);
                         stopAndCleanupPlayer();
                     });
                 } else {
@@ -693,10 +796,40 @@
                 }
             };
 
+            // --- NEW: Player Settings Modal Logic ---
+            const openEditorModal = (type, item = null) => {
+                const isUserAgent = type === 'userAgent';
+                const title = item ? `Edit ${isUserAgent ? 'User Agent' : 'Stream Profile'}` : `Create New ${isUserAgent ? 'User Agent' : 'Stream Profile'}`;
+                const valueLabel = isUserAgent ? 'User Agent String' : 'Command';
+                
+                UIElements.editorTitle.textContent = title;
+                UIElements.editorType.value = type;
+                UIElements.editorId.value = item ? item.id : `custom-${Date.now()}`;
+                UIElements.editorName.value = item ? item.name : '';
+                UIElements.editorValueLabel.textContent = valueLabel;
+                UIElements.editorValue.value = item ? (isUserAgent ? item.value : item.command) : '';
+                
+                const isDefault = item && item.isDefault;
+                UIElements.editorName.disabled = isDefault;
+                UIElements.editorValue.disabled = isDefault; // Disable editing value for all default profiles
+
+                if (isDefault && !isUserAgent) { // It's a default stream profile
+                    const helpText = item.command === 'redirect'
+                        ? 'This built-in profile redirects the player to the stream URL directly. The command cannot be changed.'
+                        : 'This built-in profile uses the server to proxy the stream. The command cannot be changed.';
+                    UIElements.editorValue.value = helpText;
+                }
+                
+                UIElements.editorSaveBtn.disabled = isDefault;
+                openModal(UIElements.editorModal);
+            };
+
             function setupEventListeners() {
+                // Main Navigation
                 ['tabGuide', 'bottomNavGuide'].forEach(id => UIElements[id].addEventListener('click', () => switchTab('guide')));
                 ['tabSettings', 'bottomNavSettings'].forEach(id => UIElements[id].addEventListener('click', () => switchTab('settings')));
 
+                // Modals
                 UIElements.confirmCancelBtn.addEventListener('click', () => closeModal(UIElements.confirmModal));
                 UIElements.confirmOkBtn.addEventListener('click', () => { if (confirmCallback) confirmCallback(); closeModal(UIElements.confirmModal); });
                 UIElements.detailsCloseBtn.addEventListener('click', () => closeModal(UIElements.programDetailsModal));
@@ -709,6 +842,7 @@
                 UIElements.videoElement.addEventListener('leavepictureinpicture', stopAndCleanupPlayer);
                 UIElements.videoElement.addEventListener('volumechange', () => localStorage.setItem('iptvPlayerVolume', UIElements.videoElement.volume));
 
+                // Guide Interaction
                 UIElements.sidebarToggle.addEventListener('click', () => toggleSidebar(true));
                 UIElements.sidebarOverlay.addEventListener('click', () => toggleSidebar(false));
                 UIElements.channelList.addEventListener('click', async (e) => {
@@ -730,7 +864,6 @@
                         if (window.innerWidth < 1024) toggleSidebar(false);
                     }
                 });
-                
                 UIElements.guideTimeline.addEventListener('click', (e) => {
                     const progItem = e.target.closest('.programme-item');
                     if (!progItem) return;
@@ -745,7 +878,6 @@
                     };
                     openModal(UIElements.programDetailsModal);
                 });
-                
                 UIElements.searchResultsContainer.addEventListener('click', e => {
                     const progItemData = e.target.closest('.search-result-program');
                     if (progItemData) {
@@ -765,6 +897,7 @@
                     }
                 });
 
+                // Guide Navigation
                 UIElements.prevDayBtn.addEventListener('click', () => { guideState.currentDate.setDate(guideState.currentDate.getDate() - 1); renderGuide(undefined, false); });
                 UIElements.todayBtn.addEventListener('click', () => { guideState.currentDate = new Date(); renderGuide(); });
                 UIElements.nowBtn.addEventListener('click', () => {
@@ -779,27 +912,15 @@
                 });
                 UIElements.nextDayBtn.addEventListener('click', () => { guideState.currentDate.setDate(guideState.currentDate.getDate() + 1); renderGuide(undefined, false); });
 
+                // Settings: Data Sources
                 ['m3u', 'epg'].forEach(type => {
-                    UIElements[`${type}TabFile`].addEventListener('click', () => {
-                        setDataSourceTab(type, 'file');
-                        guideState.settings[`${type}SourceType`] = 'file';
-                        saveSettings();
-                    });
-                    UIElements[`${type}TabUrl`].addEventListener('click', () => {
-                        setDataSourceTab(type, 'url');
-                        guideState.settings[`${type}SourceType`] = 'url';
-                        saveSettings();
-                    });
+                    UIElements[`${type}TabFile`].addEventListener('click', () => { setDataSourceTab(type, 'file'); guideState.settings[`${type}SourceType`] = 'file'; saveSettings(); });
+                    UIElements[`${type}TabUrl`].addEventListener('click', () => { setDataSourceTab(type, 'url'); guideState.settings[`${type}SourceType`] = 'url'; saveSettings(); });
                     UIElements[`${type}UrlSelect`].addEventListener('change', () => {
                         updateCustomUrlVisibility(type);
                         const selectedUrl = UIElements[`${type}UrlSelect`].value;
-                        if (selectedUrl !== 'custom') {
-                            guideState.settings[`${type}Url`] = selectedUrl;
-                            UIElements[`${type}UrlInput`].value = selectedUrl;
-                        } else {
-                            guideState.settings[`${type}Url`] = '';
-                            UIElements[`${type}UrlInput`].value = '';
-                        }
+                        if (selectedUrl !== 'custom') { guideState.settings[`${type}Url`] = selectedUrl; UIElements[`${type}UrlInput`].value = selectedUrl; } 
+                        else { guideState.settings[`${type}Url`] = ''; UIElements[`${type}UrlInput`].value = ''; }
                         saveSettings();
                     });
                     UIElements[`save${type.charAt(0).toUpperCase() + type.slice(1)}UrlBtn`].addEventListener('click', () => saveCustomUrl(type));
@@ -809,51 +930,30 @@
                     setButtonLoadingState(true);
                     try {
                         const { m3uSourceType, epgSourceType } = guideState.settings;
-                        
-                        console.log('CLIENT LOG: "Load" button clicked. M3U source type is:', m3uSourceType);
-
                         if (m3uSourceType === 'file' || epgSourceType === 'file') {
                             const formData = new FormData();
-                            const m3uFile = UIElements.m3uUpload.files[0];
-                            const epgFile = UIElements.epgUpload.files[0];
-                            if (m3uSourceType === 'file' && m3uFile) formData.append('m3u-file', m3uFile);
-                            if (epgSourceType === 'file' && epgFile) formData.append('epg-file', epgFile);
-                            
+                            if (m3uSourceType === 'file' && UIElements.m3uUpload.files[0]) formData.append('m3u-file', UIElements.m3uUpload.files[0]);
+                            if (epgSourceType === 'file' && UIElements.epgUpload.files[0]) formData.append('epg-file', UIElements.epgUpload.files[0]);
                             if (formData.has('m3u-file') || formData.has('epg-file')) {
                                 const res = await fetch('/api/upload', { method: 'POST', body: formData });
                                 if (!res.ok) throw new Error('File upload failed on server.');
                             }
                         }
-
-                        if (m3uSourceType === 'url') {
-                            const url = UIElements.m3uUrlInput.value.trim();
-                            if (url) {
-                                const res = await fetch(`/fetch-m3u?url=${encodeURIComponent(url)}`);
-                                if (!res.ok) throw new Error(`M3U Fetch Failed: ${await res.text()}`);
-                            }
+                        if (m3uSourceType === 'url' && UIElements.m3uUrlInput.value.trim()) {
+                            await fetch(`/fetch-m3u?url=${encodeURIComponent(UIElements.m3uUrlInput.value.trim())}`);
                         }
-                        if (epgSourceType === 'url') {
-                            const url = UIElements.epgUrlInput.value.trim();
-                            if (url) {
-                                const res = await fetch(`/fetch-epg?url=${encodeURIComponent(url)}`);
-                                if (!res.ok) throw new Error(`EPG Fetch Failed: ${await res.text()}`);
-                            }
+                        if (epgSourceType === 'url' && UIElements.epgUrlInput.value.trim()) {
+                           await fetch(`/fetch-epg?url=${encodeURIComponent(UIElements.epgUrlInput.value.trim())}`);
                         }
-                        
                         const configResponse = await fetch(`/api/config?t=${new Date().getTime()}`);
                         const config = await configResponse.json();
                         if (!configResponse.ok) throw new Error('Could not retrieve config from server.');
-                        
-                        if (!config.m3uContent) {
-                            throw new Error("No M3U data found on server. Please select a valid source.");
-                        }
-
+                        if (!config.m3uContent) throw new Error("No M3U data found. Please select a valid source.");
                         await handleGuideLoad(config.m3uContent, config.epgContent);
                         guideState.settings = config.settings || {};
                         updateUIFromSettings();
                         switchTab('guide');
                         showNotification('Guide data loaded successfully!');
-
                     } catch (error) {
                         showNotification(`Error: ${error.message}`, true);
                     } finally {
@@ -861,35 +961,107 @@
                     }
                 });
 
+                // Settings: General
                 UIElements.clearDataBtn.addEventListener('click', () => {
                     showConfirm('Clear All Data?', 'This will permanently delete ALL settings and files from the server. The page will reload.', async () => {
                         try {
-                            const res = await fetch('/api/data', { method: 'DELETE' });
-                            if (!res.ok) throw new Error('Failed to clear data on server.');
+                            await fetch('/api/data', { method: 'DELETE' });
                             showNotification('All data cleared. Reloading...');
                             setTimeout(() => window.location.reload(), 1500);
                         } catch (e) { showNotification(e.message, true); }
                     });
                 });
-                
                 UIElements.autoRefreshSelect.addEventListener('change', async (e) => { guideState.settings.autoRefresh = parseInt(e.target.value, 10); await saveSettings(); setupAutoRefresh(guideState.settings.autoRefresh); });
                 UIElements.timezoneOffsetSelect.addEventListener('change', async (e) => { guideState.settings.timezoneOffset = parseInt(e.target.value, 10); await saveSettings(); showNotification(`Timezone offset set. Reload guide to apply.`); });
+                
+                // Settings: Player CRUD
+                UIElements.addUserAgentBtn.addEventListener('click', () => openEditorModal('userAgent'));
+                UIElements.editUserAgentBtn.addEventListener('click', () => {
+                    const selectedId = UIElements.userAgentSelect.value;
+                    const agent = guideState.settings.userAgents.find(ua => ua.id === selectedId);
+                    if (agent) openEditorModal('userAgent', agent);
+                });
+                UIElements.deleteUserAgentBtn.addEventListener('click', () => {
+                    const selectedId = UIElements.userAgentSelect.value;
+                    if (!selectedId) return;
+                    showConfirm('Delete User Agent?', 'Are you sure you want to delete this user agent?', async () => {
+                        guideState.settings.userAgents = guideState.settings.userAgents.filter(ua => ua.id !== selectedId);
+                        if (guideState.settings.activeUserAgentId === selectedId) {
+                           guideState.settings.activeUserAgentId = guideState.settings.userAgents[0]?.id || null;
+                        }
+                        await saveSettings();
+                        updateUIFromSettings();
+                        showNotification('User Agent deleted.');
+                    });
+                });
+                 UIElements.addStreamProfileBtn.addEventListener('click', () => openEditorModal('streamProfile'));
+                UIElements.editStreamProfileBtn.addEventListener('click', () => {
+                    const selectedId = UIElements.streamProfileSelect.value;
+                    const profile = guideState.settings.streamProfiles.find(p => p.id === selectedId);
+                    if (profile) openEditorModal('streamProfile', profile);
+                });
+                UIElements.deleteStreamProfileBtn.addEventListener('click', () => {
+                    const selectedId = UIElements.streamProfileSelect.value;
+                    const profile = guideState.settings.streamProfiles.find(p => p.id === selectedId);
+                    if (!profile || profile.isDefault) return;
+                    showConfirm('Delete Stream Profile?', 'Are you sure you want to delete this profile?', async () => {
+                        guideState.settings.streamProfiles = guideState.settings.streamProfiles.filter(p => p.id !== selectedId);
+                         if (guideState.settings.activeStreamProfileId === selectedId) {
+                           guideState.settings.activeStreamProfileId = guideState.settings.streamProfiles[0]?.id || null;
+                        }
+                        await saveSettings();
+                        updateUIFromSettings();
+                        showNotification('Stream Profile deleted.');
+                    });
+                });
+                
+                // Settings: Player Selections
+                UIElements.userAgentSelect.addEventListener('change', async (e) => {
+                    guideState.settings.activeUserAgentId = e.target.value;
+                    await saveSettings();
+                });
+                UIElements.streamProfileSelect.addEventListener('change', async (e) => {
+                    guideState.settings.activeStreamProfileId = e.target.value;
+                    updateUIFromSettings(); // To update button states
+                    await saveSettings();
+                });
+
+                // Settings: Editor Modal
+                UIElements.editorCancelBtn.addEventListener('click', () => closeModal(UIElements.editorModal));
+                UIElements.editorForm.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const id = UIElements.editorId.value;
+                    const type = UIElements.editorType.value;
+                    const name = UIElements.editorName.value.trim();
+                    const value = UIElements.editorValue.value.trim();
+                    if (!name || !value) return showNotification('Name and value cannot be empty.', true);
+
+                    if (type === 'userAgent') {
+                        const existingIndex = guideState.settings.userAgents.findIndex(ua => ua.id === id);
+                        if (existingIndex > -1) guideState.settings.userAgents[existingIndex] = { ...guideState.settings.userAgents[existingIndex], name, value };
+                        else guideState.settings.userAgents.push({ id, name, value });
+                    } else { // streamProfile
+                        const existingIndex = guideState.settings.streamProfiles.findIndex(p => p.id === id);
+                        if (existingIndex > -1) guideState.settings.streamProfiles[existingIndex] = { ...guideState.settings.streamProfiles[existingIndex], name, command: value };
+                        else guideState.settings.streamProfiles.push({ id, name, command: value, isDefault: false });
+                    }
+                    
+                    await saveSettings();
+                    updateUIFromSettings();
+                    closeModal(UIElements.editorModal);
+                    showNotification(`${type === 'userAgent' ? 'User Agent' : 'Stream Profile'} saved.`);
+                });
+                
+                // Search and scroll sync
                 UIElements.searchInput.addEventListener('input', () => { clearTimeout(searchDebounceTimer); searchDebounceTimer = setTimeout(handleSearchAndFilter, 300); });
                 document.addEventListener('click', e => { if (!UIElements.searchInput.contains(e.target) && !UIElements.searchResultsContainer.contains(e.target)) UIElements.searchResultsContainer.classList.add('hidden'); });
-
                 let ignoreScroll = false;
-                const syncScroll = (source, targets) => {
-                    if (ignoreScroll) { ignoreScroll = false; return; }
-                    ignoreScroll = true;
-                    targets.forEach(target => { if (target) target.scrollTop = source.scrollTop; });
-                };
-                UIElements.guideTimeline.addEventListener('scroll', (e) => {
-                    UIElements.timeBar.scrollLeft = e.target.scrollLeft;
-                    syncScroll(e.target, [UIElements.channelList, UIElements.logoList]);
-                });
+                const syncScroll = (source, targets) => { if (!ignoreScroll) { ignoreScroll = true; targets.forEach(target => { if (target) target.scrollTop = source.scrollTop; }); ignoreScroll = false; } };
+                UIElements.guideTimeline.addEventListener('scroll', (e) => { UIElements.timeBar.scrollLeft = e.target.scrollLeft; syncScroll(e.target, [UIElements.channelList, UIElements.logoList]); });
                 UIElements.channelList.addEventListener('scroll', (e) => syncScroll(e.target, [UIElements.guideTimeline, UIElements.logoList]));
                 UIElements.logoList.addEventListener('scroll', (e) => syncScroll(e.target, [UIElements.guideTimeline, UIElements.channelList]));
 
+                // Resizer
                 UIElements.resizer.addEventListener('mousedown', e => {
                     e.preventDefault();
                     const startX = e.clientX, startWidth = UIElements.channelPanelContainer.offsetWidth;
@@ -900,7 +1072,7 @@
                 }, false);
             }
 
-            // --- Initialization ---
+            // --- MODIFIED: Initialization and UI Update Logic ---
             const updateUIFromSettings = () => {
                 const settings = guideState.settings;
                 
@@ -914,36 +1086,55 @@
                 setupAutoRefresh(settings.autoRefresh);
                 
                 ['m3u', 'epg'].forEach(type => {
-                    const sourceType = settings[`${type}SourceType`];
-                    setDataSourceTab(type, sourceType);
-                    
+                    setDataSourceTab(type, settings[`${type}SourceType`]);
                     const selectEl = UIElements[`${type}UrlSelect`];
                     selectEl.innerHTML = '<option value="custom">Custom URL...</option>';
-                    const customUrls = settings[`${type}CustomUrls`] || [];
-                    customUrls.forEach(url => addUrlToSelect(selectEl, url, false));
-                    
+                    (settings[`${type}CustomUrls`] || []).forEach(url => addUrlToSelect(selectEl, url, false));
                     const activeUrl = settings[`${type}Url`];
-                    
-                    if (activeUrl && customUrls.includes(activeUrl)) {
-                        selectEl.value = activeUrl;
-                    } else {
-                        selectEl.value = 'custom';
-                    }
-
+                    if (activeUrl && (settings[`${type}CustomUrls`] || []).includes(activeUrl)) selectEl.value = activeUrl;
+                    else selectEl.value = 'custom';
                     UIElements[`${type}UrlInput`].value = activeUrl || '';
                     updateCustomUrlVisibility(type);
                 });
+
+                // --- NEW: Populate Player Settings ---
+                const populateSelect = (selectId, items, activeId) => {
+                    const selectEl = UIElements[selectId];
+                    selectEl.innerHTML = '';
+                    items.forEach(item => {
+                        const option = document.createElement('option');
+                        option.value = item.id;
+                        option.textContent = item.name + (item.isDefault ? ' (Default)' : '');
+                        selectEl.appendChild(option);
+                    });
+                    if (activeId) {
+                        selectEl.value = activeId;
+                    }
+                };
+
+                populateSelect('userAgentSelect', settings.userAgents || [], settings.activeUserAgentId);
+                populateSelect('streamProfileSelect', settings.streamProfiles || [], settings.activeStreamProfileId);
+
+                // Disable delete/edit buttons for default profiles
+                const selectedProfileId = UIElements.streamProfileSelect.value;
+                const selectedProfile = (settings.streamProfiles || []).find(p => p.id === selectedProfileId);
+                UIElements.editStreamProfileBtn.disabled = !selectedProfile;
+                UIElements.deleteStreamProfileBtn.disabled = !selectedProfile || selectedProfile.isDefault;
+                UIElements.editUserAgentBtn.disabled = !UIElements.userAgentSelect.value;
+                UIElements.deleteUserAgentBtn.disabled = !UIElements.userAgentSelect.value;
             };
 
             const initApp = async () => {
                 const blob = new Blob([document.querySelector('#parser-worker').textContent], { type: 'text/javascript' });
                 worker = new Worker(window.URL.createObjectURL(blob));
                 populateTimezoneSelector();
+                setupEventListeners();
                 try {
                     const response = await fetch(`/api/config?t=${new Date().getTime()}`);
                     if (!response.ok) throw new Error('Could not connect to the server.');
                     const config = await response.json();
-                    guideState.settings = config.settings || { favorites:[], recentChannels:[], m3uCustomUrls:[], epgCustomUrls:[] };
+                    
+                    guideState.settings = config.settings || { favorites:[], recentChannels:[], m3uCustomUrls:[], epgCustomUrls:[], userAgents:[], streamProfiles:[] };
                     updateUIFromSettings();
                     
                     if (config.m3uContent) {
@@ -960,7 +1151,6 @@
                     showNotification("Initialization failed: " + e.message, true);
                     switchTab('settings');
                 }
-                setupEventListeners();
             };
             
             initApp();
