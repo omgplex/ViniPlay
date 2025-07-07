@@ -254,9 +254,10 @@ app.get('/stream', (req, res) => {
     console.log(`> User Agent: "${userAgent.name}"`);
 
     // Replace placeholders in the command template.
+    // MODIFIED: Now replaces both {userAgent} and {clientUserAgent} placeholders.
     const commandTemplate = profile.command
         .replace(/{streamUrl}/g, streamUrl)
-        .replace(/{userAgent}/g, userAgent.value);
+        .replace(/{userAgent}|{clientUserAgent}/g, userAgent.value);
 
     // Parse the command string into an array of arguments for spawn.
     // This regex handles quoted strings to allow for spaces in values.
