@@ -731,7 +731,59 @@
                 UIElements.videoElement.src = "";
                 UIElements.videoElement.removeAttribute('src');
                 UIElements.videoElement.load();
+                
+                // NEW: Clear media session
+                if ('mediaSession' in navigator) {
+                    navigator.mediaSession.metadata = null;
+                    navigator.mediaSession.setActionHandler('seekbackward', null);
+                    navigator.mediaSession.setActionHandler('seekforward', null);
+                }
             };
+            
+            /**
+             * NEW FUNCTION: setupMediaSession
+             * This function uses the Media Session API to provide richer media controls
+             * to the browser and operating system, including the Picture-in-Picture window.
+             * @param {string} title - The title of the stream to display.
+             * @param {string} channelName - The name of the channel.
+             * @param {string} logoSrc - The URL for the channel's logo to use as artwork.
+             */
+            function setupMediaSession(title, channelName, logoSrc) {
+                if ('mediaSession' in navigator) {
+                    const videoElement = UIElements.videoElement;
+
+                    navigator.mediaSession.metadata = new MediaMetadata({
+                        title: title,
+                        artist: channelName,
+                        album: 'VINI PLAY',
+                        artwork: [
+                            { src: logoSrc, sizes: '96x96', type: 'image/png' },
+                            { src: logoSrc, sizes: '128x128', type: 'image/png' },
+                            { src: logoSrc, sizes: '192x192', type: 'image/png' },
+                            { src: logoSrc, sizes: '256x256', type: 'image/png' },
+                            { src: logoSrc, sizes: '384x384', type: 'image/png' },
+                            { src: logoSrc, sizes: '512x512', type: 'image/png' },
+                        ]
+                    });
+
+                    try {
+                        navigator.mediaSession.setActionHandler('seekbackward', () => {
+                            videoElement.currentTime = Math.max(0, videoElement.currentTime - 10);
+                        });
+                    } catch (error) {
+                        console.warn('Could not set "seekbackward" action:', error);
+                    }
+
+                    try {
+                        navigator.mediaSession.setActionHandler('seekforward', () => {
+                            videoElement.currentTime += 10;
+                        });
+                    } catch (error) {
+                        console.warn('Could not set "seekforward" action:', error);
+                    }
+                }
+            }
+
 
             const playChannel = async (url, name, channelId) => {
                 if (player) stopAndCleanupPlayer();
@@ -762,6 +814,14 @@
 
                 if (mpegts.isSupported()) {
                     player = mpegts.createPlayer({ type: 'mse', isLive: true, url: streamUrlToPlay });
+                    
+                    // Find the channel's logo to pass to the media session
+                    const channel = guideState.channels.find(c => c.id === channelId);
+                    const logo = channel ? channel.logo : 'https://i.imgur.com/rwa8SjI.png';
+                    
+                    // Setup Media Session for PiP controls
+                    setupMediaSession(name, channel ? channel.group : 'Live TV', logo);
+
                     openModal(UIElements.videoModal);
                     UIElements.videoTitle.textContent = name;
                     player.attachMediaElement(UIElements.videoElement);
@@ -934,7 +994,6 @@
                 UIElements.confirmOkBtn.addEventListener('click', () => { if (confirmCallback) confirmCallback(); closeModal(UIElements.confirmModal); });
                 UIElements.detailsCloseBtn.addEventListener('click', () => closeModal(UIElements.programDetailsModal));
                 
-                // --- NEW: Picture-in-Picture Logic ---
                 UIElements.closeModal.addEventListener('click', () => {
                     if (document.pictureInPictureElement) {
                         document.exitPictureInPicture().catch(console.error);
@@ -952,10 +1011,8 @@
                 });
 
                 UIElements.videoElement.addEventListener('leavepictureinpicture', () => {
-                    // When exiting PiP, just show the modal again. Do not stop the player.
                     openModal(UIElements.videoModal);
                 });
-                // --- End NEW PiP Logic ---
 
                 UIElements.videoElement.addEventListener('volumechange', () => localStorage.setItem('iptvPlayerVolume', UIElements.videoElement.volume));
 
