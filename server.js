@@ -1,6 +1,6 @@
-// A Node.js server for the ARDO IPTV Player.
+// A Node.js server for the VINI PLAY IPTV Player.
 // It serves static files and provides a backend for stream proxying,
-// file uploads, and settings persistence.
+// file uploads, and settings persistence, now with User Agent and Stream Profile management.
 
 const express = require('express');
 const { spawn } = require('child_process');
@@ -46,9 +46,6 @@ const upload = multer({ storage: storage });
 // --- API Endpoints for Data Persistence ---
 
 app.get('/api/config', (req, res) => {
-    // --- ADDED THIS LOG ---
-    console.log(`SERVER LOG: /api/config called.`);
-    
     const config = {
         m3uContent: null,
         epgContent: null,
@@ -64,9 +61,23 @@ app.get('/api/config', (req, res) => {
         if (fs.existsSync(SETTINGS_PATH)) {
             config.settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
         }
-        
-        // --- ADDED THIS LOG ---
-        console.log(`SERVER LOG: Sending config. M3U content is ${config.m3uContent ? 'PRESENT' : 'MISSING'}.`);
+
+        // --- NEW: Initialize Player Settings if they don't exist ---
+        if (!config.settings.userAgents || config.settings.userAgents.length === 0) {
+            config.settings.userAgents = [
+                { id: `default-${Date.now()}`, name: 'ViniPlay Default', value: 'VLC/3.0.20 (Linux; x86_64)' }
+            ];
+            config.settings.activeUserAgentId = config.settings.userAgents[0].id;
+        }
+        if (!config.settings.streamProfiles || config.settings.streamProfiles.length === 0) {
+            config.settings.streamProfiles = [
+                { id: 'ffmpeg-default', name: 'ffmpeg', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c copy -f mpegts pipe:1', isDefault: true },
+                { id: 'redirect-default', name: 'Redirect', command: 'redirect', isDefault: true }
+            ];
+            config.settings.activeStreamProfileId = 'ffmpeg-default';
+        }
+
+        fs.writeFileSync(SETTINGS_PATH, JSON.stringify(config.settings, null, 2));
         
         res.json(config);
     } catch (error) {
@@ -171,8 +182,6 @@ function fetchUrlContent(url) {
 
 const createFetchEndpoint = (type, filePath) => async (req, res) => {
     const url = req.query.url;
-    // --- ADDED THIS LOG ---
-    console.log(`SERVER LOG: Received request to fetch ${type.toUpperCase()} from: ${url}`);
     if (!url) {
         return res.status(400).send('Error: URL query parameter is required.');
     }
@@ -180,9 +189,6 @@ const createFetchEndpoint = (type, filePath) => async (req, res) => {
     try {
         const content = await fetchUrlContent(url);
         fs.writeFileSync(filePath, content);
-        
-        // --- ADDED THIS LOG ---
-        console.log(`SERVER LOG: Successfully fetched ${type.toUpperCase()}. Size: ${content.length} characters.`);
         
         let settings = {};
         if (fs.existsSync(SETTINGS_PATH)) {
@@ -195,8 +201,7 @@ const createFetchEndpoint = (type, filePath) => async (req, res) => {
         res.header('Content-Type', type === 'm3u' ? 'application/vnd.apple.mpegurl' : 'application/xml');
         res.send(content);
     } catch (error) {
-        // --- ADDED THIS LOG ---
-        console.error(`SERVER LOG: Error fetching ${type.toUpperCase()} URL:`, error);
+        console.error(`Error fetching ${type.toUpperCase()} URL:`, error);
         res.status(500).send(`Failed to fetch from URL. Error: ${error.message}`);
     }
 };
@@ -206,25 +211,82 @@ app.get('/fetch-epg', createFetchEndpoint('epg', EPG_PATH));
 
 
 app.get('/stream', (req, res) => {
-    const streamUrl = req.query.url;
+    const { url: streamUrl, profileId, userAgentId } = req.query;
+
     if (!streamUrl) {
         return res.status(400).send('Error: `url` query parameter is required.');
     }
-    console.log(`Starting stream from: ${streamUrl}`);
-    const ffmpeg = spawn('ffmpeg', ['-i', streamUrl, '-c:v', 'copy', '-c:a', 'aac', '-f', 'mpegts', 'pipe:1']);
+
+    let settings = {};
+    if (fs.existsSync(SETTINGS_PATH)) {
+        try {
+            settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
+        } catch (e) {
+            console.error("Error reading settings.json for /stream:", e);
+            return res.status(500).send('Error reading server settings.');
+        }
+    }
+
+    const activeProfileId = profileId || settings.activeStreamProfileId || 'ffmpeg-default';
+    const activeUserAgentId = userAgentId || settings.activeUserAgentId;
+    
+    const profile = (settings.streamProfiles || []).find(p => p.id === activeProfileId);
+    const userAgent = (settings.userAgents || []).find(ua => ua.id === activeUserAgentId);
+
+    if (!profile) {
+        console.error(`Stream profile with ID "${activeProfileId}" not found.`);
+        return res.status(404).send('Error: Stream profile not found.');
+    }
+    
+    // The "Redirect" profile directly sends the client to the stream URL.
+    if (profile.command === 'redirect') {
+        console.log(`Redirecting to: ${streamUrl}`);
+        return res.redirect(302, streamUrl);
+    }
+    
+    if (!userAgent) {
+        console.error(`User agent with ID "${activeUserAgentId}" not found.`);
+        return res.status(404).send('Error: User agent not found.');
+    }
+
+    console.log(`Proxying stream for: ${streamUrl}`);
+    console.log(`> Profile: "${profile.name}"`);
+    console.log(`> User Agent: "${userAgent.name}"`);
+
+    // Replace placeholders in the command template.
+    const commandTemplate = profile.command
+        .replace(/{streamUrl}/g, streamUrl)
+        .replace(/{userAgent}/g, userAgent.value);
+
+    // Parse the command string into an array of arguments for spawn.
+    // This regex handles quoted strings to allow for spaces in values.
+    const args = (commandTemplate.match(/(?:[^\s"]+|"[^"]*")+/g) || [])
+        .map(arg => arg.replace(/^"|"$/g, '')); // Remove quotes
+
+    console.log(`Spawning ffmpeg with args: [${args.join(', ')}]`);
+
+    const ffmpeg = spawn('ffmpeg', args);
+
     res.setHeader('Content-Type', 'video/mp2t');
     ffmpeg.stdout.pipe(res);
-    ffmpeg.stderr.on('data', (data) => console.error(`ffmpeg stderr: ${data}`));
+
+    ffmpeg.stderr.on('data', (data) => {
+        console.error(`ffmpeg stderr: ${data}`);
+    });
+
     ffmpeg.on('close', (code) => {
-        if (code !== 0) console.log(`ffmpeg process exited with code ${code}`);
+        if (code !== 0) {
+            console.log(`ffmpeg process for ${streamUrl} exited with code ${code}`);
+        }
         res.end();
     });
+
     req.on('close', () => {
         console.log('Client closed connection. Stopping ffmpeg.');
-        ffmpeg.kill();
+        ffmpeg.kill('SIGKILL');
     });
 });
 
 app.listen(port, () => {
-    console.log(`ARDO IPTV Player server listening at http://localhost:${port}`);
+    console.log(`VINI PLAY server listening at http://localhost:${port}`);
 });
