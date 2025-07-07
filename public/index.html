@@ -223,7 +223,7 @@
                 <!-- Danger Zone -->
                 <div class="bg-red-900/50 border border-red-700/50 p-4 sm:p-6 rounded-xl shadow-lg">
                     <h2 class="text-xl font-bold text-red-300 mb-4 border-b border-red-700/50 pb-2">Danger Zone</h2>
-                    <p class="text-sm text-gray-400 mb-4">This permanently deletes all saved application data from the server.</p>
+                    <p class="text-sm text-gray-400 mb-4">This permanently deletes all saved application data from the server and browser.</p>
                     <button id="clear-data-btn" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center gap-2"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg><span>Clear All Data & Reset</span></button>
                 </div>
             </div>
@@ -319,6 +319,7 @@
                     date.setUTCMinutes(date.getUTCMinutes() - epgOffsetMinutes);
                 } else {
                     date = new Date(Date.UTC(year, parseInt(month) - 1, day, hours, minutes, seconds));
+                    // Apply manual offset only if no timezone info is in the string
                     date.setUTCHours(date.getUTCHours() - offsetHours);
                 }
                 return date;
@@ -371,15 +372,20 @@
                 const channelId = channelMatch[1];
                 const titleMatch = content.match(titleRegex);
                 if (!programData[channelId]) programData[channelId] = [];
+                
+                // Convert date strings to Date objects immediately
+                const startDate = parseEpgTime(startMatch[1], timezoneOffset);
+                const stopDate = parseEpgTime(stopMatch[1], timezoneOffset);
+
                 programData[channelId].push({
-                    start: parseEpgTime(startMatch[1], timezoneOffset),
-                    stop: parseEpgTime(stopMatch[1], timezoneOffset),
+                    start: startDate.toISOString(), // Store as ISO strings
+                    stop: stopDate.toISOString(),
                     title: titleMatch ? titleMatch[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim() : 'No Title',
                     desc: content.match(descRegex)?.[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim() || ''
                 });
             }
             for (const channelId in programData) {
-                programData[channelId].sort((a, b) => a.start - b.start);
+                programData[channelId].sort((a, b) => new Date(a.start) - new Date(b.start));
             }
             return programData;
         }
@@ -409,6 +415,7 @@
             };
             let player, worker, autoRefreshIntervalId, searchDebounceTimer;
             let confirmCallback = null;
+            let db = null;
             
             // --- Cache UI Elements ---
             const UIElements = Object.fromEntries(
@@ -417,6 +424,59 @@
                     el
                 ])
             );
+
+            // --- NEW: IndexedDB Caching Logic ---
+            const DB_NAME = 'ViniPlayDB';
+            const DB_VERSION = 1;
+            const STORE_NAME = 'guideData';
+
+            function openDB() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(DB_NAME, DB_VERSION);
+                    request.onerror = () => reject("Error opening IndexedDB.");
+                    request.onsuccess = (event) => resolve(event.target.result);
+                    request.onupgradeneeded = (event) => {
+                        const dbInstance = event.target.result;
+                        if (!dbInstance.objectStoreNames.contains(STORE_NAME)) {
+                            dbInstance.createObjectStore(STORE_NAME);
+                        }
+                    };
+                });
+            }
+
+            async function saveDataToDB(key, data) {
+                if (!db) return;
+                return new Promise((resolve, reject) => {
+                    const transaction = db.transaction([STORE_NAME], 'readwrite');
+                    const store = transaction.objectStore(STORE_NAME);
+                    const request = store.put(data, key);
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject("Error saving data to DB.");
+                });
+            }
+
+            async function loadDataFromDB(key) {
+                if (!db) return null;
+                return new Promise((resolve, reject) => {
+                    const transaction = db.transaction([STORE_NAME], 'readonly');
+                    const store = transaction.objectStore(STORE_NAME);
+                    const request = store.get(key);
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject("Error loading data from DB.");
+                });
+            }
+            
+            async function clearDB() {
+                if (!db) return;
+                 return new Promise((resolve, reject) => {
+                    const transaction = db.transaction([STORE_NAME], 'readwrite');
+                    const store = transaction.objectStore(STORE_NAME);
+                    const request = store.clear();
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject("Error clearing DB.");
+                });
+            }
+
 
             // --- Server Communication ---
             async function saveSettings() {
@@ -447,7 +507,7 @@
                 UIElements.pageGuide.classList.toggle('flex', isGuide);
                 UIElements.pageSettings.classList.toggle('hidden', isGuide);
                 UIElements.pageSettings.classList.toggle('flex', !isGuide);
-                UIElements.sidebarToggle.classList.toggle('hidden', !isGuide);
+                UIElements.sidebarToggle.classList.toggle('hidden', isGuide);
             };
 
             const openModal = (modal) => { modal.classList.replace('hidden', 'flex'); document.body.classList.add('modal-open'); };
@@ -504,17 +564,25 @@
                 }
                 let m3uParsed = false;
                 let epgParsed = !epgContent;
-                const checkCompletion = () => {
-                    if (m3uParsed && epgParsed) { finalizeGuideLoad(); resolve(); worker.onmessage = null; }
+                const checkCompletion = async () => {
+                    if (m3uParsed && epgParsed) { 
+                        // NEW: Save parsed data to IndexedDB
+                        try {
+                            await saveDataToDB('channels', guideState.channels);
+                            await saveDataToDB('programs', guideState.programs);
+                            console.log("Guide data cached in IndexedDB.");
+                        } catch (e) {
+                            console.error("Failed to cache guide data:", e);
+                        }
+                        finalizeGuideLoad(); 
+                        resolve(); 
+                        worker.onmessage = null; 
+                    }
                 };
                 worker.onmessage = ({ data: { type, data, error } }) => {
                     if (error) { reject(new Error(error)); worker.onmessage = null; return; }
                     if (type === 'm3u-success') {
                         guideState.channels = data;
-                        (guideState.settings.favorites || []).forEach(favId => {
-                            const channel = guideState.channels.find(c => c.id === favId);
-                            if (channel) channel.isFavorite = true;
-                        });
                         m3uParsed = true;
                     } else if (type === 'epg-success') {
                         guideState.programs = data;
@@ -530,6 +598,12 @@
             });
 
             const finalizeGuideLoad = () => {
+                // This function is now just for rendering after data is loaded (from cache or network)
+                // Add favorites flag based on settings
+                (guideState.settings.favorites || []).forEach(favId => {
+                    const channel = guideState.channels.find(c => c.id === favId);
+                    if (channel) channel.isFavorite = true;
+                });
                 guideState.channelGroups.clear();
                 guideState.channels.forEach(ch => { if(ch.group) guideState.channelGroups.add(ch.group) });
                 populateGroupFilter();
@@ -545,8 +619,6 @@
             };
 
             const renderGuide = (channelsToRender = guideState.channels, resetScroll = true) => {
-                // This function's original logic is sound and doesn't need changes.
-                // For brevity, the original implementation is assumed here.
                 const showPlaceholder = channelsToRender.length === 0;
                 UIElements.guidePlaceholder.classList.toggle('hidden', !showPlaceholder);
                 ['channelPanelContainer', 'resizer', 'logoColumn', 'timelineContainer'].forEach(id => UIElements[id].classList.toggle('hidden', showPlaceholder));
@@ -576,6 +648,7 @@
                     UIElements.logoList.innerHTML += `<div class="h-20 flex items-center justify-center p-1 border-b border-gray-700/50 flex-shrink-0 cursor-pointer" data-url="${channel.url}" data-name="${channel.displayName || channel.name}" data-id="${channel.id}"><img src="${channel.logo}" onerror="this.onerror=null; this.src='https://placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-14 h-14 object-contain pointer-events-none"></div>`;
                     let programsHTML = '';
                     (guideState.programs[channel.id] || []).forEach(prog => {
+                        // NEW: Create Date objects from ISO strings for rendering
                         const progStart = new Date(prog.start);
                         const progStop = new Date(prog.stop);
                         if (progStop < guideStart || progStart > guideEnd) return;
@@ -634,7 +707,6 @@
                 closeModal(UIElements.videoModal);
             };
 
-            // --- MODIFIED: playChannel to use stream profiles ---
             const playChannel = async (url, name, channelId) => {
                 if (player) stopAndCleanupPlayer();
                 if(channelId) {
@@ -652,11 +724,9 @@
                 
                 let streamUrlToPlay;
                 if (profile.command === 'redirect') {
-                    // For redirect profile, player connects directly to the channel's URL.
                     streamUrlToPlay = url;
                     console.log(`Playing directly from URL: ${streamUrlToPlay}`);
                 } else {
-                    // For ffmpeg profiles, player connects to our server's /stream proxy endpoint.
                     const userAgentId = guideState.settings.activeUserAgentId;
                     if (!userAgentId) {
                          showNotification("No user agent selected. Please check settings.", true);
@@ -796,7 +866,6 @@
                 }
             };
 
-            // --- NEW: Player Settings Modal Logic ---
             const openEditorModal = (type, item = null) => {
                 const isUserAgent = type === 'userAgent';
                 const title = item ? `Edit ${isUserAgent ? 'User Agent' : 'Stream Profile'}` : `Create New ${isUserAgent ? 'User Agent' : 'Stream Profile'}`;
@@ -811,9 +880,9 @@
                 
                 const isDefault = item && item.isDefault;
                 UIElements.editorName.disabled = isDefault;
-                UIElements.editorValue.disabled = isDefault; // Disable editing value for all default profiles
+                UIElements.editorValue.disabled = isDefault; 
 
-                if (isDefault && !isUserAgent) { // It's a default stream profile
+                if (isDefault && !isUserAgent) { 
                     const helpText = item.command === 'redirect'
                         ? 'This built-in profile redirects the player to the stream URL directly. The command cannot be changed.'
                         : 'This built-in profile uses the server to proxy the stream. The command cannot be changed.';
@@ -930,6 +999,7 @@
                     setButtonLoadingState(true);
                     try {
                         const { m3uSourceType, epgSourceType } = guideState.settings;
+                        // Step 1: Upload files if needed
                         if (m3uSourceType === 'file' || epgSourceType === 'file') {
                             const formData = new FormData();
                             if (m3uSourceType === 'file' && UIElements.m3uUpload.files[0]) formData.append('m3u-file', UIElements.m3uUpload.files[0]);
@@ -939,17 +1009,24 @@
                                 if (!res.ok) throw new Error('File upload failed on server.');
                             }
                         }
+                        // Step 2: Fetch URLs if needed
                         if (m3uSourceType === 'url' && UIElements.m3uUrlInput.value.trim()) {
                             await fetch(`/fetch-m3u?url=${encodeURIComponent(UIElements.m3uUrlInput.value.trim())}`);
                         }
                         if (epgSourceType === 'url' && UIElements.epgUrlInput.value.trim()) {
                            await fetch(`/fetch-epg?url=${encodeURIComponent(UIElements.epgUrlInput.value.trim())}`);
                         }
+                        
+                        // Step 3: Get the latest config from the server (which now has the new files/links)
                         const configResponse = await fetch(`/api/config?t=${new Date().getTime()}`);
                         const config = await configResponse.json();
                         if (!configResponse.ok) throw new Error('Could not retrieve config from server.');
                         if (!config.m3uContent) throw new Error("No M3U data found. Please select a valid source.");
+                        
+                        // Step 4: Parse the new content and cache it
                         await handleGuideLoad(config.m3uContent, config.epgContent);
+                        
+                        // Step 5: Update settings in memory and switch view
                         guideState.settings = config.settings || {};
                         updateUIFromSettings();
                         switchTab('guide');
@@ -963,16 +1040,22 @@
 
                 // Settings: General
                 UIElements.clearDataBtn.addEventListener('click', () => {
-                    showConfirm('Clear All Data?', 'This will permanently delete ALL settings and files from the server. The page will reload.', async () => {
+                    showConfirm('Clear All Data?', 'This will permanently delete ALL settings and files from the server and browser cache. The page will reload.', async () => {
                         try {
                             await fetch('/api/data', { method: 'DELETE' });
+                            await clearDB(); // NEW: Clear IndexedDB
                             showNotification('All data cleared. Reloading...');
                             setTimeout(() => window.location.reload(), 1500);
                         } catch (e) { showNotification(e.message, true); }
                     });
                 });
                 UIElements.autoRefreshSelect.addEventListener('change', async (e) => { guideState.settings.autoRefresh = parseInt(e.target.value, 10); await saveSettings(); setupAutoRefresh(guideState.settings.autoRefresh); });
-                UIElements.timezoneOffsetSelect.addEventListener('change', async (e) => { guideState.settings.timezoneOffset = parseInt(e.target.value, 10); await saveSettings(); showNotification(`Timezone offset set. Reload guide to apply.`); });
+                UIElements.timezoneOffsetSelect.addEventListener('change', async (e) => { 
+                    guideState.settings.timezoneOffset = parseInt(e.target.value, 10); 
+                    await saveSettings();
+                    await clearDB(); // Clear cache as timezone affects parsing
+                    showNotification(`Timezone offset set. Reload guide to apply changes.`); 
+                });
                 
                 // Settings: Player CRUD
                 UIElements.addUserAgentBtn.addEventListener('click', () => openEditorModal('userAgent'));
@@ -1072,7 +1155,6 @@
                 }, false);
             }
 
-            // --- MODIFIED: Initialization and UI Update Logic ---
             const updateUIFromSettings = () => {
                 const settings = guideState.settings;
                 
@@ -1097,7 +1179,6 @@
                     updateCustomUrlVisibility(type);
                 });
 
-                // --- NEW: Populate Player Settings ---
                 const populateSelect = (selectId, items, activeId) => {
                     const selectEl = UIElements[selectId];
                     selectEl.innerHTML = '';
@@ -1115,7 +1196,6 @@
                 populateSelect('userAgentSelect', settings.userAgents || [], settings.activeUserAgentId);
                 populateSelect('streamProfileSelect', settings.streamProfiles || [], settings.activeStreamProfileId);
 
-                // Disable delete/edit buttons for default profiles
                 const selectedProfileId = UIElements.streamProfileSelect.value;
                 const selectedProfile = (settings.streamProfiles || []).find(p => p.id === selectedProfileId);
                 UIElements.editStreamProfileBtn.disabled = !selectedProfile;
@@ -1125,25 +1205,48 @@
             };
 
             const initApp = async () => {
+                // Initialize Worker and DB connection
                 const blob = new Blob([document.querySelector('#parser-worker').textContent], { type: 'text/javascript' });
                 worker = new Worker(window.URL.createObjectURL(blob));
+                try {
+                    db = await openDB();
+                } catch(e) {
+                    console.error(e);
+                    showNotification("Could not initialize local cache.", true);
+                }
+
                 populateTimezoneSelector();
                 setupEventListeners();
+                
                 try {
+                    // Always fetch settings from the server on load
                     const response = await fetch(`/api/config?t=${new Date().getTime()}`);
                     if (!response.ok) throw new Error('Could not connect to the server.');
                     const config = await response.json();
-                    
-                    guideState.settings = config.settings || { favorites:[], recentChannels:[], m3uCustomUrls:[], epgCustomUrls:[], userAgents:[], streamProfiles:[] };
-                    updateUIFromSettings();
-                    
-                    if (config.m3uContent) {
+                    guideState.settings = config.settings || {}; // Load settings first
+                    updateUIFromSettings(); // Update the settings UI
+
+                    // NEW: Try loading guide data from cache first
+                    const cachedChannels = await loadDataFromDB('channels');
+                    const cachedPrograms = await loadDataFromDB('programs');
+
+                    if (cachedChannels && cachedPrograms && cachedChannels.length > 0) {
+                        console.log("Loading guide from local cache.");
+                        guideState.channels = cachedChannels;
+                        guideState.programs = cachedPrograms;
+                        finalizeGuideLoad(); // Render the cached data immediately
+                        switchTab('guide');
+                    } else if (config.m3uContent) {
+                        // If no cache, but server has data, load from server
+                        console.log("Loading guide from server (no cache available).");
                         showNotification("Loading guide from server...", false, 1500);
                         setButtonLoadingState(true);
-                        await handleGuideLoad(config.m3uContent, config.epgContent);
+                        await handleGuideLoad(config.m3uContent, config.epgContent); // This will parse and also create the cache
                         switchTab('guide');
                         setButtonLoadingState(false);
                     } else {
+                        // No cache and no server data, go to settings
+                        console.log("No data on server or in cache. Go to settings.");
                         switchTab('settings');
                         renderGuide([]);
                     }
