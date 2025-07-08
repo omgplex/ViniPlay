@@ -79,9 +79,9 @@ app.get('/api/config', (req, res) => {
         }
         // MODIFIED: Rename default stream profiles
         if (!config.settings.streamProfiles || config.settings.streamProfiles.length === 0) {
-            // UPDATED: Added flags to the default ffmpeg command for better stream stability.
+            // UPDATED: Added -async 1 flag for better A/V sync.
             config.settings.streamProfiles = [
-                { id: 'ffmpeg-default', name: 'ffmpeg (Built in - Robust)', command: '-user_agent "{userAgent}" -re -i "{streamUrl}" -c copy -fflags +genpts -f mpegts pipe:1', isDefault: true },
+                { id: 'ffmpeg-default', name: 'ffmpeg (Built in - A/V Sync)', command: '-user_agent "{userAgent}" -re -i "{streamUrl}" -c copy -fflags +genpts -async 1 -f mpegts pipe:1', isDefault: true },
                 { id: 'redirect-default', name: 'Redirect (Built in)', command: 'redirect', isDefault: true }
             ];
             config.settings.activeStreamProfileId = 'ffmpeg-default';
@@ -315,7 +315,11 @@ app.get('/stream', (req, res) => {
     req.on('close', () => {
         console.log('Client closed connection. Killing ffmpeg process.');
         // Use a negative PID to kill the entire process group
-        process.kill(-ffmpeg.pid, 'SIGKILL');
+        try {
+             process.kill(-ffmpeg.pid, 'SIGKILL');
+        } catch (e) {
+            // Can throw an error if the process is already gone, which is fine.
+        }
     });
 });
 
