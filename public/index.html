@@ -595,7 +595,7 @@
                 if (!m3uContent) {
                     guideState.channels = [];
                     guideState.programs = {};
-                    finalizeGuideLoad(true); // MODIFIED: Pass true to indicate first load
+                    finalizeGuideLoad(true);
                     return resolve();
                 }
                 let m3uParsed = false;
@@ -609,7 +609,7 @@
                         } catch (e) {
                             console.error("Failed to cache guide data:", e);
                         }
-                        finalizeGuideLoad(true); // MODIFIED: Pass true to indicate first load
+                        finalizeGuideLoad(true);
                         resolve(); 
                         worker.onmessage = null; 
                     }
@@ -640,7 +640,7 @@
                 guideState.channelGroups.clear();
                 guideState.channels.forEach(ch => { if(ch.group) guideState.channelGroups.add(ch.group) });
                 populateGroupFilter();
-                handleSearchAndFilter(isFirstLoad); // MODIFIED: Pass isFirstLoad flag
+                handleSearchAndFilter(isFirstLoad);
             };
             
             const populateGroupFilter = () => {
@@ -654,14 +654,13 @@
                 UIElements.groupFilter.classList.remove('hidden');
             };
 
-            const renderGuide = (channelsToRender, resetScroll = false) => { // MODIFIED: Default resetScroll to false
+            const renderGuide = (channelsToRender, resetScroll = false) => {
                 guideState.visibleChannels = channelsToRender;
                 const showNoData = guideState.channels.length === 0;
 
-                // MODIFIED: Simplified placeholder logic
                 UIElements.guidePlaceholder.classList.toggle('hidden', !showNoData);
                 UIElements.noDataMessage.classList.toggle('hidden', !showNoData);
-                UIElements.initialLoadingIndicator.classList.add('hidden'); // Always hide initial loader after this point
+                UIElements.initialLoadingIndicator.classList.add('hidden');
 
                 if(showNoData) {
                    ['channelPanelContainer', 'resizer', 'logoColumn', 'timelineContainer'].forEach(id => UIElements[id].classList.add('hidden'));
@@ -719,12 +718,15 @@
                 }, 0);
             };
 
+            // MODIFIED: This function now correctly updates program states
             const updateNowLine = (guideStart, shouldScroll, totalGuideHeight) => {
                 const nowLineEl = document.getElementById('now-line');
                 if (!nowLineEl) return;
                 nowLineEl.style.height = `${totalGuideHeight}px`;
                 const now = new Date();
                 const guideEnd = new Date(guideStart.getTime() + guideState.guideDurationHours * 3600 * 1000);
+                
+                // Update Now Line position
                 if (now >= guideStart && now <= guideEnd) {
                     const left = ((now - guideStart) / 3600000) * guideState.hourWidthPixels;
                     nowLineEl.style.left = `${left}px`;
@@ -733,14 +735,29 @@
                 } else {
                     nowLineEl.classList.add('hidden');
                 }
-                document.querySelectorAll('.programme-item.live .programme-progress').forEach(el => {
-                    const item = el.parentElement;
+
+                // Update program states (live/past) every minute
+                document.querySelectorAll('.programme-item').forEach(item => {
                     const progStart = new Date(item.dataset.progStart);
                     const progStop = new Date(item.dataset.progStop);
-                    const durationMs = progStop - progStart;
-                    const elapsedMs = now - progStart;
-                    el.style.width = `${(elapsedMs / durationMs) * 100}%`;
+
+                    const isLive = now >= progStart && now < progStop;
+                    const isPast = now >= progStop;
+
+                    item.classList.toggle('live', isLive);
+                    item.classList.toggle('past', isPast);
+
+                    // Update progress bar only if it's live
+                    if (isLive) {
+                        const progressEl = item.querySelector('.programme-progress');
+                        if (progressEl) {
+                            const durationMs = progStop - progStart;
+                            const elapsedMs = now - progStart;
+                            progressEl.style.width = `${(elapsedMs / durationMs) * 100}%`;
+                        }
+                    }
                 });
+
                 setTimeout(() => updateNowLine(guideStart, false, totalGuideHeight), 60000);
             };
 
@@ -844,7 +861,7 @@
                 }
             };
             
-            const handleSearchAndFilter = (isFirstLoad = false) => { // MODIFIED: Accept isFirstLoad flag
+            const handleSearchAndFilter = (isFirstLoad = false) => {
                 const searchTerm = UIElements.searchInput.value.toLowerCase().trim();
                 const selectedGroup = UIElements.groupFilter.value;
                 let filteredChannels = guideState.channels;
@@ -905,7 +922,7 @@
                     UIElements.searchResultsContainer.classList.add('hidden');
                 }
                 
-                renderGuide(channelsForGuide, isFirstLoad); // MODIFIED: Pass isFirstLoad to renderGuide
+                renderGuide(channelsForGuide, isFirstLoad);
             };
             
             const populateTimezoneSelector = () => {
@@ -1002,7 +1019,7 @@
                     if (progItemData) {
                         const progStart = new Date(progItemData.dataset.progStart);
                         guideState.currentDate = progStart;
-                        handleSearchAndFilter(); // Re-render guide for the correct date
+                        handleSearchAndFilter();
                         setTimeout(() => {
                             const guideStartTime = new Date(guideState.currentDate);
                             guideStartTime.setHours(0,0,0,0);
@@ -1246,7 +1263,6 @@
                     items.forEach(item => {
                         const option = document.createElement('option');
                         option.value = item.id;
-                        // MODIFIED: Directly use the name from the server
                         option.textContent = item.name; 
                         selectEl.appendChild(option);
                     });
@@ -1288,7 +1304,6 @@
                     guideState.settings = config.settings || {}; 
                     updateUIFromSettings(); 
 
-                    // MODIFIED: Improved loading flow
                     UIElements.initialLoadingIndicator.classList.remove('hidden');
                     UIElements.guidePlaceholder.classList.remove('hidden');
 
@@ -1299,12 +1314,11 @@
                         console.log("Loading guide from local cache.");
                         guideState.channels = cachedChannels;
                         guideState.programs = cachedPrograms;
-                        finalizeGuideLoad(true); // Load with scroll to now
+                        finalizeGuideLoad(true);
                     } else if (config.m3uContent) {
                         console.log("Loading guide from server (no cache available).");
                         await handleGuideLoad(config.m3uContent, config.epgContent);
                     } else {
-                        // No data from server or cache
                         UIElements.initialLoadingIndicator.classList.add('hidden');
                         UIElements.noDataMessage.classList.remove('hidden');
                     }
