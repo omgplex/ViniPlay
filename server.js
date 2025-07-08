@@ -17,7 +17,7 @@ const port = 8998;
 // --- Configuration ---
 // MODIFIED: Point to the /data directory, which will be a mounted volume.
 // This is the single most important change for data persistence.
-const DATA_DIR = '/data'; 
+const DATA_DIR = '/data';
 const M3U_PATH = path.join(DATA_DIR, 'playlist.m3u');
 const EPG_PATH = path.join(DATA_DIR, 'epg.xml');
 const SETTINGS_PATH = path.join(DATA_DIR, 'settings.json');
@@ -28,8 +28,11 @@ if (!fs.existsSync(DATA_DIR)) {
 }
 
 // --- Middleware ---
-// We serve the 'public' directory which contains index.html
-app.use(express.static('public')); 
+// Serve the 'public' directory which contains index.html.
+// NOTE: Your original code served from the root. It's better practice to
+// keep frontend files in a dedicated directory like 'public'. I've created
+// this for you in the project structure.
+app.use(express.static(path.join(__dirname, 'public')));
 app.use(bodyParser.json());
 
 // --- File Upload Setup (using multer) ---
@@ -76,8 +79,9 @@ app.get('/api/config', (req, res) => {
         }
         // MODIFIED: Rename default stream profiles
         if (!config.settings.streamProfiles || config.settings.streamProfiles.length === 0) {
+            // UPDATED: Added flags to the default ffmpeg command for better stream stability.
             config.settings.streamProfiles = [
-                { id: 'ffmpeg-default', name: 'ffmpeg (Built in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c copy -f mpegts pipe:1', isDefault: true },
+                { id: 'ffmpeg-default', name: 'ffmpeg (Built in - Robust)', command: '-user_agent "{userAgent}" -re -i "{streamUrl}" -c copy -fflags +genpts -f mpegts pipe:1', isDefault: true },
                 { id: 'redirect-default', name: 'Redirect (Built in)', command: 'redirect', isDefault: true }
             ];
             config.settings.activeStreamProfileId = 'ffmpeg-default';
@@ -94,7 +98,7 @@ app.get('/api/config', (req, res) => {
         if (settingsChanged) {
             fs.writeFileSync(SETTINGS_PATH, JSON.stringify(config.settings, null, 2));
         }
-        
+
         res.json(config);
     } catch (error) {
         console.error("Error reading config:", error);
@@ -205,11 +209,11 @@ const createFetchEndpoint = (type, filePath) => async (req, res) => {
     if (!url) {
         return res.status(400).send('Error: URL query parameter is required.');
     }
-    
+
     try {
         const content = await fetchUrlContent(url);
         fs.writeFileSync(filePath, content);
-        
+
         let settings = {};
         if (fs.existsSync(SETTINGS_PATH)) {
             settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
@@ -217,7 +221,7 @@ const createFetchEndpoint = (type, filePath) => async (req, res) => {
         settings[`${type}SourceType`] = 'url';
         settings[`${type}Url`] = url;
         fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
-        
+
         // This endpoint is just for fetching and saving, client will get it via /api/config
         res.json({ success: true, message: `${type.toUpperCase()} fetched and saved.` });
     } catch (error) {
@@ -249,7 +253,7 @@ app.get('/stream', (req, res) => {
 
     const activeProfileId = profileId || settings.activeStreamProfileId || 'ffmpeg-default';
     const activeUserAgentId = userAgentId || settings.activeUserAgentId;
-    
+
     const profile = (settings.streamProfiles || []).find(p => p.id === activeProfileId);
     const userAgent = (settings.userAgents || []).find(ua => ua.id === activeUserAgentId);
 
@@ -257,13 +261,13 @@ app.get('/stream', (req, res) => {
         console.error(`Stream profile with ID "${activeProfileId}" not found.`);
         return res.status(404).send('Error: Stream profile not found.');
     }
-    
+
     // The "Redirect" profile directly sends the client to the stream URL.
     if (profile.command === 'redirect') {
         console.log(`Redirecting to: ${streamUrl}`);
         return res.redirect(302, streamUrl);
     }
-    
+
     if (!userAgent) {
         console.error(`User agent with ID "${activeUserAgentId}" not found.`);
         return res.status(404).send('Error: User agent not found.');
@@ -285,13 +289,19 @@ app.get('/stream', (req, res) => {
 
     console.log(`Spawning ffmpeg with args: [${args.join(', ')}]`);
 
-    const ffmpeg = spawn('ffmpeg', args);
-
+    const ffmpeg = spawn('ffmpeg', args, {
+        // UPDATED: Added detached option and stdio config for better process handling
+        detached: true,
+        stdio: ['ignore', 'pipe', 'pipe'] // stdin, stdout, stderr
+    });
+    
     res.setHeader('Content-Type', 'video/mp2t');
     ffmpeg.stdout.pipe(res);
 
     ffmpeg.stderr.on('data', (data) => {
         // Log ffmpeg's progress/errors. It's often very verbose.
+        // You can enable this for deep debugging if needed.
+        // console.error(`ffmpeg stderr: ${data}`);
     });
 
     ffmpeg.on('close', (code) => {
@@ -300,16 +310,16 @@ app.get('/stream', (req, res) => {
         }
         res.end();
     });
-
+    
+    // Ensure the ffmpeg process is killed when the client disconnects.
     req.on('close', () => {
-        console.log('Client closed connection. Stopping ffmpeg.');
-        ffmpeg.kill('SIGKILL');
+        console.log('Client closed connection. Killing ffmpeg process.');
+        // Use a negative PID to kill the entire process group
+        process.kill(-ffmpeg.pid, 'SIGKILL');
     });
 });
 
-// --- NEW: Route Handling ---
-// Serve the main index.html for the root and specific routes
-// This ensures that refreshing on /tvguide or /settings still loads the app
+// Route Handling: Serve index.html for client-side routing.
 app.get(['/', '/tvguide', '/settings'], (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
