@@ -74,10 +74,11 @@ app.get('/api/config', (req, res) => {
             config.settings.activeUserAgentId = config.settings.userAgents[0].id;
             settingsChanged = true;
         }
+        // MODIFIED: Rename default stream profiles
         if (!config.settings.streamProfiles || config.settings.streamProfiles.length === 0) {
             config.settings.streamProfiles = [
-                { id: 'ffmpeg-default', name: 'ffmpeg', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c copy -f mpegts pipe:1', isDefault: true },
-                { id: 'redirect-default', name: 'Redirect', command: 'redirect', isDefault: true }
+                { id: 'ffmpeg-default', name: 'ffmpeg (Built in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c copy -f mpegts pipe:1', isDefault: true },
+                { id: 'redirect-default', name: 'Redirect (Built in)', command: 'redirect', isDefault: true }
             ];
             config.settings.activeStreamProfileId = 'ffmpeg-default';
             settingsChanged = true;
