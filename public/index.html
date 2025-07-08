@@ -718,7 +718,6 @@
                 }, 0);
             };
 
-            // MODIFIED: This function now correctly updates program states
             const updateNowLine = (guideStart, shouldScroll, totalGuideHeight) => {
                 const nowLineEl = document.getElementById('now-line');
                 if (!nowLineEl) return;
@@ -730,10 +729,15 @@
                 if (now >= guideStart && now <= guideEnd) {
                     const left = ((now - guideStart) / 3600000) * guideState.hourWidthPixels;
                     nowLineEl.style.left = `${left}px`;
-                    nowLineEl.classList.remove('hidden');
+                    // MODIFIED: Prevent flicker by checking if class exists before removing
+                    if (nowLineEl.classList.contains('hidden')) {
+                        nowLineEl.classList.remove('hidden');
+                    }
                     if (shouldScroll) UIElements.guideTimeline.scrollLeft = left - (UIElements.guideTimeline.clientWidth / 4);
                 } else {
-                    nowLineEl.classList.add('hidden');
+                    if (!nowLineEl.classList.contains('hidden')) {
+                        nowLineEl.classList.add('hidden');
+                    }
                 }
 
                 // Update program states (live/past) every minute
@@ -746,14 +750,17 @@
 
                     item.classList.toggle('live', isLive);
                     item.classList.toggle('past', isPast);
-
-                    // Update progress bar only if it's live
-                    if (isLive) {
-                        const progressEl = item.querySelector('.programme-progress');
-                        if (progressEl) {
+                    
+                    const progressEl = item.querySelector('.programme-progress');
+                    if (progressEl) {
+                        // Update progress bar only if it's live
+                        if (isLive) {
                             const durationMs = progStop - progStart;
                             const elapsedMs = now - progStart;
                             progressEl.style.width = `${(elapsedMs / durationMs) * 100}%`;
+                        } else {
+                            // MODIFIED: Hide progress bar for past/future programs
+                            progressEl.style.width = '0%';
                         }
                     }
                 });
