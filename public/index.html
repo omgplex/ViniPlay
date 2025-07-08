@@ -40,6 +40,19 @@
         .programme-item.highlighted { outline: 3px solid #facc15; z-index: 15; transition: outline 0.2s ease-in-out; }
         button:disabled { cursor: not-allowed; background-color: #4b5563; opacity: 0.7; }
         #editor-value:disabled { background-color: #374151; color: #9ca3af; }
+        /* NEW: Loading spinner style */
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body class="flex flex-col h-screen">
@@ -79,8 +92,13 @@
                 </div>
             </div>
             <div id="guide-container" class="flex-grow flex bg-gray-900 overflow-hidden relative">
+                <!-- MODIFIED: Placeholder and Loading Indicator -->
                 <div id="guide-placeholder" class="absolute inset-0 flex items-center justify-center z-40">
-                    <div class="text-center text-gray-500 p-4">
+                    <div id="initial-loading-indicator" class="text-center text-gray-400">
+                        <div class="loader mx-auto"></div>
+                        <p class="mt-4">Loading application...</p>
+                    </div>
+                    <div id="no-data-message" class="hidden text-center text-gray-500 p-4">
                         <svg class="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
                         <h3 class="mt-2 text-sm font-medium">No Data Loaded</h3>
                         <p class="mt-1 text-sm">Go to the Settings tab to load your M3U and EPG files.</p>
@@ -238,7 +256,7 @@
             <span class="text-xs">Guide</span>
         </button>
         <button id="bottom-nav-settings" class="bottom-nav-btn flex-1 p-3 text-gray-400">
-            <svg class="mx-auto h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066 2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+            <svg class="mx-auto h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066 2.573c-.94-1.543.826 3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
             <span class="text-xs">Settings</span>
         </button>
     </nav>
@@ -410,7 +428,7 @@
                 hourWidthPixels: window.innerWidth < 768 ? 200 : 300,
                 currentDate: new Date(),
                 channelGroups: new Set(),
-                visibleChannels: [], 
+                visibleChannels: [],
             };
             let player, worker, autoRefreshIntervalId, searchDebounceTimer;
             let confirmCallback = null;
@@ -493,7 +511,7 @@
             // --- UI Helper Functions ---
             const showNotification = (message, isError = false, duration = 3000) => {
                 UIElements.notificationMessage.textContent = message;
-                UIElements.notificationModal.className = `fixed top-5 right-5 text-white py-2 px-4 rounded-lg shadow-lg z-[100] ${isError ? 'bg-green-500' : 'bg-red-500'}`;
+                UIElements.notificationModal.className = `fixed top-5 right-5 text-white py-2 px-4 rounded-lg shadow-lg z-[100] ${isError ? 'bg-red-500' : 'bg-green-500'}`;
                 UIElements.notificationModal.classList.remove('hidden');
                 setTimeout(() => { UIElements.notificationModal.classList.add('hidden'); }, duration);
             };
@@ -525,7 +543,7 @@
                 UIElements.pageSettings.classList.toggle('hidden', isGuide);
                 UIElements.pageSettings.classList.toggle('flex', !isGuide);
                 
-                UIElements.sidebarToggle.classList.toggle('hidden', !isGuide); 
+                UIElements.sidebarToggle.classList.toggle('hidden', !isGuide);
             };
             
             const openModal = (modal) => { modal.classList.replace('hidden', 'flex'); document.body.classList.add('modal-open'); };
@@ -577,7 +595,7 @@
                 if (!m3uContent) {
                     guideState.channels = [];
                     guideState.programs = {};
-                    finalizeGuideLoad();
+                    finalizeGuideLoad(true); // MODIFIED: Pass true to indicate first load
                     return resolve();
                 }
                 let m3uParsed = false;
@@ -591,7 +609,7 @@
                         } catch (e) {
                             console.error("Failed to cache guide data:", e);
                         }
-                        finalizeGuideLoad(); 
+                        finalizeGuideLoad(true); // MODIFIED: Pass true to indicate first load
                         resolve(); 
                         worker.onmessage = null; 
                     }
@@ -614,7 +632,7 @@
                 }
             });
 
-            const finalizeGuideLoad = () => {
+            const finalizeGuideLoad = (isFirstLoad = false) => {
                 (guideState.settings.favorites || []).forEach(favId => {
                     const channel = guideState.channels.find(c => c.id === favId);
                     if (channel) channel.isFavorite = true;
@@ -622,7 +640,7 @@
                 guideState.channelGroups.clear();
                 guideState.channels.forEach(ch => { if(ch.group) guideState.channelGroups.add(ch.group) });
                 populateGroupFilter();
-                handleSearchAndFilter(); 
+                handleSearchAndFilter(isFirstLoad); // MODIFIED: Pass isFirstLoad flag
             };
             
             const populateGroupFilter = () => {
@@ -636,12 +654,15 @@
                 UIElements.groupFilter.classList.remove('hidden');
             };
 
-            const renderGuide = (channelsToRender, resetScroll = true) => {
-                guideState.visibleChannels = channelsToRender; 
-                const showPlaceholder = channelsToRender.length === 0 && guideState.channels.length > 0;
+            const renderGuide = (channelsToRender, resetScroll = false) => { // MODIFIED: Default resetScroll to false
+                guideState.visibleChannels = channelsToRender;
                 const showNoData = guideState.channels.length === 0;
 
+                // MODIFIED: Simplified placeholder logic
                 UIElements.guidePlaceholder.classList.toggle('hidden', !showNoData);
+                UIElements.noDataMessage.classList.toggle('hidden', !showNoData);
+                UIElements.initialLoadingIndicator.classList.add('hidden'); // Always hide initial loader after this point
+
                 if(showNoData) {
                    ['channelPanelContainer', 'resizer', 'logoColumn', 'timelineContainer'].forEach(id => UIElements[id].classList.add('hidden'));
                    return;
@@ -724,66 +745,13 @@
             };
 
             const stopAndCleanupPlayer = () => {
-                if (player) { 
-                    player.destroy(); 
-                    player = null; 
-                }
+                if (player) { player.destroy(); player = null; }
                 UIElements.videoElement.src = "";
                 UIElements.videoElement.removeAttribute('src');
                 UIElements.videoElement.load();
-                
-                // NEW: Clear media session
-                if ('mediaSession' in navigator) {
-                    navigator.mediaSession.metadata = null;
-                    navigator.mediaSession.setActionHandler('seekbackward', null);
-                    navigator.mediaSession.setActionHandler('seekforward', null);
-                }
+                if (document.pictureInPictureElement) document.exitPictureInPicture().catch(console.error);
+                closeModal(UIElements.videoModal);
             };
-            
-            /**
-             * NEW FUNCTION: setupMediaSession
-             * This function uses the Media Session API to provide richer media controls
-             * to the browser and operating system, including the Picture-in-Picture window.
-             * @param {string} title - The title of the stream to display.
-             * @param {string} channelName - The name of the channel.
-             * @param {string} logoSrc - The URL for the channel's logo to use as artwork.
-             */
-            function setupMediaSession(title, channelName, logoSrc) {
-                if ('mediaSession' in navigator) {
-                    const videoElement = UIElements.videoElement;
-
-                    navigator.mediaSession.metadata = new MediaMetadata({
-                        title: title,
-                        artist: channelName,
-                        album: 'VINI PLAY',
-                        artwork: [
-                            { src: logoSrc, sizes: '96x96', type: 'image/png' },
-                            { src: logoSrc, sizes: '128x128', type: 'image/png' },
-                            { src: logoSrc, sizes: '192x192', type: 'image/png' },
-                            { src: logoSrc, sizes: '256x256', type: 'image/png' },
-                            { src: logoSrc, sizes: '384x384', type: 'image/png' },
-                            { src: logoSrc, sizes: '512x512', type: 'image/png' },
-                        ]
-                    });
-
-                    try {
-                        navigator.mediaSession.setActionHandler('seekbackward', () => {
-                            videoElement.currentTime = Math.max(0, videoElement.currentTime - 10);
-                        });
-                    } catch (error) {
-                        console.warn('Could not set "seekbackward" action:', error);
-                    }
-
-                    try {
-                        navigator.mediaSession.setActionHandler('seekforward', () => {
-                            videoElement.currentTime += 10;
-                        });
-                    } catch (error) {
-                        console.warn('Could not set "seekforward" action:', error);
-                    }
-                }
-            }
-
 
             const playChannel = async (url, name, channelId) => {
                 if (player) stopAndCleanupPlayer();
@@ -814,14 +782,6 @@
 
                 if (mpegts.isSupported()) {
                     player = mpegts.createPlayer({ type: 'mse', isLive: true, url: streamUrlToPlay });
-                    
-                    // Find the channel's logo to pass to the media session
-                    const channel = guideState.channels.find(c => c.id === channelId);
-                    const logo = channel ? channel.logo : 'https://i.imgur.com/rwa8SjI.png';
-                    
-                    // Setup Media Session for PiP controls
-                    setupMediaSession(name, channel ? channel.group : 'Live TV', logo);
-
                     openModal(UIElements.videoModal);
                     UIElements.videoTitle.textContent = name;
                     player.attachMediaElement(UIElements.videoElement);
@@ -831,7 +791,6 @@
                         console.error("MPEGTS Player Error:", err)
                         showNotification("Could not play stream. Check browser console & server logs.", true);
                         stopAndCleanupPlayer();
-                        closeModal(UIElements.videoModal);
                     });
                 } else {
                     showNotification('Your browser does not support MSE.', true);
@@ -885,7 +844,7 @@
                 }
             };
             
-            const handleSearchAndFilter = () => {
+            const handleSearchAndFilter = (isFirstLoad = false) => { // MODIFIED: Accept isFirstLoad flag
                 const searchTerm = UIElements.searchInput.value.toLowerCase().trim();
                 const selectedGroup = UIElements.groupFilter.value;
                 let filteredChannels = guideState.channels;
@@ -946,7 +905,7 @@
                     UIElements.searchResultsContainer.classList.add('hidden');
                 }
                 
-                renderGuide(channelsForGuide, false);
+                renderGuide(channelsForGuide, isFirstLoad); // MODIFIED: Pass isFirstLoad to renderGuide
             };
             
             const populateTimezoneSelector = () => {
@@ -987,33 +946,19 @@
                 // Main Navigation
                 ['tabGuide', 'bottomNavGuide'].forEach(id => UIElements[id].addEventListener('click', () => switchTab('guide')));
                 ['tabSettings', 'bottomNavSettings'].forEach(id => UIElements[id].addEventListener('click', () => switchTab('settings')));
-                window.addEventListener('popstate', handleRouteChange); 
+                window.addEventListener('popstate', handleRouteChange);
 
                 // Modals
                 UIElements.confirmCancelBtn.addEventListener('click', () => closeModal(UIElements.confirmModal));
                 UIElements.confirmOkBtn.addEventListener('click', () => { if (confirmCallback) confirmCallback(); closeModal(UIElements.confirmModal); });
                 UIElements.detailsCloseBtn.addEventListener('click', () => closeModal(UIElements.programDetailsModal));
-                
-                UIElements.closeModal.addEventListener('click', () => {
-                    if (document.pictureInPictureElement) {
-                        document.exitPictureInPicture().catch(console.error);
-                    }
-                    stopAndCleanupPlayer();
-                    closeModal(UIElements.videoModal);
-                });
-
+                UIElements.closeModal.addEventListener('click', () => document.pictureInPictureElement ? closeModal(UIElements.videoModal) : stopAndCleanupPlayer());
                 UIElements.pipBtn.addEventListener('click', () => {
                     if(document.pictureInPictureEnabled && UIElements.videoElement.readyState === 4) {
-                        UIElements.videoElement.requestPictureInPicture()
-                            .then(() => closeModal(UIElements.videoModal))
-                            .catch(console.error);
+                        UIElements.videoElement.requestPictureInPicture().catch(console.error);
                     }
                 });
-
-                UIElements.videoElement.addEventListener('leavepictureinpicture', () => {
-                    openModal(UIElements.videoModal);
-                });
-
+                UIElements.videoElement.addEventListener('leavepictureinpicture', stopAndCleanupPlayer);
                 UIElements.videoElement.addEventListener('volumechange', () => localStorage.setItem('iptvPlayerVolume', UIElements.videoElement.volume));
 
                 // Guide Interaction
@@ -1057,7 +1002,7 @@
                     if (progItemData) {
                         const progStart = new Date(progItemData.dataset.progStart);
                         guideState.currentDate = progStart;
-                        handleSearchAndFilter(); 
+                        handleSearchAndFilter(); // Re-render guide for the correct date
                         setTimeout(() => {
                             const guideStartTime = new Date(guideState.currentDate);
                             guideStartTime.setHours(0,0,0,0);
@@ -1086,7 +1031,7 @@
                 });
                 UIElements.nextDayBtn.addEventListener('click', () => { guideState.currentDate.setDate(guideState.currentDate.getDate() + 1); handleSearchAndFilter(); });
                 
-                UIElements.groupFilter.addEventListener('change', handleSearchAndFilter);
+                UIElements.groupFilter.addEventListener('change', () => handleSearchAndFilter());
 
                 // Settings: Data Sources
                 ['m3u', 'epg'].forEach(type => {
@@ -1131,7 +1076,7 @@
                         
                         guideState.settings = config.settings || {};
                         updateUIFromSettings();
-                        navigate('/tvguide'); 
+                        navigate('/tvguide');
                         showNotification('Guide data loaded successfully!');
                     } catch (error) {
                         showNotification(`Error: ${error.message}`, true);
@@ -1209,13 +1154,13 @@
                 UIElements.userAgentSelect.addEventListener('change', async (e) => {
                     guideState.settings.activeUserAgentId = e.target.value;
                     await saveSettings();
-                    showNotification('Active User Agent set.', false, 2000); 
+                    showNotification('Active User Agent set.', false, 2000);
                 });
                 UIElements.streamProfileSelect.addEventListener('change', async (e) => {
                     guideState.settings.activeStreamProfileId = e.target.value;
                     updateUIFromSettings(); 
                     await saveSettings();
-                    showNotification('Active Stream Profile set.', false, 2000); 
+                    showNotification('Active Stream Profile set.', false, 2000);
                 });
 
                 // Settings: Editor Modal
@@ -1250,7 +1195,7 @@
                 });
                 
                 // Search and scroll sync
-                UIElements.searchInput.addEventListener('input', () => { clearTimeout(searchDebounceTimer); searchDebounceTimer = setTimeout(handleSearchAndFilter, 300); });
+                UIElements.searchInput.addEventListener('input', () => { clearTimeout(searchDebounceTimer); searchDebounceTimer = setTimeout(() => handleSearchAndFilter(false), 300); });
                 document.addEventListener('click', e => { if (!UIElements.searchInput.contains(e.target) && !UIElements.searchResultsContainer.contains(e.target)) UIElements.searchResultsContainer.classList.add('hidden'); });
                 let ignoreScroll = false;
                 const syncScroll = (source, targets) => { if (!ignoreScroll) { ignoreScroll = true; targets.forEach(target => { if (target) target.scrollTop = source.scrollTop; }); ignoreScroll = false; } };
@@ -1301,7 +1246,8 @@
                     items.forEach(item => {
                         const option = document.createElement('option');
                         option.value = item.id;
-                        option.textContent = item.name + (item.isDefault ? ' (Default)' : '');
+                        // MODIFIED: Directly use the name from the server
+                        option.textContent = item.name; 
                         selectEl.appendChild(option);
                     });
                     if (activeId) {
@@ -1342,6 +1288,10 @@
                     guideState.settings = config.settings || {}; 
                     updateUIFromSettings(); 
 
+                    // MODIFIED: Improved loading flow
+                    UIElements.initialLoadingIndicator.classList.remove('hidden');
+                    UIElements.guidePlaceholder.classList.remove('hidden');
+
                     const cachedChannels = await loadDataFromDB('channels');
                     const cachedPrograms = await loadDataFromDB('programs');
 
@@ -1349,18 +1299,22 @@
                         console.log("Loading guide from local cache.");
                         guideState.channels = cachedChannels;
                         guideState.programs = cachedPrograms;
-                        finalizeGuideLoad();
+                        finalizeGuideLoad(true); // Load with scroll to now
                     } else if (config.m3uContent) {
                         console.log("Loading guide from server (no cache available).");
-                        setButtonLoadingState(true);
                         await handleGuideLoad(config.m3uContent, config.epgContent);
-                        setButtonLoadingState(false);
+                    } else {
+                        // No data from server or cache
+                        UIElements.initialLoadingIndicator.classList.add('hidden');
+                        UIElements.noDataMessage.classList.remove('hidden');
                     }
                     
-                    handleRouteChange(); 
+                    handleRouteChange();
 
                 } catch (e) {
                     showNotification("Initialization failed: " + e.message, true);
+                    UIElements.initialLoadingIndicator.classList.add('hidden');
+                    UIElements.noDataMessage.classList.remove('hidden');
                     navigate('/settings');
                 }
             };
