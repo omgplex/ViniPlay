@@ -40,7 +40,6 @@
         .programme-item.highlighted { outline: 3px solid #facc15; z-index: 15; transition: outline 0.2s ease-in-out; }
         button:disabled { cursor: not-allowed; background-color: #4b5563; opacity: 0.7; }
         #editor-value:disabled { background-color: #374151; color: #9ca3af; }
-        /* NEW: Loading spinner style */
         .loader {
             border: 4px solid #f3f3f3;
             border-top: 4px solid #3b82f6;
@@ -52,6 +51,27 @@
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
+        }
+        /* Styles for resizable modals */
+        .modal-content-resizable {
+            position: relative;
+            overflow: hidden; /* Contains the resizer handle */
+        }
+        .modal-resizer {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 16px;
+            height: 16px;
+            cursor: se-resize;
+            background: repeating-linear-gradient(
+                -45deg,
+                transparent,
+                transparent 3px,
+                #6b7280 3px,
+                #6b7280 4px
+            );
+            z-index: 10;
         }
     </style>
 </head>
@@ -92,7 +112,7 @@
                 </div>
             </div>
             <div id="guide-container" class="flex-grow flex bg-gray-900 overflow-hidden relative">
-                <!-- MODIFIED: Placeholder and Loading Indicator -->
+                <!-- Placeholder and Loading Indicator -->
                 <div id="guide-placeholder" class="absolute inset-0 flex items-center justify-center z-40">
                     <div id="initial-loading-indicator" class="text-center text-gray-400">
                         <div class="loader mx-auto"></div>
@@ -262,28 +282,32 @@
     </nav>
 
     <!-- Modals -->
-    <div id="video-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-        <div class="bg-gray-900 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
-            <div class="flex justify-between items-center p-3 border-b border-gray-700">
+    <div id="video-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+        <div id="video-modal-content" class="bg-gray-900 rounded-lg shadow-xl flex flex-col modal-content-resizable" style="width: 80vw; height: 80vh; max-width: 1280px; min-width: 400px; min-height: 300px;">
+            <div class="flex justify-between items-center p-3 border-b border-gray-700 flex-shrink-0">
                 <h3 id="video-title" class="text-lg font-semibold text-white truncate"></h3>
                 <div class="flex items-center gap-2">
                     <button id="pip-btn" class="text-gray-400 hover:text-white p-2 rounded-md hover:bg-gray-700" title="Picture-in-Picture"><svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M12.5 5.5h-5a1 1 0 00-1 1v2.5a.5.5 0 001 0v-2a.5.5 0 01.5-.5h4a.5.5 0 01.5.5v4a.5.5 0 01-.5.5h-2a.5.5 0 000 1h2.5a1 1 0 001-1v-5a1 1 0 00-1-1z"></path><path d="M3.5 3A1.5 1.5 0 002 4.5v11A1.5 1.5 0 003.5 17h13a1.5 1.5 0 001.5-1.5v-11A1.5 1.5 0 0016.5 3h-13zm0 1h13a.5.5 0 01.5.5v11a.5.5 0 01-.5.5h-13a.5.5 0 01-.5-.5v-11a.5.5 0 01.5-.5z"></path></svg></button>
                     <button id="close-modal" class="text-gray-400 hover:text-white text-3xl leading-none font-bold">&times;</button>
                 </div>
             </div>
-            <div class="flex-grow p-1 bg-black"><video id="videoElement" controls autoplay class="w-full h-full"></video></div>
+            <div class="flex-grow p-1 bg-black min-h-0"><video id="videoElement" controls autoplay class="w-full h-full"></video></div>
+            <div class="modal-resizer"></div>
         </div>
     </div>
     
     <div id="program-details-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-        <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-lg p-6">
-            <h3 id="details-title" class="text-xl font-bold text-white mb-2"></h3>
-            <p id="details-time" class="text-sm text-gray-400 mb-4"></p>
-            <p id="details-desc" class="text-base text-gray-300 mb-6 max-h-40 overflow-y-auto custom-scrollbar"></p>
-            <div class="flex justify-between items-center gap-4">
+        <div id="program-details-content" class="bg-gray-800 rounded-lg shadow-xl p-6 modal-content-resizable flex flex-col" style="width: 512px; min-width: 320px;">
+            <div class="flex-grow">
+                <h3 id="details-title" class="text-xl font-bold text-white mb-2"></h3>
+                <p id="details-time" class="text-sm text-gray-400 mb-4"></p>
+                <p id="details-desc" class="text-base text-gray-300 mb-6 max-h-40 overflow-y-auto custom-scrollbar"></p>
+            </div>
+            <div class="flex justify-between items-center gap-4 flex-shrink-0">
                 <button id="details-play-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Play Channel</button>
                 <button id="details-close-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Close</button>
             </div>
+            <div class="modal-resizer"></div>
         </div>
     </div>
     
@@ -729,7 +753,6 @@
                 if (now >= guideStart && now <= guideEnd) {
                     const left = ((now - guideStart) / 3600000) * guideState.hourWidthPixels;
                     nowLineEl.style.left = `${left}px`;
-                    // MODIFIED: Prevent flicker by checking if class exists before removing
                     if (nowLineEl.classList.contains('hidden')) {
                         nowLineEl.classList.remove('hidden');
                     }
@@ -753,13 +776,11 @@
                     
                     const progressEl = item.querySelector('.programme-progress');
                     if (progressEl) {
-                        // Update progress bar only if it's live
                         if (isLive) {
                             const durationMs = progStop - progStart;
                             const elapsedMs = now - progStart;
                             progressEl.style.width = `${(elapsedMs / durationMs) * 100}%`;
                         } else {
-                            // MODIFIED: Hide progress bar for past/future programs
                             progressEl.style.width = '0%';
                         }
                     }
@@ -966,6 +987,64 @@
                 openModal(UIElements.editorModal);
             };
 
+            // --- Resizable Modals Logic ---
+            function makeModalResizable(modalContentId, storageKey) {
+                const contentElement = document.getElementById(modalContentId);
+                if (!contentElement) return;
+
+                const resizer = contentElement.querySelector('.modal-resizer');
+                if (!resizer) return;
+
+                const applySavedSize = () => {
+                    const savedSize = localStorage.getItem(storageKey);
+                    if (savedSize) {
+                        try {
+                            const { width, height } = JSON.parse(savedSize);
+                            if (width) contentElement.style.width = width;
+                            if (height) contentElement.style.height = height;
+                        } catch (e) {
+                            console.error("Could not parse saved modal size:", e);
+                            localStorage.removeItem(storageKey);
+                        }
+                    }
+                };
+
+                applySavedSize();
+
+                const startResize = (e) => {
+                    e.preventDefault();
+                    const startX = e.clientX;
+                    const startY = e.clientY;
+                    const startWidth = contentElement.offsetWidth;
+                    const startHeight = contentElement.offsetHeight;
+
+                    const doResize = (moveEvent) => {
+                        const newWidth = startWidth + (moveEvent.clientX - startX);
+                        contentElement.style.width = `${newWidth}px`;
+                        if (modalContentId === 'video-modal-content') {
+                            const newHeight = startHeight + (moveEvent.clientY - startY);
+                            contentElement.style.height = `${newHeight}px`;
+                        }
+                    };
+
+                    const stopResize = () => {
+                        window.removeEventListener('mousemove', doResize);
+                        window.removeEventListener('mouseup', stopResize);
+                        
+                        const newSize = { width: contentElement.style.width };
+                        if (modalContentId === 'video-modal-content') {
+                            newSize.height = contentElement.style.height;
+                        }
+                        localStorage.setItem(storageKey, JSON.stringify(newSize));
+                    };
+
+                    window.addEventListener('mousemove', doResize);
+                    window.addEventListener('mouseup', stopResize);
+                };
+
+                resizer.addEventListener('mousedown', startResize);
+            }
+
             function setupEventListeners() {
                 // Main Navigation
                 ['tabGuide', 'bottomNavGuide'].forEach(id => UIElements[id].addEventListener('click', () => switchTab('guide')));
@@ -977,14 +1056,9 @@
                 UIElements.confirmOkBtn.addEventListener('click', () => { if (confirmCallback) confirmCallback(); closeModal(UIElements.confirmModal); });
                 UIElements.detailsCloseBtn.addEventListener('click', () => closeModal(UIElements.programDetailsModal));
                 
-                // --- START: Picture-in-Picture Improvements ---
-
-                // The close button on the main video modal should always stop the stream and clean up.
+                // Picture-in-Picture
                 UIElements.closeModal.addEventListener('click', stopAndCleanupPlayer);
-
-                // When the PiP button is clicked, request PiP mode.
                 UIElements.pipBtn.addEventListener('click', () => {
-                    // readyState 3 (HAVE_FUTURE_DATA) is usually sufficient to start PiP.
                     if (document.pictureInPictureEnabled && UIElements.videoElement.readyState >= 3) { 
                         UIElements.videoElement.requestPictureInPicture().catch(error => {
                             console.error("PiP request failed:", error);
@@ -992,34 +1066,18 @@
                         });
                     }
                 });
-                
-                // NEW: When the video successfully enters PiP, hide the main video modal.
-                // This fixes the issue where the modal stays open in the background.
                 UIElements.videoElement.addEventListener('enterpictureinpicture', () => {
                     closeModal(UIElements.videoModal);
                 });
-
-                // MODIFIED: This new logic handles both "Back to tab" and closing the PiP window.
                 UIElements.videoElement.addEventListener('leavepictureinpicture', () => {
-                    // If "Back to tab" is clicked, the video remains in a playing state.
-                    // If the PiP window's 'X' button is clicked, the browser typically pauses the video.
-                    // We can use this distinction to decide whether to stop the stream or restore the modal.
                     if (player && !UIElements.videoElement.paused) {
-                        // Video is still playing, so restore the main video modal.
                         openModal(UIElements.videoModal);
                     } else {
-                        // Video is paused or the player is gone, so the stream has likely ended.
-                        // This path is taken when the PiP window is closed directly.
-                        // We ensure a full cleanup to prevent a broken player state.
                         stopAndCleanupPlayer();
                     }
                 });
-
-                // This listener remains unchanged.
                 UIElements.videoElement.addEventListener('volumechange', () => localStorage.setItem('iptvPlayerVolume', UIElements.videoElement.volume));
                 
-                // --- END: Picture-in-Picture Improvements ---
-
                 // Guide Interaction
                 UIElements.sidebarToggle.addEventListener('click', () => toggleSidebar(true));
                 UIElements.sidebarOverlay.addEventListener('click', () => toggleSidebar(false));
@@ -1373,6 +1431,10 @@
                     UIElements.noDataMessage.classList.remove('hidden');
                     navigate('/settings');
                 }
+                
+                // Initialize resizable modals
+                makeModalResizable('video-modal-content', 'viniplay-video-modal-size');
+                makeModalResizable('program-details-content', 'viniplay-program-modal-size');
             };
             
             initApp();
