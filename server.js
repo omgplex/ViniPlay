@@ -1,6 +1,6 @@
 // A Node.js server for the VINI PLAY IPTV Player.
 // It serves static files and provides a backend for stream proxying,
-// file uploads, and settings persistence, now with User Authentication.
+// file uploads, and settings persistence, now with User Authentication and per-user settings.
 
 const express = require('express');
 const { spawn } = require('child_process');
@@ -37,13 +37,24 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
         console.error("Error opening database:", err.message);
     } else {
         console.log("Connected to the SQLite database.");
-        // Create users table if it doesn't exist
-        db.run(`CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE,
-            password TEXT,
-            isAdmin INTEGER DEFAULT 0
-        )`);
+        // FIX: Use db.serialize to ensure table creation queries run in sequence.
+        db.serialize(() => {
+            // Create users table if it doesn't exist
+            db.run(`CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE,
+                password TEXT,
+                isAdmin INTEGER DEFAULT 0
+            )`);
+            // Create user_settings table for persistent user-specific settings
+            db.run(`CREATE TABLE IF NOT EXISTS user_settings (
+                user_id INTEGER NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                PRIMARY KEY (user_id, key)
+            )`);
+        });
     }
 });
 
@@ -90,8 +101,6 @@ const requireAdmin = (req, res, next) => {
 
 
 // --- Authentication API Endpoints ---
-
-// Check if an admin user needs to be created
 app.get('/api/auth/needs-setup', (req, res) => {
     db.get("SELECT COUNT(*) as count FROM users WHERE isAdmin = 1", [], (err, row) => {
         if (err) {
@@ -101,30 +110,19 @@ app.get('/api/auth/needs-setup', (req, res) => {
     });
 });
 
-// Initial Admin Setup
 app.post('/api/auth/setup-admin', (req, res) => {
     db.get("SELECT COUNT(*) as count FROM users", [], (err, row) => {
-        if (err) {
-            return res.status(500).json({ error: err.message });
-        }
-        if (row.count > 0) {
-            return res.status(403).json({ error: "Setup has already been completed." });
-        }
-
+        if (err) return res.status(500).json({ error: err.message });
+        if (row.count > 0) return res.status(403).json({ error: "Setup has already been completed." });
+        
         const { username, password } = req.body;
-        if (!username || !password) {
-            return res.status(400).json({ error: "Username and password are required." });
-        }
+        if (!username || !password) return res.status(400).json({ error: "Username and password are required." });
 
         bcrypt.hash(password, saltRounds, (err, hash) => {
-            if (err) {
-                return res.status(500).json({ error: 'Error hashing password.' });
-            }
+            if (err) return res.status(500).json({ error: 'Error hashing password.' });
             const sql = "INSERT INTO users (username, password, isAdmin) VALUES (?, ?, 1)";
             db.run(sql, [username, hash], function(err) {
-                if (err) {
-                    return res.status(500).json({ error: err.message });
-                }
+                if (err) return res.status(500).json({ error: err.message });
                 req.session.userId = this.lastID;
                 req.session.username = username;
                 req.session.isAdmin = true;
@@ -134,16 +132,12 @@ app.post('/api/auth/setup-admin', (req, res) => {
     });
 });
 
-// Login
 app.post('/api/auth/login', (req, res) => {
     const { username, password } = req.body;
     db.get("SELECT * FROM users WHERE username = ?", [username], (err, user) => {
-        if (err) {
-            return res.status(500).json({ error: err.message });
-        }
-        if (!user) {
-            return res.status(401).json({ error: "Invalid username or password." });
-        }
+        if (err) return res.status(500).json({ error: err.message });
+        if (!user) return res.status(401).json({ error: "Invalid username or password." });
+        
         bcrypt.compare(password, user.password, (err, result) => {
             if (result) {
                 req.session.userId = user.id;
@@ -161,26 +155,19 @@ app.post('/api/auth/login', (req, res) => {
     });
 });
 
-// Logout
 app.post('/api/auth/logout', (req, res) => {
     req.session.destroy(err => {
-        if (err) {
-            return res.status(500).json({ error: 'Could not log out.' });
-        }
-        res.clearCookie('connect.sid'); // The default session cookie name
+        if (err) return res.status(500).json({ error: 'Could not log out.' });
+        res.clearCookie('connect.sid');
         res.json({ success: true, message: 'Logged out successfully.' });
     });
 });
 
-// Get auth status
 app.get('/api/auth/status', (req, res) => {
     if (req.session && req.session.userId) {
         res.json({
             isLoggedIn: true,
-            user: {
-                username: req.session.username,
-                isAdmin: req.session.isAdmin
-            }
+            user: { username: req.session.username, isAdmin: req.session.isAdmin }
         });
     } else {
         res.json({ isLoggedIn: false });
@@ -191,25 +178,20 @@ app.get('/api/auth/status', (req, res) => {
 // --- User Management API Endpoints (Admin only) ---
 app.get('/api/users', requireAdmin, (req, res) => {
     db.all("SELECT id, username, isAdmin FROM users ORDER BY username", [], (err, rows) => {
-        if (err) {
-            return res.status(500).json({ error: err.message });
-        }
+        if (err) return res.status(500).json({ error: err.message });
         res.json(rows);
     });
 });
 
 app.post('/api/users', requireAdmin, (req, res) => {
     const { username, password, isAdmin } = req.body;
-    if (!username || !password) {
-        return res.status(400).json({ error: "Username and password are required." });
-    }
+    if (!username || !password) return res.status(400).json({ error: "Username and password are required." });
+    
     bcrypt.hash(password, saltRounds, (err, hash) => {
         if (err) return res.status(500).json({ error: 'Error hashing password' });
         const sql = "INSERT INTO users (username, password, isAdmin) VALUES (?, ?, ?)";
         db.run(sql, [username, hash, isAdmin ? 1 : 0], function (err) {
-            if (err) {
-                return res.status(400).json({ error: "Username already exists." });
-            }
+            if (err) return res.status(400).json({ error: "Username already exists." });
             res.json({ success: true, id: this.lastID });
         });
     });
@@ -219,7 +201,23 @@ app.put('/api/users/:id', requireAdmin, (req, res) => {
     const { id } = req.params;
     const { username, password, isAdmin } = req.body;
 
-    // Prevent admin from demoting themselves if they are the last admin
+    const updateUser = () => {
+        if (password) {
+            bcrypt.hash(password, saltRounds, (err, hash) => {
+                if (err) return res.status(500).json({ error: 'Error hashing password' });
+                db.run("UPDATE users SET username = ?, password = ?, isAdmin = ? WHERE id = ?", [username, hash, isAdmin ? 1 : 0, id], (err) => {
+                    if (err) return res.status(500).json({ error: err.message });
+                    res.json({ success: true });
+                });
+            });
+        } else {
+            db.run("UPDATE users SET username = ?, isAdmin = ? WHERE id = ?", [username, isAdmin ? 1 : 0, id], (err) => {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ success: true });
+            });
+        }
+    };
+    
     if (req.session.userId == id && !isAdmin) {
          db.get("SELECT COUNT(*) as count FROM users WHERE isAdmin = 1", [], (err, row) => {
             if (err || row.count <= 1) {
@@ -230,35 +228,12 @@ app.put('/api/users/:id', requireAdmin, (req, res) => {
     } else {
         updateUser();
     }
-    
-    function updateUser() {
-        if (password) {
-            // Update with new password
-            bcrypt.hash(password, saltRounds, (err, hash) => {
-                if (err) return res.status(500).json({ error: 'Error hashing password' });
-                const sql = "UPDATE users SET username = ?, password = ?, isAdmin = ? WHERE id = ?";
-                db.run(sql, [username, hash, isAdmin ? 1 : 0, id], function (err) {
-                    if (err) return res.status(500).json({ error: err.message });
-                    res.json({ success: true });
-                });
-            });
-        } else {
-            // Update without new password
-            const sql = "UPDATE users SET username = ?, isAdmin = ? WHERE id = ?";
-            db.run(sql, [username, isAdmin ? 1 : 0, id], function (err) {
-                if (err) return res.status(500).json({ error: err.message });
-                res.json({ success: true });
-            });
-        }
-    }
 });
 
 app.delete('/api/users/:id', requireAdmin, (req, res) => {
     const { id } = req.params;
-    // Prevent user from deleting themselves
-    if (req.session.userId == id) {
-        return res.status(403).json({ error: "You cannot delete your own account." });
-    }
+    if (req.session.userId == id) return res.status(403).json({ error: "You cannot delete your own account." });
+    
     db.run("DELETE FROM users WHERE id = ?", id, function(err) {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ success: true });
@@ -268,29 +243,27 @@ app.delete('/api/users/:id', requireAdmin, (req, res) => {
 
 // --- Protected IPTV API Endpoints ---
 app.get('/api/config', requireAuth, (req, res) => {
-    // This existing endpoint is now protected
-    const config = {
-        m3uContent: null,
-        epgContent: null,
-        settings: {}
-    };
     try {
-        if (fs.existsSync(M3U_PATH)) {
-            config.m3uContent = fs.readFileSync(M3U_PATH, 'utf-8');
-        }
-        if (fs.existsSync(EPG_PATH)) {
-            config.epgContent = fs.readFileSync(EPG_PATH, 'utf-8');
-        }
-        if (fs.existsSync(SETTINGS_PATH)) {
-            config.settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
-        }
+        let config = { m3uContent: null, epgContent: null, settings: {} };
+        let globalSettings = {};
 
-        // Initialize Player Settings if they don't exist
+        if (fs.existsSync(SETTINGS_PATH)) {
+            try {
+                globalSettings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
+            } catch (e) {
+                console.error("Could not parse settings.json:", e);
+                // Continue with empty settings if file is corrupt
+            }
+        }
+        config.settings = globalSettings;
+
+        if (fs.existsSync(M3U_PATH)) config.m3uContent = fs.readFileSync(M3U_PATH, 'utf-8');
+        if (fs.existsSync(EPG_PATH)) config.epgContent = fs.readFileSync(EPG_PATH, 'utf-8');
+        
+        // Initialize default global settings if they don't exist
         let settingsChanged = false;
         if (!config.settings.userAgents || config.settings.userAgents.length === 0) {
-            config.settings.userAgents = [
-                { id: `default-ua-${Date.now()}`, name: 'ViniPlay Default', value: 'VLC/3.0.20 (Linux; x86_64)' }
-            ];
+            config.settings.userAgents = [{ id: `default-ua-${Date.now()}`, name: 'ViniPlay Default', value: 'VLC/3.0.20 (Linux; x86_64)', isDefault: true }];
             config.settings.activeUserAgentId = config.settings.userAgents[0].id;
             settingsChanged = true;
         }
@@ -310,7 +283,26 @@ app.get('/api/config', requireAuth, (req, res) => {
             fs.writeFileSync(SETTINGS_PATH, JSON.stringify(config.settings, null, 2));
         }
         
-        res.json(config);
+        // Load user-specific settings from the database and merge them
+        db.all(`SELECT key, value FROM user_settings WHERE user_id = ?`, [req.session.userId], (err, rows) => {
+            if (err) {
+                console.error("Error fetching user settings:", err);
+                return res.json(config); // Proceed with just the global settings
+            }
+            if (rows) {
+                const userSettings = {};
+                rows.forEach(row => {
+                    try {
+                        userSettings[row.key] = JSON.parse(row.value);
+                    } catch (e) {
+                        userSettings[row.key] = row.value;
+                    }
+                });
+                config.settings = { ...config.settings, ...userSettings };
+            }
+            res.json(config);
+        });
+
     } catch (error) {
         console.error("Error reading config:", error);
         res.status(500).json({ error: "Could not load configuration from server." });
@@ -333,7 +325,9 @@ app.post('/api/upload', requireAuth, upload.fields([{ name: 'm3u-file', maxCount
     try {
         let settings = {};
         if (fs.existsSync(SETTINGS_PATH)) {
-            settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
+             try {
+                settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
+             } catch (e) { console.error("Could not parse settings.json during upload:", e); }
         }
         if (req.files['m3u-file']) {
             settings.m3uSourceType = 'file';
@@ -351,25 +345,60 @@ app.post('/api/upload', requireAuth, upload.fields([{ name: 'm3u-file', maxCount
     }
 });
 
+// FIX: This endpoint now also returns the updated settings object to the client.
 app.post('/api/save/settings', requireAuth, (req, res) => {
     try {
-        fs.writeFileSync(SETTINGS_PATH, JSON.stringify(req.body, null, 2));
-        res.json({ success: true, message: 'Settings saved.' });
+        let currentSettings = {};
+        if (fs.existsSync(SETTINGS_PATH)) {
+            try {
+                currentSettings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
+            } catch (e) {
+                 console.error("Could not parse settings.json, will overwrite.", e);
+            }
+        }
+        const updatedSettings = { ...currentSettings, ...req.body };
+
+        const userSpecificKeys = ['favorites', 'playerDimensions', 'programDetailsDimensions', 'recentChannels'];
+        userSpecificKeys.forEach(key => delete updatedSettings[key]);
+
+        fs.writeFileSync(SETTINGS_PATH, JSON.stringify(updatedSettings, null, 2));
+        res.json({ success: true, message: 'Settings saved.', settings: updatedSettings });
     } catch (error) {
         console.error("Error saving settings:", error);
         res.status(500).json({ error: "Could not save settings." });
     }
 });
 
+// Endpoint to save user-specific settings to the database
+app.post('/api/user/settings', requireAuth, (req, res) => {
+    const { key, value } = req.body;
+    if (!key) return res.status(400).json({ error: 'A setting key is required.' });
+    
+    const valueJson = JSON.stringify(value);
+    
+    const sql = `INSERT INTO user_settings (user_id, key, value) VALUES (?, ?, ?)
+                 ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value;`;
+                 
+    db.run(sql, [req.session.userId, key, valueJson], (err) => {
+        if (err) {
+            console.error('Error saving user setting to database:', err);
+            return res.status(500).json({ error: 'Could not save user setting.' });
+        }
+        res.json({ success: true });
+    });
+});
+
+
 app.post('/api/save/url', requireAuth, (req, res) => {
     const { type, url } = req.body;
-    if (!type || !url) {
-        return res.status(400).json({ error: 'Type and URL are required.' });
-    }
+    if (!type || !url) return res.status(400).json({ error: 'Type and URL are required.' });
+    
     try {
         let settings = {};
         if (fs.existsSync(SETTINGS_PATH)) {
-            settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
+             try {
+                settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
+             } catch(e) { console.error("Could not parse settings.json, will overwrite.", e); }
         }
         const urlListName = `${type}CustomUrls`;
         if (!settings[urlListName]) {
@@ -394,6 +423,9 @@ app.delete('/api/data', requireAuth, (req, res) => {
         [M3U_PATH, EPG_PATH, SETTINGS_PATH].forEach(file => {
             if (fs.existsSync(file)) fs.unlinkSync(file);
         });
+        db.run(`DELETE FROM user_settings WHERE user_id = ?`, [req.session.userId], (err) => {
+            if (err) console.error("Error clearing user settings from DB:", err);
+        });
         res.json({ success: true, message: 'All data has been cleared.' });
     } catch (error) {
         console.error("Error clearing data:", error);
@@ -406,10 +438,9 @@ function fetchUrlContent(url) {
         const protocol = url.startsWith('https') ? https : http;
         protocol.get(url, (res) => {
             if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                const redirectUrl = new URL(res.headers.location, url).href;
-                return fetchUrlContent(redirectUrl).then(resolve, reject);
+                return fetchUrlContent(new URL(res.headers.location, url).href).then(resolve, reject);
             }
-            if (res.statusCode < 200 || res.statusCode >= 300) {
+            if (res.statusCode !== 200) {
                 return reject(new Error(`Failed to fetch: Status Code ${res.statusCode}`));
             }
             let data = '';
@@ -430,7 +461,9 @@ const createFetchEndpoint = (type, filePath) => async (req, res) => {
         
         let settings = {};
         if (fs.existsSync(SETTINGS_PATH)) {
-            settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
+            try {
+                settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
+            } catch(e) { console.error("Could not parse settings.json", e); }
         }
         settings[`${type}SourceType`] = 'url';
         settings[`${type}Url`] = url;
@@ -460,40 +493,28 @@ app.get('/stream', requireAuth, (req, res) => {
             return res.status(500).send('Error reading server settings.');
         }
     }
-
-    const activeProfileId = profileId || settings.activeStreamProfileId || 'ffmpeg-default';
+    
+    const activeProfileId = profileId || settings.activeStreamProfileId;
     const activeUserAgentId = userAgentId || settings.activeUserAgentId;
     
     const profile = (settings.streamProfiles || []).find(p => p.id === activeProfileId);
-    const userAgent = (settings.userAgents || []).find(ua => ua.id === activeUserAgentId);
+    if (!profile) return res.status(404).send(`Error: Stream profile with ID "${activeProfileId}" not found.`);
 
-    if (!profile) {
-        console.error(`Stream profile with ID "${activeProfileId}" not found.`);
-        return res.status(404).send('Error: Stream profile not found.');
-    }
-    
     if (profile.command === 'redirect') {
         console.log(`Redirecting to: ${streamUrl}`);
         return res.redirect(302, streamUrl);
     }
     
-    if (!userAgent) {
-        console.error(`User agent with ID "${activeUserAgentId}" not found.`);
-        return res.status(404).send('Error: User agent not found.');
-    }
-
-    console.log(`Proxying stream for: ${streamUrl}`);
-    console.log(`> Profile: "${profile.name}"`);
-    console.log(`> User Agent: "${userAgent.name}"`);
+    const userAgent = (settings.userAgents || []).find(ua => ua.id === activeUserAgentId);
+    if (!userAgent) return res.status(404).send(`Error: User agent with ID "${activeUserAgentId}" not found.`);
+    
+    console.log(`Proxying stream for: ${streamUrl} | Profile: "${profile.name}" | User Agent: "${userAgent.name}"`);
 
     const commandTemplate = profile.command
         .replace(/{streamUrl}/g, streamUrl)
         .replace(/{userAgent}|{clientUserAgent}/g, userAgent.value);
         
-    const args = (commandTemplate.match(/(?:[^\s"]+|"[^"]*")+/g) || [])
-        .map(arg => arg.replace(/^"|"$/g, ''));
-
-    console.log(`Spawning ffmpeg with args: [${args.join(', ')}]`);
+    const args = (commandTemplate.match(/(?:[^\s"]+|"[^"]*")+/g) || []).map(arg => arg.replace(/^"|"$/g, ''));
 
     const ffmpeg = spawn('ffmpeg', args);
     res.setHeader('Content-Type', 'video/mp2t');
@@ -504,14 +525,11 @@ app.get('/stream', requireAuth, (req, res) => {
         res.end();
     });
     req.on('close', () => {
-        console.log('Client closed connection. Stopping ffmpeg.');
         ffmpeg.kill('SIGKILL');
     });
 });
 
 // --- Main Route Handling ---
-// Serve the main index.html for all frontend routes.
-// The client-side code will handle routing and authentication checks.
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
