@@ -52,16 +52,17 @@
         }
         /* Visual grabber handle */
         #resizer::after {
-            content: '..\\A..\\A..'; /* Using dots as a handle */
+            content: '⋮'; /* Vertical ellipsis for a cleaner handle */
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
             color: #9ca3af;
-            font-size: 8px;
-            line-height: 4px;
-            letter-spacing: 1px;
+            font-size: 18px; /* Larger, more visible handle */
+            font-weight: bold;
+            line-height: 1;
             pointer-events: none; /* Make sure it doesn't interfere with mouse events */
+            text-shadow: 0 1px 1px rgba(0,0,0,0.5);
         }
 
         /* Common style for modal resize handles */
@@ -222,13 +223,13 @@
                         </div>
                     </div>
                     <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-40 hidden lg:hidden"></div>
-                    <div id="channel-panel-container" class="absolute lg:relative inset-y-0 left-0 w-64 sm:w-80 bg-gray-800/80 lg:bg-gray-800 backdrop-blur-sm lg:backdrop-blur-none z-50 transform -translate-x-full lg:transform-none lg:translate-x-0 min-w-[250px] max-w-[80vw] lg:max-w-[30vw] flex-shrink-0 flex flex-col hidden lg:flex">
+                    <div id="channel-panel-container" class="absolute lg:relative inset-y-0 left-0 w-64 sm:w-80 bg-gray-800/80 lg:bg-gray-800 backdrop-blur-sm lg:backdrop-blur-none z-50 lg:z-20 transform -translate-x-full lg:transform-none lg:translate-x-0 min-w-[250px] max-w-[80vw] lg:max-w-[30vw] flex-shrink-0 flex flex-col hidden lg:flex">
                         <div class="h-16 flex items-center justify-between p-2 border-b border-gray-700/80 flex-shrink-0">
                              <select id="group-filter" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select>
                         </div>
                         <div id="channel-list" class="overflow-y-auto custom-scrollbar flex-grow"></div>
                     </div>
-                    <div id="resizer" class="hidden lg:block z-10"></div>
+                    <div id="resizer" class="hidden lg:block z-30"></div>
                     <div id="logo-column" class="flex flex-col lg:hidden w-20 flex-shrink-0 bg-gray-900 border-r border-gray-700/50">
                         <div class="h-16 flex-shrink-0 border-b border-gray-700/80"></div>
                         <div id="logo-list" class="overflow-y-auto custom-scrollbar flex-grow"></div>
