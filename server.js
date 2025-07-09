@@ -1,6 +1,8 @@
 // A Node.js server for the VINI PLAY IPTV Player.
-// It serves static files and provides a backend for stream proxying,
-// file uploads, and settings persistence, now with User Authentication and per-user settings.
+// Implements server-side EPG parsing, secure environment variables, and improved logging.
+
+// Load environment variables from .env file
+require('dotenv').config();
 
 const express = require('express');
 const { spawn } = require('child_process');
@@ -14,22 +16,26 @@ const session = require('express-session');
 const bcrypt = require('bcrypt');
 const sqlite3 = require('sqlite3').verbose();
 const SQLiteStore = require('connect-sqlite3')(session);
+const xmlJS = require('xml-js');
 
 const app = express();
 const port = 8998;
 const saltRounds = 10;
+let epgRefreshTimeout = null;
 
 // --- Configuration ---
 const DATA_DIR = '/data';
+const PUBLIC_DIR = path.join(__dirname, 'public');
 const DB_PATH = path.join(DATA_DIR, 'viniplay.db');
 const M3U_PATH = path.join(DATA_DIR, 'playlist.m3u');
-const EPG_PATH = path.join(DATA_DIR, 'epg.xml');
+const EPG_XML_PATH = path.join(DATA_DIR, 'epg.xml'); // Raw EPG
+const EPG_JSON_PATH = path.join(DATA_DIR, 'epg.json'); // Parsed EPG
 const SETTINGS_PATH = path.join(DATA_DIR, 'settings.json');
 
-// Ensure the data directory exists.
-if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-}
+// Ensure the data and public directories exist.
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true });
+
 
 // --- Database Setup ---
 const db = new sqlite3.Database(DB_PATH, (err) => {
@@ -37,16 +43,13 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
         console.error("Error opening database:", err.message);
     } else {
         console.log("Connected to the SQLite database.");
-        // FIX: Use db.serialize to ensure table creation queries run in sequence.
         db.serialize(() => {
-            // Create users table if it doesn't exist
             db.run(`CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE,
                 password TEXT,
                 isAdmin INTEGER DEFAULT 0
             )`);
-            // Create user_settings table for persistent user-specific settings
             db.run(`CREATE TABLE IF NOT EXISTS user_settings (
                 user_id INTEGER NOT NULL,
                 key TEXT NOT NULL,
@@ -59,11 +62,11 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
 });
 
 // --- Middleware ---
-app.use(express.static('public'));
+app.use(express.static(PUBLIC_DIR));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Session Middleware
+// Session Middleware using secure secret from .env
 app.use(
   session({
     store: new SQLiteStore({
@@ -71,13 +74,13 @@ app.use(
         dir: DATA_DIR,
         table: 'sessions'
     }),
-    secret: 'a_very_secret_key_change_me', // TODO: Change this to a secure, random string
+    secret: process.env.SESSION_SECRET || 'fallback-secret-key',
     resave: false,
     saveUninitialized: false,
     cookie: {
         maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
         httpOnly: true,
-        secure: false // Set to true if you're using HTTPS
+        secure: process.env.NODE_ENV === 'production'
     },
   })
 );
@@ -99,13 +102,103 @@ const requireAdmin = (req, res, next) => {
     }
 };
 
+// --- EPG Parsing and Caching Logic ---
+const parseEpgTime = (timeStr, offsetHours = 0) => {
+    const match = timeStr.match(/(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s*(([+-])(\d{2})(\d{2}))?/);
+    if (!match) return new Date();
+    
+    const [ , year, month, day, hours, minutes, seconds, , sign, tzHours, tzMinutes] = match;
+    let date;
+    if (sign && tzHours && tzMinutes) {
+        const epgOffsetMinutes = (parseInt(tzHours) * 60 + parseInt(tzMinutes)) * (sign === '+' ? 1 : -1);
+        date = new Date(Date.UTC(year, parseInt(month) - 1, day, hours, minutes, seconds));
+        date.setUTCMinutes(date.getUTCMinutes() - epgOffsetMinutes);
+    } else {
+        date = new Date(Date.UTC(year, parseInt(month) - 1, day, hours, minutes, seconds));
+        date.setUTCHours(date.getUTCHours() - offsetHours);
+    }
+    return date;
+};
+
+const parseAndCacheEPG = (timezoneOffset = 0) => {
+    console.log(`[EPG] Starting EPG parsing with timezone offset: ${timezoneOffset} hours.`);
+    if (!fs.existsSync(EPG_XML_PATH)) {
+        console.log('[EPG] epg.xml not found. Skipping parsing.');
+        if (fs.existsSync(EPG_JSON_PATH)) fs.unlinkSync(EPG_JSON_PATH); // Clear old cache
+        return;
+    }
+
+    try {
+        const xmlString = fs.readFileSync(EPG_XML_PATH, 'utf-8');
+        const epgJson = xmlJS.xml2js(xmlString, { compact: true });
+        const programs = epgJson.tv && epgJson.tv.programme ? [].concat(epgJson.tv.programme) : [];
+        const programData = {};
+
+        for (const prog of programs) {
+            const channelId = prog._attributes?.channel;
+            if (!channelId) continue;
+
+            if (!programData[channelId]) programData[channelId] = [];
+
+            const titleNode = prog.title && prog.title._cdata ? prog.title._cdata : (prog.title?._text || 'No Title');
+            const descNode = prog.desc && prog.desc._cdata ? prog.desc._cdata : (prog.desc?._text || '');
+            
+            programData[channelId].push({
+                start: parseEpgTime(prog._attributes.start, timezoneOffset).toISOString(),
+                stop: parseEpgTime(prog._attributes.stop, timezoneOffset).toISOString(),
+                title: titleNode.trim(),
+                desc: descNode.trim()
+            });
+        }
+        
+        // Sort programs by start time for each channel
+        for (const channelId in programData) {
+            programData[channelId].sort((a, b) => new Date(a.start) - new Date(b.start));
+        }
+
+        fs.writeFileSync(EPG_JSON_PATH, JSON.stringify(programData));
+        console.log(`[EPG] Successfully parsed and cached ${programs.length} programs to epg.json.`);
+    } catch (error) {
+        console.error('[EPG] Error parsing EPG XML:', error);
+        if (fs.existsSync(EPG_JSON_PATH)) fs.unlinkSync(EPG_JSON_PATH); // Clear cache on error
+    }
+};
+
+const scheduleEpgRefresh = () => {
+    clearTimeout(epgRefreshTimeout);
+    let settings = {};
+    if (fs.existsSync(SETTINGS_PATH)) {
+        try {
+            settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
+        } catch (e) {
+            console.error("Could not parse settings.json for scheduling:", e);
+            return;
+        }
+    }
+
+    const refreshHours = parseInt(settings.autoRefresh, 10);
+    if (refreshHours > 0 && settings.epgSourceType === 'url' && settings.epgUrl) {
+        console.log(`[EPG] Scheduling EPG refresh every ${refreshHours} hours.`);
+        epgRefreshTimeout = setTimeout(async () => {
+            console.log('[EPG] Triggering scheduled EPG refresh...');
+            try {
+                const content = await fetchUrlContent(settings.epgUrl);
+                fs.writeFileSync(EPG_XML_PATH, content);
+                parseAndCacheEPG(settings.timezoneOffset || 0);
+            } catch (error) {
+                console.error('[EPG] Scheduled EPG refresh failed:', error.message);
+            } finally {
+                scheduleEpgRefresh(); // Reschedule for the next interval
+            }
+        }, refreshHours * 3600 * 1000);
+    }
+};
+
 
 // --- Authentication API Endpoints ---
 app.get('/api/auth/needs-setup', (req, res) => {
     db.get("SELECT COUNT(*) as count FROM users WHERE isAdmin = 1", [], (err, row) => {
-        if (err) {
-            return res.status(500).json({ error: err.message });
-        }
+        if (err) return res.status(500).json({ error: err.message });
         res.json({ needsSetup: row.count === 0 });
     });
 });
@@ -120,13 +213,12 @@ app.post('/api/auth/setup-admin', (req, res) => {
 
         bcrypt.hash(password, saltRounds, (err, hash) => {
             if (err) return res.status(500).json({ error: 'Error hashing password.' });
-            const sql = "INSERT INTO users (username, password, isAdmin) VALUES (?, ?, 1)";
-            db.run(sql, [username, hash], function(err) {
+            db.run("INSERT INTO users (username, password, isAdmin) VALUES (?, ?, 1)", [username, hash], function(err) {
                 if (err) return res.status(500).json({ error: err.message });
                 req.session.userId = this.lastID;
                 req.session.username = username;
                 req.session.isAdmin = true;
-                res.json({ success: true, message: 'Admin user created successfully.' });
+                res.json({ success: true, user: { username, isAdmin: true } });
             });
         });
     });
@@ -145,7 +237,6 @@ app.post('/api/auth/login', (req, res) => {
                 req.session.isAdmin = user.isAdmin === 1;
                 res.json({
                     success: true,
-                    message: "Logged in successfully.",
                     user: { username: user.username, isAdmin: user.isAdmin === 1 }
                 });
             } else {
@@ -159,16 +250,13 @@ app.post('/api/auth/logout', (req, res) => {
     req.session.destroy(err => {
         if (err) return res.status(500).json({ error: 'Could not log out.' });
         res.clearCookie('connect.sid');
-        res.json({ success: true, message: 'Logged out successfully.' });
+        res.json({ success: true });
     });
 });
 
 app.get('/api/auth/status', (req, res) => {
     if (req.session && req.session.userId) {
-        res.json({
-            isLoggedIn: true,
-            user: { username: req.session.username, isAdmin: req.session.isAdmin }
-        });
+        res.json({ isLoggedIn: true, user: { username: req.session.username, isAdmin: req.session.isAdmin } });
     } else {
         res.json({ isLoggedIn: false });
     }
@@ -189,8 +277,7 @@ app.post('/api/users', requireAdmin, (req, res) => {
     
     bcrypt.hash(password, saltRounds, (err, hash) => {
         if (err) return res.status(500).json({ error: 'Error hashing password' });
-        const sql = "INSERT INTO users (username, password, isAdmin) VALUES (?, ?, ?)";
-        db.run(sql, [username, hash, isAdmin ? 1 : 0], function (err) {
+        db.run("INSERT INTO users (username, password, isAdmin) VALUES (?, ?, ?)", [username, hash, isAdmin ? 1 : 0], function (err) {
             if (err) return res.status(400).json({ error: "Username already exists." });
             res.json({ success: true, id: this.lastID });
         });
@@ -207,17 +294,20 @@ app.put('/api/users/:id', requireAdmin, (req, res) => {
                 if (err) return res.status(500).json({ error: 'Error hashing password' });
                 db.run("UPDATE users SET username = ?, password = ?, isAdmin = ? WHERE id = ?", [username, hash, isAdmin ? 1 : 0, id], (err) => {
                     if (err) return res.status(500).json({ error: err.message });
+                    if (req.session.userId == id) req.session.isAdmin = isAdmin; // Update session if self
                     res.json({ success: true });
                 });
             });
         } else {
             db.run("UPDATE users SET username = ?, isAdmin = ? WHERE id = ?", [username, isAdmin ? 1 : 0, id], (err) => {
                 if (err) return res.status(500).json({ error: err.message });
+                 if (req.session.userId == id) req.session.isAdmin = isAdmin; // Update session if self
                 res.json({ success: true });
             });
         }
     };
     
+    // Prevent last admin from removing their own admin rights
     if (req.session.userId == id && !isAdmin) {
          db.get("SELECT COUNT(*) as count FROM users WHERE isAdmin = 1", [], (err, row) => {
             if (err || row.count <= 1) {
@@ -252,13 +342,13 @@ app.get('/api/config', requireAuth, (req, res) => {
                 globalSettings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
             } catch (e) {
                 console.error("Could not parse settings.json:", e);
-                // Continue with empty settings if file is corrupt
             }
         }
         config.settings = globalSettings;
 
         if (fs.existsSync(M3U_PATH)) config.m3uContent = fs.readFileSync(M3U_PATH, 'utf-8');
-        if (fs.existsSync(EPG_PATH)) config.epgContent = fs.readFileSync(EPG_PATH, 'utf-8');
+        // Return parsed EPG JSON, not the raw XML
+        if (fs.existsSync(EPG_JSON_PATH)) config.epgContent = JSON.parse(fs.readFileSync(EPG_JSON_PATH, 'utf-8'));
         
         // Initialize default global settings if they don't exist
         let settingsChanged = false;
@@ -287,7 +377,7 @@ app.get('/api/config', requireAuth, (req, res) => {
         db.all(`SELECT key, value FROM user_settings WHERE user_id = ?`, [req.session.userId], (err, rows) => {
             if (err) {
                 console.error("Error fetching user settings:", err);
-                return res.json(config); // Proceed with just the global settings
+                return res.json(config);
             }
             if (rows) {
                 const userSettings = {};
@@ -315,7 +405,7 @@ const upload = multer({
         destination: (req, file, cb) => cb(null, DATA_DIR),
         filename: (req, file, cb) => {
             if (file.fieldname === 'm3u-file') cb(null, 'playlist.m3u');
-            else if (file.fieldname === 'epg-file') cb(null, 'epg.xml');
+            else if (file.fieldname === 'epg-file') cb(null, 'epg.xml'); // Save as XML
             else cb(null, file.originalname);
         }
     })
@@ -336,6 +426,8 @@ app.post('/api/upload', requireAuth, upload.fields([{ name: 'm3u-file', maxCount
         if (req.files['epg-file']) {
             settings.epgSourceType = 'file';
             delete settings.epgUrl;
+            // Parse the newly uploaded EPG file
+            parseAndCacheEPG(settings.timezoneOffset || 0);
         }
         fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
         res.json({ success: true, message: "File(s) uploaded successfully." });
@@ -345,23 +437,35 @@ app.post('/api/upload', requireAuth, upload.fields([{ name: 'm3u-file', maxCount
     }
 });
 
-// FIX: This endpoint now also returns the updated settings object to the client.
 app.post('/api/save/settings', requireAuth, (req, res) => {
     try {
         let currentSettings = {};
         if (fs.existsSync(SETTINGS_PATH)) {
-            try {
-                currentSettings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
-            } catch (e) {
-                 console.error("Could not parse settings.json, will overwrite.", e);
-            }
+            try { currentSettings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8')); }
+            catch (e) { console.error("Could not parse settings.json, will overwrite.", e); }
         }
+        
+        const oldTimezone = currentSettings.timezoneOffset;
+        const oldRefresh = currentSettings.autoRefresh;
+
         const updatedSettings = { ...currentSettings, ...req.body };
 
         const userSpecificKeys = ['favorites', 'playerDimensions', 'programDetailsDimensions', 'recentChannels'];
         userSpecificKeys.forEach(key => delete updatedSettings[key]);
 
         fs.writeFileSync(SETTINGS_PATH, JSON.stringify(updatedSettings, null, 2));
+        
+        // If timezone changed, re-parse EPG
+        if (updatedSettings.timezoneOffset !== oldTimezone) {
+            console.log("Timezone changed, re-parsing EPG.");
+            parseAndCacheEPG(updatedSettings.timezoneOffset);
+        }
+        // If auto-refresh setting changed, update the scheduler
+        if (updatedSettings.autoRefresh !== oldRefresh) {
+            console.log("Auto-refresh setting changed, rescheduling.");
+            scheduleEpgRefresh();
+        }
+
         res.json({ success: true, message: 'Settings saved.', settings: updatedSettings });
     } catch (error) {
         console.error("Error saving settings:", error);
@@ -369,17 +473,14 @@ app.post('/api/save/settings', requireAuth, (req, res) => {
     }
 });
 
-// Endpoint to save user-specific settings to the database
 app.post('/api/user/settings', requireAuth, (req, res) => {
     const { key, value } = req.body;
     if (!key) return res.status(400).json({ error: 'A setting key is required.' });
     
     const valueJson = JSON.stringify(value);
     
-    const sql = `INSERT INTO user_settings (user_id, key, value) VALUES (?, ?, ?)
-                 ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value;`;
-                 
-    db.run(sql, [req.session.userId, key, valueJson], (err) => {
+    db.run(`INSERT INTO user_settings (user_id, key, value) VALUES (?, ?, ?)
+            ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value;`, [req.session.userId, key, valueJson], (err) => {
         if (err) {
             console.error('Error saving user setting to database:', err);
             return res.status(500).json({ error: 'Could not save user setting.' });
@@ -388,7 +489,6 @@ app.post('/api/user/settings', requireAuth, (req, res) => {
     });
 });
 
-
 app.post('/api/save/url', requireAuth, (req, res) => {
     const { type, url } = req.body;
     if (!type || !url) return res.status(400).json({ error: 'Type and URL are required.' });
@@ -396,17 +496,12 @@ app.post('/api/save/url', requireAuth, (req, res) => {
     try {
         let settings = {};
         if (fs.existsSync(SETTINGS_PATH)) {
-             try {
-                settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
-             } catch(e) { console.error("Could not parse settings.json, will overwrite.", e); }
+             try { settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8')); }
+             catch(e) { console.error("Could not parse settings.json, will overwrite.", e); }
         }
         const urlListName = `${type}CustomUrls`;
-        if (!settings[urlListName]) {
-            settings[urlListName] = [];
-        }
-        if (!settings[urlListName].includes(url)) {
-            settings[urlListName].push(url);
-        }
+        if (!settings[urlListName]) settings[urlListName] = [];
+        if (!settings[urlListName].includes(url)) settings[urlListName].push(url);
         settings[`${type}Url`] = url;
 
         fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
@@ -417,10 +512,9 @@ app.post('/api/save/url', requireAuth, (req, res) => {
     }
 });
 
-
 app.delete('/api/data', requireAuth, (req, res) => {
     try {
-        [M3U_PATH, EPG_PATH, SETTINGS_PATH].forEach(file => {
+        [M3U_PATH, EPG_XML_PATH, EPG_JSON_PATH, SETTINGS_PATH].forEach(file => {
             if (fs.existsSync(file)) fs.unlinkSync(file);
         });
         db.run(`DELETE FROM user_settings WHERE user_id = ?`, [req.session.userId], (err) => {
@@ -451,23 +545,33 @@ function fetchUrlContent(url) {
     });
 }
 
-const createFetchEndpoint = (type, filePath) => async (req, res) => {
+const createFetchEndpoint = (type) => async (req, res) => {
     const url = req.query.url;
     if (!url) return res.status(400).send('Error: URL query parameter is required.');
     
     try {
-        const content = await fetchUrlContent(url);
-        fs.writeFileSync(filePath, content);
-        
         let settings = {};
         if (fs.existsSync(SETTINGS_PATH)) {
-            try {
-                settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
-            } catch(e) { console.error("Could not parse settings.json", e); }
+             try { settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8')); }
+             catch(e) { console.error("Could not parse settings.json", e); }
         }
+        
+        console.log(`Fetching ${type.toUpperCase()} from ${url}`);
+        const content = await fetchUrlContent(url);
+        
+        if (type === 'm3u') {
+            fs.writeFileSync(M3U_PATH, content);
+        } else if (type === 'epg') {
+            fs.writeFileSync(EPG_XML_PATH, content);
+            // After fetching, parse and cache it immediately
+            parseAndCacheEPG(settings.timezoneOffset || 0);
+        }
+        
         settings[`${type}SourceType`] = 'url';
         settings[`${type}Url`] = url;
         fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
+
+        if(type === 'epg') scheduleEpgRefresh(); // Reschedule after manual fetch
         
         res.json({ success: true, message: `${type.toUpperCase()} fetched and saved.` });
     } catch (error) {
@@ -476,39 +580,32 @@ const createFetchEndpoint = (type, filePath) => async (req, res) => {
     }
 };
 
-app.get('/fetch-m3u', requireAuth, createFetchEndpoint('m3u', M3U_PATH));
-app.get('/fetch-epg', requireAuth, createFetchEndpoint('epg', EPG_PATH));
+app.get('/fetch-m3u', requireAuth, createFetchEndpoint('m3u'));
+app.get('/fetch-epg', requireAuth, createFetchEndpoint('epg'));
 
 app.get('/stream', requireAuth, (req, res) => {
     const { url: streamUrl, profileId, userAgentId } = req.query;
-
     if (!streamUrl) return res.status(400).send('Error: `url` query parameter is required.');
 
     let settings = {};
     if (fs.existsSync(SETTINGS_PATH)) {
-        try {
-            settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
-        } catch (e) {
-            console.error("Error reading settings.json for /stream:", e);
-            return res.status(500).send('Error reading server settings.');
-        }
+        try { settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8')); }
+        catch (e) { return res.status(500).send('Error reading server settings.'); }
     }
     
-    const activeProfileId = profileId || settings.activeStreamProfileId;
-    const activeUserAgentId = userAgentId || settings.activeUserAgentId;
-    
-    const profile = (settings.streamProfiles || []).find(p => p.id === activeProfileId);
-    if (!profile) return res.status(404).send(`Error: Stream profile with ID "${activeProfileId}" not found.`);
+    const profile = (settings.streamProfiles || []).find(p => p.id === profileId);
+    if (!profile) return res.status(404).send(`Error: Stream profile with ID "${profileId}" not found.`);
 
     if (profile.command === 'redirect') {
-        console.log(`Redirecting to: ${streamUrl}`);
         return res.redirect(302, streamUrl);
     }
     
-    const userAgent = (settings.userAgents || []).find(ua => ua.id === activeUserAgentId);
-    if (!userAgent) return res.status(404).send(`Error: User agent with ID "${activeUserAgentId}" not found.`);
+    const userAgent = (settings.userAgents || []).find(ua => ua.id === userAgentId);
+    if (!userAgent) return res.status(404).send(`Error: User agent with ID "${userAgentId}" not found.`);
     
-    console.log(`Proxying stream for: ${streamUrl} | Profile: "${profile.name}" | User Agent: "${userAgent.name}"`);
+    console.log(`[STREAM] Proxying: ${streamUrl}`);
+    console.log(`[STREAM] Profile: "${profile.name}"`);
+    console.log(`[STREAM] User Agent: "${userAgent.name}"`);
 
     const commandTemplate = profile.command
         .replace(/{streamUrl}/g, streamUrl)
@@ -519,23 +616,33 @@ app.get('/stream', requireAuth, (req, res) => {
     const ffmpeg = spawn('ffmpeg', args);
     res.setHeader('Content-Type', 'video/mp2t');
     ffmpeg.stdout.pipe(res);
-    ffmpeg.stderr.on('data', (data) => {});
+    
+    // Log stderr for debugging
+    ffmpeg.stderr.on('data', (data) => {
+        console.error(`[FFMPEG_ERROR] ${streamUrl}: ${data}`);
+    });
+
     ffmpeg.on('close', (code) => {
-        if (code !== 0) console.log(`ffmpeg process for ${streamUrl} exited with code ${code}`);
+        if (code !== 0) console.log(`[STREAM] ffmpeg process for ${streamUrl} exited with code ${code}`);
         res.end();
     });
+
     req.on('close', () => {
+        console.log(`[STREAM] Client closed connection for ${streamUrl}. Killing ffmpeg.`);
         ffmpeg.kill('SIGKILL');
     });
 });
 
 // --- Main Route Handling ---
 app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 
-
+// --- Server Start ---
 app.listen(port, () => {
     console.log(`VINI PLAY server listening at http://localhost:${port}`);
-    console.log(`Data will be stored in the host directory mapped to ${DATA_DIR} in the container.`);
+    console.log(`Data is stored in the host directory mapped to ${DATA_DIR}`);
+    console.log(`Serving frontend from: ${PUBLIC_DIR}`);
+    // Initial setup for EPG refresh
+    scheduleEpgRefresh();
 });
