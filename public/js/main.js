@@ -51,7 +51,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!res || !res.ok) {
             console.error(`Failed to save user setting: ${key}`);
             showNotification(`Could not save setting: ${key}`, true);
+            return false;
         }
+        return true;
     }
 
     async function saveGlobalSetting(settingObject) {
@@ -60,17 +62,29 @@ document.addEventListener('DOMContentLoaded', () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(settingObject)
         });
-        if (!res) return;
+        if (!res) return false;
         
         const data = await res.json();
         if (res.ok && data.settings) {
             // Merge returned settings into local state
             Object.assign(guideState.settings, data.settings);
+            return true;
         } else {
             console.error(`Failed to save global setting:`, settingObject);
             showNotification(data.error || 'A global setting could not be saved.', true);
+            return false;
         }
     }
+
+    // A wrapper to show notification on successful setting save
+    const saveSettingAndNotify = async (saveFunction, ...args) => {
+        const success = await saveFunction(...args);
+        if (success) {
+            showNotification('Setting saved.');
+        }
+        return success;
+    };
+
 
     function openDB() {
         return new Promise((resolve, reject) => {
@@ -658,6 +672,43 @@ document.addEventListener('DOMContentLoaded', () => {
         `).join('');
     };
 
+    // --- NEW Resizer Logic ---
+    const makeModalResizable = (handleEl, containerEl, minWidth, minHeight, settingKey) => {
+        let resizeDebounceTimer;
+        handleEl.addEventListener('mousedown', e => {
+            e.preventDefault();
+            const startX = e.clientX, startY = e.clientY;
+            const startWidth = containerEl.offsetWidth;
+            const startHeight = containerEl.offsetHeight;
+
+            const doResize = (e) => {
+                const newWidth = startWidth + e.clientX - startX;
+                const newHeight = startHeight + e.clientY - startY;
+                containerEl.style.width = `${Math.max(minWidth, newWidth)}px`;
+                containerEl.style.height = `${Math.max(minHeight, newHeight)}px`;
+            };
+
+            const stopResize = () => {
+                window.removeEventListener('mousemove', doResize);
+                window.removeEventListener('mouseup', stopResize);
+                document.body.style.cursor = '';
+
+                // Debounce saving the setting to avoid spamming the server
+                clearTimeout(resizeDebounceTimer);
+                resizeDebounceTimer = setTimeout(() => {
+                    saveUserSetting(settingKey, {
+                        width: containerEl.offsetWidth,
+                        height: containerEl.offsetHeight,
+                    });
+                }, 500);
+            };
+
+            document.body.style.cursor = 'se-resize';
+            window.addEventListener('mousemove', doResize);
+            window.addEventListener('mouseup', stopResize);
+        }, false);
+    };
+
 
     // --- Event Listeners Setup ---
     function setupEventListeners() {
@@ -782,7 +833,7 @@ document.addEventListener('DOMContentLoaded', () => {
         UIElements.channelList.addEventListener('scroll', (e) => syncScroll(e.target, [UIElements.guideTimeline, UIElements.logoList]));
         UIElements.logoList.addEventListener('scroll', (e) => syncScroll(e.target, [UIElements.guideTimeline, UIElements.channelList]));
 
-        // Resizers
+        // Panel Resizer
         UIElements.resizer.addEventListener('mousedown', e => {
             e.preventDefault();
             const startX = e.clientX, startWidth = UIElements.channelPanelContainer.offsetWidth;
@@ -792,17 +843,21 @@ document.addEventListener('DOMContentLoaded', () => {
             window.addEventListener('mouseup', stopResize);
         }, false);
         
+        // Modal Resizers (NEW)
+        makeModalResizable(UIElements.videoResizeHandle, UIElements.videoModalContainer, 400, 300, 'playerDimensions');
+        makeModalResizable(UIElements.detailsResizeHandle, UIElements.programDetailsContainer, 320, 250, 'programDetailsDimensions');
+
         // Settings Page
         ['m3u', 'epg'].forEach(type => {
-            UIElements[`${type}TabFile`].addEventListener('click', () => { setDataSourceTab(type, 'file'); saveGlobalSetting({[`${type}SourceType`]: 'file'}); });
-            UIElements[`${type}TabUrl`].addEventListener('click', () => { setDataSourceTab(type, 'url'); saveGlobalSetting({[`${type}SourceType`]: 'url'}); });
+            UIElements[`${type}TabFile`].addEventListener('click', () => saveSettingAndNotify(saveGlobalSetting, {[`${type}SourceType`]: 'file'}).then(success => success && setDataSourceTab(type, 'file')));
+            UIElements[`${type}TabUrl`].addEventListener('click', () => saveSettingAndNotify(saveGlobalSetting, {[`${type}SourceType`]: 'url'}).then(success => success && setDataSourceTab(type, 'url')));
             UIElements[`${type}UrlSelect`].addEventListener('change', () => {
                 updateCustomUrlVisibility(type);
                 const selectedUrl = UIElements[`${type}UrlSelect`].value;
                 const urlToSave = (selectedUrl !== 'custom') ? selectedUrl : '';
                 guideState.settings[`${type}Url`] = urlToSave;
                 UIElements[`${type}UrlInput`].value = urlToSave;
-                saveGlobalSetting({[`${type}Url`]: urlToSave});
+                saveSettingAndNotify(saveGlobalSetting, {[`${type}Url`]: urlToSave});
             });
             UIElements[`save${type.charAt(0).toUpperCase() + type.slice(1)}UrlBtn`].addEventListener('click', async () => {
                  const inputEl = UIElements[`${type}UrlInput`];
@@ -869,12 +924,12 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
         
-        // App Settings
-        UIElements.autoRefreshSelect.addEventListener('change', (e) => saveGlobalSetting({ autoRefresh: parseInt(e.target.value, 10) }));
-        UIElements.timezoneOffsetSelect.addEventListener('change', (e) => saveGlobalSetting({ timezoneOffset: parseInt(e.target.value, 10) }));
-        UIElements.searchScopeSelect.addEventListener('change', (e) => saveGlobalSetting({ searchScope: e.target.value }));
+        // App Settings with Notifications
+        UIElements.autoRefreshSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { autoRefresh: parseInt(e.target.value, 10) }));
+        UIElements.timezoneOffsetSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { timezoneOffset: parseInt(e.target.value, 10) }));
+        UIElements.searchScopeSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { searchScope: e.target.value }));
         
-        // Player Settings
+        // Player Settings with Notifications
         UIElements.addUserAgentBtn.addEventListener('click', () => openEditorModal('userAgent'));
         UIElements.editUserAgentBtn.addEventListener('click', () => {
             const agent = guideState.settings.userAgents.find(ua => ua.id === UIElements.userAgentSelect.value);
@@ -886,9 +941,11 @@ document.addEventListener('DOMContentLoaded', () => {
             showConfirm('Delete User Agent?', 'Are you sure?', async () => {
                 const updatedList = guideState.settings.userAgents.filter(ua => ua.id !== selectedId);
                 const newActiveId = (guideState.settings.activeUserAgentId === selectedId) ? (updatedList[0]?.id || null) : guideState.settings.activeUserAgentId;
-                await saveGlobalSetting({ userAgents: updatedList, activeUserAgentId: newActiveId });
-                updateUIFromSettings();
-                showNotification('User Agent deleted.');
+                const success = await saveGlobalSetting({ userAgents: updatedList, activeUserAgentId: newActiveId });
+                if (success) {
+                    updateUIFromSettings();
+                    showNotification('User Agent deleted.');
+                }
             });
         });
         UIElements.addStreamProfileBtn.addEventListener('click', () => openEditorModal('streamProfile'));
@@ -903,13 +960,15 @@ document.addEventListener('DOMContentLoaded', () => {
             showConfirm('Delete Stream Profile?', 'Are you sure?', async () => {
                 const updatedList = guideState.settings.streamProfiles.filter(p => p.id !== selectedId);
                 const newActiveId = (guideState.settings.activeStreamProfileId === selectedId) ? (updatedList[0]?.id || null) : guideState.settings.activeStreamProfileId;
-                await saveGlobalSetting({ streamProfiles: updatedList, activeStreamProfileId: newActiveId });
-                updateUIFromSettings();
-                showNotification('Stream Profile deleted.');
+                const success = await saveGlobalSetting({ streamProfiles: updatedList, activeStreamProfileId: newActiveId });
+                if (success) {
+                    updateUIFromSettings();
+                    showNotification('Stream Profile deleted.');
+                }
             });
         });
-        UIElements.userAgentSelect.addEventListener('change', (e) => saveGlobalSetting({ activeUserAgentId: e.target.value }));
-        UIElements.streamProfileSelect.addEventListener('change', (e) => saveGlobalSetting({ activeStreamProfileId: e.target.value }));
+        UIElements.userAgentSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { activeUserAgentId: e.target.value }));
+        UIElements.streamProfileSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { activeStreamProfileId: e.target.value }));
 
         // Editor Modal
         UIElements.editorCancelBtn.addEventListener('click', () => closeModal(UIElements.editorModal));
@@ -928,10 +987,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 list.push(type === 'userAgent' ? { id, name, value } : { id, name, command: value, isDefault: false });
             }
 
-            await saveGlobalSetting({ [keyToSave]: list });
-            updateUIFromSettings();
-            closeModal(UIElements.editorModal);
-            showNotification(type === 'userAgent' ? 'User Agent saved.' : 'Stream Profile saved.');
+            const success = await saveGlobalSetting({ [keyToSave]: list });
+            if (success) {
+                updateUIFromSettings();
+                closeModal(UIElements.editorModal);
+                showNotification(type === 'userAgent' ? 'User Agent saved.' : 'Stream Profile saved.');
+            }
         });
         
         // Admin - User Management
@@ -988,6 +1049,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const config = await response.json();
             guideState.settings = config.settings || {}; 
             
+            // Apply saved dimensions from user settings
             if (guideState.settings.playerDimensions) {
                 const { width, height } = guideState.settings.playerDimensions;
                 if (width) UIElements.videoModalContainer.style.width = `${width}px`;
