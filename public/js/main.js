@@ -17,6 +17,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let player, searchDebounceTimer;
     let confirmCallback = null;
     let db = null; // IndexedDB instance
+    let fuseChannels = null; // Fuse.js instance for channels
+    let fusePrograms = null; // Fuse.js instance for programs
     
     // --- UI Element Cache ---
     const UIElements = Object.fromEntries(
@@ -84,7 +86,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return success;
     };
-
 
     function openDB() {
         return new Promise((resolve, reject) => {
@@ -347,13 +348,60 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const finalizeGuideLoad = (isFirstLoad = false) => {
+        // Add favorite status to channels
         (guideState.settings.favorites || []).forEach(favId => {
             const channel = guideState.channels.find(c => c.id === favId);
             if (channel) channel.isFavorite = true;
         });
+
+        // Populate unique channel groups for the filter dropdown
         guideState.channelGroups.clear();
         guideState.channels.forEach(ch => { if(ch.group) guideState.channelGroups.add(ch.group) });
         populateGroupFilter();
+
+        // --- NEW: Initialize Fuse.js for fuzzy search ---
+        // 1. Initialize Fuse for Channels
+        fuseChannels = new Fuse(guideState.channels, {
+            keys: ['name', 'displayName'],
+            threshold: 0.4, // Adjust for more/less strict matching
+            includeScore: true,
+        });
+
+        // 2. Create a flat list of all programs with their parent channel info for searching
+        const allPrograms = [];
+        const guideStart = new Date(guideState.currentDate);
+        guideStart.setHours(0, 0, 0, 0);
+        const guideEnd = new Date(guideStart.getTime() + guideState.guideDurationHours * 3600 * 1000);
+
+        for (const channelId in guideState.programs) {
+            const channel = guideState.channels.find(c => c.id === channelId);
+            if (channel) {
+                guideState.programs[channelId].forEach(prog => {
+                     // Only include programs within the visible guide window for search
+                    const progStart = new Date(prog.start);
+                    const progStop = new Date(prog.stop);
+                    if (progStop > guideStart && progStart < guideEnd) {
+                        allPrograms.push({
+                           // Spread program data and add a reference to the channel
+                           ...prog,
+                           channel: {
+                               id: channel.id,
+                               name: channel.displayName || channel.name,
+                               logo: channel.logo
+                           }
+                        });
+                    }
+                });
+            }
+        }
+        
+        // 3. Initialize Fuse for Programs
+        fusePrograms = new Fuse(allPrograms, {
+            keys: ['title'],
+            threshold: 0.4, // Adjust for more/less strict matching
+            includeScore: true,
+        });
+
         handleSearchAndFilter(isFirstLoad);
     };
     
@@ -475,66 +523,89 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const handleSearchAndFilter = (isFirstLoad = false) => {
-        const searchTerm = UIElements.searchInput.value.toLowerCase().trim();
+        const searchTerm = UIElements.searchInput.value.trim();
         const selectedGroup = UIElements.groupFilter.value;
-        let filteredChannels = guideState.channels;
+        let channelsForGuide = guideState.channels;
         
+        // Filter channels based on the selected group first
         if (selectedGroup !== 'all') {
             if (selectedGroup === 'favorites') {
                 const favoriteIds = new Set(guideState.settings.favorites || []);
-                filteredChannels = guideState.channels.filter(ch => favoriteIds.has(ch.id));
+                channelsForGuide = guideState.channels.filter(ch => favoriteIds.has(ch.id));
             } else if (selectedGroup === 'recents') {
                 const recentIds = guideState.settings.recentChannels || [];
-                filteredChannels = recentIds.map(id => guideState.channels.find(ch => ch.id === id)).filter(Boolean);
+                channelsForGuide = recentIds.map(id => guideState.channels.find(ch => ch.id === id)).filter(Boolean);
             } else {
-                filteredChannels = guideState.channels.filter(ch => ch.group === selectedGroup);
+                channelsForGuide = guideState.channels.filter(ch => ch.group === selectedGroup);
             }
         }
-
-        UIElements.searchResultsContainer.innerHTML = '';
-        let channelsForGuide = filteredChannels;
         
-        if (searchTerm) {
-            channelsForGuide = filteredChannels.filter(ch => (ch.displayName || ch.name).toLowerCase().includes(searchTerm));
+        // --- NEW: Fuzzy Search Logic ---
+        if (searchTerm && fuseChannels && fusePrograms) {
+            // The main guide view is filtered by simple text inclusion for responsiveness
+            const lowerCaseSearchTerm = searchTerm.toLowerCase();
+            channelsForGuide = channelsForGuide.filter(ch => (ch.displayName || ch.name).toLowerCase().includes(lowerCaseSearchTerm));
             
-            const searchPrograms = guideState.settings.searchScope === 'channels_programs';
-            const programResults = [];
+            // The dropdown, however, is powered by Fuse.js for better results
+            const channelResults = fuseChannels.search(searchTerm).slice(0, 10);
             
-            if (searchPrograms) {
-                const guideStart = new Date(guideState.currentDate);
-                guideStart.setHours(0, 0, 0, 0);
-                const guideEnd = new Date(guideStart.getTime() + guideState.guideDurationHours * 3600 * 1000);
-
-                for (const channel of guideState.channels) {
-                    (guideState.programs[channel.id] || []).forEach(prog => {
-                        if (programResults.length >= 50) return;
-                        const progStart = new Date(prog.start);
-                        if (progStart > guideEnd || new Date(prog.stop) < guideStart) return;
-                        if (prog.title.toLowerCase().includes(searchTerm)) {
-                            programResults.push({ channel, program: prog });
-                        }
-                    });
-                    if (programResults.length >= 50) break;
-                }
+            let programResults = [];
+            if (guideState.settings.searchScope === 'channels_programs') {
+                programResults = fusePrograms.search(searchTerm).slice(0, 20);
             }
 
-            if (programResults.length > 0) {
-                UIElements.searchResultsContainer.innerHTML = `<div class="p-2 bg-gray-700 text-xs font-bold text-gray-400">PROGRAM RESULTS</div>` +
-                programResults.map(({ channel, program }) => `
-                    <div class="search-result-program p-3 border-b border-gray-700 hover:bg-gray-700 cursor-pointer" data-channel-id="${channel.id}" data-prog-start="${program.start}">
-                        <p class="font-semibold text-white text-sm truncate">${program.title}</p>
-                        <p class="text-gray-400 text-xs truncate">${channel.name}</p>
-                    </div>
-                `).join('');
-                UIElements.searchResultsContainer.classList.remove('hidden');
-            } else {
-                 UIElements.searchResultsContainer.classList.add('hidden');
-            }
+            renderSearchResults(channelResults, programResults);
+
         } else {
+            // No search term, hide the results dropdown
+            UIElements.searchResultsContainer.innerHTML = '';
             UIElements.searchResultsContainer.classList.add('hidden');
         }
         
         renderGuide(channelsForGuide, isFirstLoad);
+    };
+    
+    // --- NEW: Function to render the rich search results dropdown ---
+    const renderSearchResults = (channelResults, programResults) => {
+        let html = '';
+        
+        // Render Channel Results
+        if (channelResults.length > 0) {
+            html += '<div class="search-results-header">Channels</div>';
+            html += channelResults.map(({ item }) => `
+                <div class="search-result-channel flex items-center p-3 border-b border-gray-700/50 hover:bg-gray-700 cursor-pointer" data-channel-id="${item.id}">
+                    <img src="${item.logo}" onerror="this.onerror=null; this.src='https.placehold.co/40x40/1f2937/d1d5db?text=?';" class="w-10 h-10 object-contain mr-3 rounded-md bg-gray-700 flex-shrink-0">
+                    <div class="overflow-hidden">
+                        <p class="font-semibold text-white text-sm truncate">${item.displayName || item.name}</p>
+                        <p class="text-gray-400 text-xs truncate">${item.group}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // Render Program Results
+        if (programResults.length > 0) {
+            html += '<div class="search-results-header">Programs</div>';
+            const timeFormat = { hour: '2-digit', minute: '2-digit' };
+            html += programResults.map(({ item }) => `
+                 <div class="search-result-program flex items-center p-3 border-b border-gray-700/50 hover:bg-gray-700 cursor-pointer" data-channel-id="${item.channel.id}" data-prog-start="${item.start}">
+                    <img src="${item.channel.logo}" onerror="this.onerror=null; this.src='https.placehold.co/40x40/1f2937/d1d5db?text=?';" class="w-10 h-10 object-contain mr-3 rounded-md bg-gray-700 flex-shrink-0">
+                    <div class="overflow-hidden">
+                        <p class="font-semibold text-white text-sm truncate" title="${item.title}">${item.title}</p>
+                        <p class="text-gray-400 text-xs truncate">${item.channel.name}</p>
+                        <p class="text-blue-400 text-xs">${new Date(item.start).toLocaleTimeString([], timeFormat)} - ${new Date(item.stop).toLocaleTimeString([], timeFormat)}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        if (html) {
+            UIElements.searchResultsContainer.innerHTML = html;
+            UIElements.searchResultsContainer.classList.remove('hidden');
+        } else {
+            UIElements.searchResultsContainer.innerHTML = '<p class="text-center text-gray-500 p-4 text-sm">No results found.</p>';
+            UIElements.searchResultsContainer.classList.remove('hidden');
+        }
     };
 
     // --- Player Logic ---
@@ -672,7 +743,7 @@ document.addEventListener('DOMContentLoaded', () => {
         `).join('');
     };
 
-    // --- NEW Resizer Logic ---
+    // --- Resizer Logic ---
     const makeModalResizable = (handleEl, containerEl, minWidth, minHeight, settingKey) => {
         let resizeDebounceTimer;
         handleEl.addEventListener('mousedown', e => {
@@ -708,7 +779,6 @@ document.addEventListener('DOMContentLoaded', () => {
             window.addEventListener('mouseup', stopResize);
         }, false);
     };
-
 
     // --- Event Listeners Setup ---
     function setupEventListeners() {
@@ -778,52 +848,107 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // Guide Navigation & Search
-        UIElements.prevDayBtn.addEventListener('click', () => { guideState.currentDate.setDate(guideState.currentDate.getDate() - 1); handleSearchAndFilter(); });
+        UIElements.prevDayBtn.addEventListener('click', () => { guideState.currentDate.setDate(guideState.currentDate.getDate() - 1); finalizeGuideLoad(); });
         UIElements.todayBtn.addEventListener('click', () => { guideState.currentDate = new Date(); renderGuide(guideState.visibleChannels, true); });
         UIElements.nowBtn.addEventListener('click', () => {
             const now = new Date();
             if (guideState.currentDate.toDateString() !== now.toDateString()) {
                 guideState.currentDate = now;
-                renderGuide(guideState.visibleChannels, true);
+                finalizeGuideLoad();
+                setTimeout(() => renderGuide(guideState.visibleChannels, true), 50);
             } else {
                 const guideStart = new Date(guideState.currentDate); guideStart.setHours(0,0,0,0);
                 const scrollPos = ((now - guideStart) / 3600000) * guideState.hourWidthPixels - (UIElements.guideTimeline.clientWidth / 4);
                 UIElements.guideTimeline.scrollTo({ left: scrollPos, behavior: 'smooth' });
             }
         });
-        UIElements.nextDayBtn.addEventListener('click', () => { guideState.currentDate.setDate(guideState.currentDate.getDate() + 1); handleSearchAndFilter(); });
+        UIElements.nextDayBtn.addEventListener('click', () => { guideState.currentDate.setDate(guideState.currentDate.getDate() + 1); finalizeGuideLoad(); });
         UIElements.groupFilter.addEventListener('change', () => handleSearchAndFilter());
-        UIElements.searchInput.addEventListener('input', () => { clearTimeout(searchDebounceTimer); searchDebounceTimer = setTimeout(() => handleSearchAndFilter(false), 300); });
+        UIElements.searchInput.addEventListener('input', () => { clearTimeout(searchDebounceTimer); searchDebounceTimer = setTimeout(() => handleSearchAndFilter(false), 250); });
         document.addEventListener('click', e => { if (!UIElements.searchInput.contains(e.target) && !UIElements.searchResultsContainer.contains(e.target)) UIElements.searchResultsContainer.classList.add('hidden'); });
 
-        // Search Results Interaction
+        // --- NEW/ENHANCED: Search Results Interaction ---
         UIElements.searchResultsContainer.addEventListener('click', e => {
-            const progItemData = e.target.closest('.search-result-program');
-            if (progItemData) {
-                const progStart = new Date(progItemData.dataset.progStart);
-                guideState.currentDate = progStart;
+            const programItem = e.target.closest('.search-result-program');
+            const channelItem = e.target.closest('.search-result-channel');
+
+            if (channelItem) {
+                // When a channel is clicked, filter the guide to that channel's group and scroll to it.
+                const channelId = channelItem.dataset.channelId;
+                const targetChannel = guideState.channels.find(ch => ch.id === channelId);
+                if (!targetChannel) return;
+
+                // Set group filter to the channel's group to make sure it's visible.
+                const groupOption = UIElements.groupFilter.querySelector(`option[value="${targetChannel.group.replace(/"/g, '&quot;')}"]`);
+                UIElements.groupFilter.value = groupOption ? targetChannel.group : 'all';
+                
+                handleSearchAndFilter(); // Re-render the guide with the new filter
+
+                setTimeout(() => {
+                    const channelIndex = guideState.visibleChannels.findIndex(ch => ch.id === channelId);
+                    if (channelIndex > -1) {
+                        const yPos = channelIndex * 80;
+                        // Scroll the lists into view
+                        [UIElements.guideTimeline, UIElements.channelList, UIElements.logoList].forEach(el => {
+                            el.scrollTo({ top: yPos, behavior: 'smooth' });
+                        });
+                    }
+                }, 100); // A small delay to allow for DOM update
+
+            } else if (programItem) {
+                // When a program is clicked, navigate to it in the timeline.
+                const channelId = programItem.dataset.channelId;
+                const progStartISO = programItem.dataset.progStart;
+                const progStartDate = new Date(progStartISO);
+
+                // 1. Set the guide to the correct date
+                guideState.currentDate = progStartDate;
+                
+                // 2. Ensure the channel's group is selected so it will be rendered
+                const targetChannel = guideState.channels.find(ch => ch.id === channelId);
+                if (targetChannel) {
+                    const groupOption = UIElements.groupFilter.querySelector(`option[value="${targetChannel.group.replace(/"/g, '&quot;')}"]`);
+                    UIElements.groupFilter.value = groupOption ? targetChannel.group : 'all';
+                }
+
+                // 3. Re-render the guide for the correct date and filter
                 handleSearchAndFilter();
                 
+                // 4. After re-render, find the program and scroll to it
                 setTimeout(() => {
-                    const guideStartTime = new Date(guideState.currentDate); guideStartTime.setHours(0,0,0,0);
-                    const channelIndex = guideState.visibleChannels.findIndex(ch => ch.id === progItemData.dataset.channelId);
-                    if (channelIndex === -1) return;
+                    const guideStartTime = new Date(guideState.currentDate);
+                    guideStartTime.setHours(0, 0, 0, 0);
+
+                    // Find channel's vertical position
+                    const channelIndex = guideState.visibleChannels.findIndex(ch => ch.id === channelId);
+                    if (channelIndex === -1) {
+                        showNotification("Could not find channel in current view.", true);
+                        return;
+                    }
                     
-                    const hScroll = ((progStart - guideStartTime) / 3600000) * guideState.hourWidthPixels;
-                    UIElements.guideTimeline.scrollTo({ top: channelIndex * 80, behavior: 'smooth' });
-                    UIElements.guideTimeline.scrollLeft = hScroll - (UIElements.guideTimeline.clientWidth / 4);
+                    // Calculate horizontal and vertical scroll positions
+                    const hScroll = ((progStartDate - guideStartTime) / 3600000) * guideState.hourWidthPixels;
+                    const vScroll = channelIndex * 80; // 80px channel height
                     
+                    // Scroll the timeline
+                    UIElements.guideTimeline.scrollTo({ top: vScroll, left: hScroll - (UIElements.guideTimeline.clientWidth / 4), behavior: 'smooth' });
+                    
+                    // Remove any previous highlight
                     document.querySelectorAll('.programme-item.highlighted-search').forEach(el => el.classList.remove('highlighted-search'));
-                    const targetProg = Array.from(document.querySelectorAll('.programme-item')).find(p => p.dataset.channelId === progItemData.dataset.channelId && p.dataset.progStart === progItemData.dataset.progStart);
+                    
+                    // Find the specific program element and highlight it
+                    const targetProg = Array.from(document.querySelectorAll('.programme-item')).find(p => p.dataset.channelId === channelId && p.dataset.progStart === progStartISO);
                     if (targetProg) {
                         targetProg.classList.add('highlighted-search');
+                        // Remove highlight after a few seconds
                         setTimeout(() => targetProg.classList.remove('highlighted-search'), 5000);
                     }
-                }, 200);
-                
-                UIElements.searchResultsContainer.classList.add('hidden');
-                UIElements.searchInput.value = '';
+                }, 200); // Delay to ensure DOM is fully updated
             }
+            
+            // Hide search results and clear input after selection
+            UIElements.searchResultsContainer.classList.add('hidden');
+            UIElements.searchInput.value = '';
         });
 
         // Guide Scrolling Sync
@@ -843,7 +968,7 @@ document.addEventListener('DOMContentLoaded', () => {
             window.addEventListener('mouseup', stopResize);
         }, false);
         
-        // Modal Resizers (NEW)
+        // Modal Resizers
         makeModalResizable(UIElements.videoResizeHandle, UIElements.videoModalContainer, 400, 300, 'playerDimensions');
         makeModalResizable(UIElements.detailsResizeHandle, UIElements.programDetailsContainer, 320, 250, 'programDetailsDimensions');
 
