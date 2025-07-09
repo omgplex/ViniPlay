@@ -871,6 +871,10 @@ document.addEventListener('DOMContentLoaded', () => {
         UIElements.searchResultsContainer.addEventListener('click', e => {
             const programItem = e.target.closest('.search-result-program');
             const channelItem = e.target.closest('.search-result-channel');
+            
+            // Hide search results and clear input immediately after any click inside the container.
+            UIElements.searchResultsContainer.classList.add('hidden');
+            UIElements.searchInput.value = '';
 
             if (channelItem) {
                 // When a channel is clicked, filter the guide to that channel's group and scroll to it.
@@ -911,8 +915,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     UIElements.groupFilter.value = groupOption ? targetChannel.group : 'all';
                 }
 
-                // 3. Re-render the guide for the correct date and filter
-                handleSearchAndFilter();
+                // 3. Re-render the guide. Since searchInput is now empty, it will use the group filter.
+                finalizeGuideLoad();
                 
                 // 4. After re-render, find the program and scroll to it
                 setTimeout(() => {
@@ -922,6 +926,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Find channel's vertical position
                     const channelIndex = guideState.visibleChannels.findIndex(ch => ch.id === channelId);
                     if (channelIndex === -1) {
+                        // This error should no longer occur with the fix, but kept as a safeguard.
                         showNotification("Could not find channel in current view.", true);
                         return;
                     }
@@ -945,10 +950,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }, 200); // Delay to ensure DOM is fully updated
             }
-            
-            // Hide search results and clear input after selection
-            UIElements.searchResultsContainer.classList.add('hidden');
-            UIElements.searchInput.value = '';
         });
 
         // Guide Scrolling Sync
