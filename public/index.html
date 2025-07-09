@@ -37,19 +37,85 @@
         .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3b82f6; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
-        /* Styles for resizable modals and search highlight */
-        #video-modal-container, #program-details-container {
-            resize: both;
-            overflow: auto;
+        /* --- Enhanced Resizer Styles --- */
+
+        /* Resizer for the main channel panel */
+        #resizer {
+            width: 8px; /* Made thicker */
+            cursor: col-resize;
+            background-color: #1f2937; /* A subtle default background */
+            transition: background-color 0.2s ease;
+            position: relative;
         }
+        #resizer:hover {
+            background-color: #3b82f6; /* Highlight on hover */
+        }
+        /* Visual grabber handle */
+        #resizer::after {
+            content: '..\\A..\\A..'; /* Using dots as a handle */
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #9ca3af;
+            font-size: 8px;
+            line-height: 4px;
+            letter-spacing: 1px;
+            pointer-events: none; /* Make sure it doesn't interfere with mouse events */
+        }
+
+        /* Common style for modal resize handles */
+        .resize-handle {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 20px;
+            height: 20px;
+            cursor: se-resize;
+            z-index: 10;
+        }
+        /* Visual grip icon for the handle */
+        .resize-handle::after {
+            content: '';
+            position: absolute;
+            display: block;
+            width: 12px;
+            height: 12px;
+            bottom: 2px;
+            right: 2px;
+            background-image:
+                linear-gradient(45deg, #9ca3af 25%, transparent 25%, transparent 75%, #9ca3af 75%),
+                linear-gradient(45deg, #9ca3af 25%, transparent 25%, transparent 75%, #9ca3af 75%);
+            background-size: 6px 6px;
+            background-position: 0 0, 3px 3px;
+            opacity: 0.6;
+        }
+        .resize-handle:hover::after {
+            opacity: 1;
+        }
+
+        /* Removing the old browser-native resize property */
+        #video-modal-container, #program-details-container {
+            /* resize: both; (This is now removed) */
+            overflow: hidden; /* Changed from auto to hidden as we manage resizing now */
+        }
+        
         #video-modal-container {
             min-width: 400px;
             min-height: 300px;
+            position: relative; /* Needed for the absolute positioned handle */
         }
         #program-details-container {
             min-width: 320px;
             min-height: 250px;
+            position: relative; /* Needed for the absolute positioned handle */
         }
+        
+        /* Making sure content inside resizable modals can scroll */
+        #details-desc {
+            overflow-y: auto;
+        }
+
         .programme-item.highlighted-search {
             outline: 3px solid #facc15;
             box-shadow: 0 0 15px rgba(250, 204, 21, 0.5);
@@ -162,7 +228,7 @@
                         </div>
                         <div id="channel-list" class="overflow-y-auto custom-scrollbar flex-grow"></div>
                     </div>
-                    <div id="resizer" class="hidden lg:block w-1.5 cursor-col-resize bg-gray-700 hover:bg-blue-500 z-10"></div>
+                    <div id="resizer" class="hidden lg:block z-10"></div>
                     <div id="logo-column" class="flex flex-col lg:hidden w-20 flex-shrink-0 bg-gray-900 border-r border-gray-700/50">
                         <div class="h-16 flex-shrink-0 border-b border-gray-700/80"></div>
                         <div id="logo-list" class="overflow-y-auto custom-scrollbar flex-grow"></div>
@@ -345,18 +411,22 @@
                 </div>
             </div>
             <div class="flex-grow p-1 bg-black"><video id="videoElement" controls autoplay class="w-full h-full"></video></div>
+            <div id="video-resize-handle" class="resize-handle"></div>
         </div>
     </div>
     
     <div id="program-details-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
         <div id="program-details-container" class="bg-gray-800 rounded-lg shadow-xl p-6 flex flex-col" style="width: 512px; height: auto;">
-            <h3 id="details-title" class="text-xl font-bold text-white mb-2 flex-shrink-0"></h3>
-            <p id="details-time" class="text-sm text-gray-400 mb-4 flex-shrink-0"></p>
-            <p id="details-desc" class="text-base text-gray-300 flex-grow overflow-y-auto custom-scrollbar"></p>
+            <div class="flex-shrink-0">
+                <h3 id="details-title" class="text-xl font-bold text-white mb-2"></h3>
+                <p id="details-time" class="text-sm text-gray-400 mb-4"></p>
+            </div>
+            <p id="details-desc" class="text-base text-gray-300 flex-grow custom-scrollbar"></p>
             <div class="flex justify-between items-center gap-4 mt-6 flex-shrink-0">
                 <button id="details-play-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Play Channel</button>
                 <button id="details-close-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Close</button>
             </div>
+            <div id="details-resize-handle" class="resize-handle"></div>
         </div>
     </div>
     
@@ -572,7 +642,6 @@
                 }
             }
 
-            // FIX: This function now updates local state from the server response to stay in sync.
             async function saveGlobalSetting(settingObject) {
                  const res = await apiFetch('/api/save/settings', {
                     method: 'POST',
@@ -583,7 +652,6 @@
                 
                 const data = await res.json();
                 if (res.ok && data.settings) {
-                    // Overwrite the global parts of our local settings state with the new truth from the server
                     for (const key in data.settings) {
                         guideState.settings[key] = data.settings[key];
                     }
@@ -824,7 +892,6 @@
             });
 
             const finalizeGuideLoad = (isFirstLoad = false) => {
-                // User's favorites are now in guideState.settings
                 (guideState.settings.favorites || []).forEach(favId => {
                     const channel = guideState.channels.find(c => c.id === favId);
                     if (channel) channel.isFavorite = true;
@@ -1048,7 +1115,6 @@
                     const result = await response.json();
                     if (!response.ok) throw new Error(result.error);
                     
-                    // The server returns the full updated settings object, so a direct assignment is best.
                     guideState.settings = result.settings;
                     updateUIFromSettings();
                     showNotification(`${type.toUpperCase()} URL saved and selected.`);
@@ -1384,7 +1450,6 @@
                     });
                 });
                 
-                // FIX: Correctly call saveGlobalSetting and update local state
                 UIElements.autoRefreshSelect.addEventListener('change', async (e) => { 
                     const value = parseInt(e.target.value, 10);
                     guideState.settings.autoRefresh = value;
@@ -1503,24 +1568,39 @@
                 }, false);
             }
             
-            const setupResizableModal = (containerId, settingKey) => {
+            const setupResizableModal = (containerId, handleId, settingKey) => {
                 const modalContainer = document.getElementById(containerId);
+                const handle = document.getElementById(handleId);
                 const modal = modalContainer.closest('.fixed');
-                if (!modalContainer || !modal) return;
+                if (!modalContainer || !handle || !modal) return;
                 
-                const resizeObserver = new ResizeObserver(() => {
-                    clearTimeout(appState.resizeTimeout);
-                    appState.resizeTimeout = setTimeout(() => {
-                        if (modal.classList.contains('flex')) {
-                            const rect = modalContainer.getBoundingClientRect();
-                            saveUserSetting(settingKey, {
-                                width: Math.round(rect.width),
-                                height: Math.round(rect.height)
-                            });
-                        }
-                    }, 500);
+                handle.addEventListener('mousedown', e => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const startX = e.clientX;
+                    const startY = e.clientY;
+                    const startWidth = modalContainer.offsetWidth;
+                    const startHeight = modalContainer.offsetHeight;
+
+                    const doDrag = (e) => {
+                        modalContainer.style.width = `${startWidth + e.clientX - startX}px`;
+                        modalContainer.style.height = `${startHeight + e.clientY - startY}px`;
+                    };
+
+                    const stopDrag = () => {
+                        window.removeEventListener('mousemove', doDrag);
+                        window.removeEventListener('mouseup', stopDrag);
+                        // Save the final dimensions
+                        const rect = modalContainer.getBoundingClientRect();
+                        saveUserSetting(settingKey, {
+                            width: Math.round(rect.width),
+                            height: Math.round(rect.height)
+                        });
+                    };
+                    
+                    window.addEventListener('mousemove', doDrag);
+                    window.addEventListener('mouseup', stopDrag);
                 });
-                resizeObserver.observe(modalContainer);
             };
 
             const initMainApp = async () => {
@@ -1536,8 +1616,8 @@
                 populateTimezoneSelector();
                 setupEventListeners();
                 
-                setupResizableModal('video-modal-container', 'playerDimensions');
-                setupResizableModal('program-details-container', 'programDetailsDimensions');
+                setupResizableModal('video-modal-container', 'video-resize-handle', 'playerDimensions');
+                setupResizableModal('program-details-container', 'details-resize-handle', 'programDetailsDimensions');
 
                 try {
                     const response = await apiFetch(`/api/config?t=${new Date().getTime()}`);
@@ -1548,13 +1628,13 @@
                     
                     if (guideState.settings.playerDimensions) {
                         const { width, height } = guideState.settings.playerDimensions;
-                        UIElements.videoModalContainer.style.width = `${width}px`;
-                        UIElements.videoModalContainer.style.height = `${height}px`;
+                        if (width) UIElements.videoModalContainer.style.width = `${width}px`;
+                        if (height) UIElements.videoModalContainer.style.height = `${height}px`;
                     }
                      if (guideState.settings.programDetailsDimensions) {
                         const { width, height } = guideState.settings.programDetailsDimensions;
-                        UIElements.programDetailsContainer.style.width = `${width}px`;
-                        UIElements.programDetailsContainer.style.height = `${height}px`;
+                        if (width) UIElements.programDetailsContainer.style.width = `${width}px`;
+                        if (height) UIElements.programDetailsContainer.style.height = `${height}px`;
                     }
                     
                     updateUIFromSettings(); 
