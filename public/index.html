@@ -37,7 +37,7 @@
         .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3b82f6; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
-        /* MODIFIED: Styles for resizable modals */
+        /* Styles for resizable modals and search highlight */
         #video-modal-container, #program-details-container {
             resize: both;
             overflow: auto;
@@ -46,10 +46,15 @@
             min-width: 400px;
             min-height: 300px;
         }
-        /* ADDED: Styles for program details modal */
         #program-details-container {
             min-width: 320px;
             min-height: 250px;
+        }
+        .programme-item.highlighted-search {
+            outline: 3px solid #facc15;
+            box-shadow: 0 0 15px rgba(250, 204, 21, 0.5);
+            z-index: 15;
+            transition: all 0.3s ease-out;
         }
     </style>
 </head>
@@ -331,7 +336,6 @@
 
     <!-- Modals -->
     <div id="video-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-        <!-- MODIFIED: Removed max-width and fixed-width classes, using inline style for initial size -->
         <div id="video-modal-container" class="bg-gray-900 rounded-lg shadow-xl max-h-[90vh] flex flex-col" style="width: 896px; height: 504px;">
             <div class="flex justify-between items-center p-3 border-b border-gray-700 flex-shrink-0">
                 <h3 id="video-title" class="text-lg font-semibold text-white truncate"></h3>
@@ -345,13 +349,10 @@
     </div>
     
     <div id="program-details-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-        <!-- MODIFIED: Added ID, flex layout, and default size for resizing -->
         <div id="program-details-container" class="bg-gray-800 rounded-lg shadow-xl p-6 flex flex-col" style="width: 512px; height: auto;">
             <h3 id="details-title" class="text-xl font-bold text-white mb-2 flex-shrink-0"></h3>
             <p id="details-time" class="text-sm text-gray-400 mb-4 flex-shrink-0"></p>
-            <!-- MODIFIED: Removed max-h-40 and made it grow -->
             <p id="details-desc" class="text-base text-gray-300 flex-grow overflow-y-auto custom-scrollbar"></p>
-            <!-- MODIFIED: Added mt-6 and flex-shrink-0 -->
             <div class="flex justify-between items-center gap-4 mt-6 flex-shrink-0">
                 <button id="details-play-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Play Channel</button>
                 <button id="details-close-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Close</button>
@@ -526,7 +527,7 @@
             const guideState = {
                 channels: [],
                 programs: {},
-                settings: {},
+                settings: {}, // This will hold both GLOBAL and USER settings, merged.
                 guideDurationHours: 48,
                 hourWidthPixels: window.innerWidth < 768 ? 200 : 300,
                 currentDate: new Date(),
@@ -558,6 +559,34 @@
                     return null;
                 }
             }
+            
+            // NEW: Helper to save a single user-specific setting to the DB via API
+            async function saveUserSetting(key, value) {
+                const res = await apiFetch('/api/user/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key, value })
+                });
+                if (!res || !res.ok) {
+                    console.error(`Failed to save user setting: ${key}`);
+                    showNotification(`Could not save setting: ${key}`, true);
+                }
+            }
+
+            // NEW: Helper to save one or more global settings to the settings.json file
+            async function saveGlobalSetting(settingObject) {
+                 const res = await apiFetch('/api/save/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(settingObject)
+                });
+                if (!res || !res.ok) {
+                    console.error(`Failed to save global setting:`, settingObject);
+                    showNotification('A global setting could not be saved.', true);
+                }
+                return res;
+            }
+
 
             const showLoginScreen = (errorMsg = null) => {
                 UIElements.authContainer.classList.remove('hidden');
@@ -789,6 +818,7 @@
             });
 
             const finalizeGuideLoad = (isFirstLoad = false) => {
+                // User's favorites are now in guideState.settings
                 (guideState.settings.favorites || []).forEach(favId => {
                     const channel = guideState.channels.find(c => c.id === favId);
                     if (channel) channel.isFavorite = true;
@@ -928,13 +958,16 @@
                 closeModal(UIElements.videoModal);
             };
 
-            const playChannel = async (url, name, channelId) => {
+            const playChannel = (url, name, channelId) => {
                 if (player) stopAndCleanupPlayer();
                 if(channelId) {
-                    guideState.settings.recentChannels = [channelId, ...(guideState.settings.recentChannels || []).filter(id => id !== channelId)].slice(0, 15);
-                    await saveSettings();
+                    // This is a user setting, save with the user-specific helper
+                    const recentChannels = [channelId, ...(guideState.settings.recentChannels || []).filter(id => id !== channelId)].slice(0, 15);
+                    guideState.settings.recentChannels = recentChannels;
+                    saveUserSetting('recentChannels', recentChannels);
                 }
                 
+                // Active profile and user agent are global settings
                 const profileId = guideState.settings.activeStreamProfileId;
                 const profile = (guideState.settings.streamProfiles || []).find(p => p.id === profileId);
 
@@ -984,15 +1017,6 @@
                 }
             };
             
-            async function saveSettings() {
-                const res = await apiFetch('/api/save/settings', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(guideState.settings)
-                });
-                if (!res) showNotification("Could not sync settings with server.", true);
-            }
-
             const addUrlToSelect = (selectEl, url, makeActive) => {
                 if ([...selectEl.options].some(opt => opt.value === url)) {
                     if (makeActive) selectEl.value = url;
@@ -1020,7 +1044,7 @@
                     const result = await response.json();
                     if (!response.ok) throw new Error(result.error);
                     
-                    guideState.settings = result.settings;
+                    guideState.settings = {...guideState.settings, ...result.settings};
                     updateUIFromSettings();
                     showNotification(`${type.toUpperCase()} URL saved and selected.`);
 
@@ -1036,9 +1060,11 @@
                 
                 if (selectedGroup !== 'all') {
                     if (selectedGroup === 'favorites') {
+                        // 'favorites' is a user setting
                         const favoriteIds = new Set(guideState.settings.favorites || []);
                         filteredChannels = guideState.channels.filter(ch => favoriteIds.has(ch.id));
                     } else if (selectedGroup === 'recents') {
+                        // 'recentChannels' is a user setting
                         const recentIds = guideState.settings.recentChannels || [];
                         filteredChannels = recentIds.map(id => guideState.channels.find(ch => ch.id === id)).filter(Boolean);
                     } else {
@@ -1130,6 +1156,7 @@
             const updateUIFromSettings = () => {
                 const settings = guideState.settings;
                 
+                // Initialize defaults for global settings if they don't exist
                 settings.timezoneOffset = settings.timezoneOffset ?? Math.round(-(new Date().getTimezoneOffset() / 60));
                 settings.autoRefresh = settings.autoRefresh || 0;
                 settings.m3uSourceType = settings.m3uSourceType || 'url';
@@ -1156,7 +1183,7 @@
                 const populateSelect = (selectId, items, activeId) => {
                     const selectEl = UIElements[selectId];
                     selectEl.innerHTML = '';
-                    items.forEach(item => {
+                    (items || []).forEach(item => {
                         const option = document.createElement('option');
                         option.value = item.id;
                         option.textContent = item.name; 
@@ -1172,6 +1199,7 @@
                 const selectedProfile = (settings.streamProfiles || []).find(p => p.id === selectedProfileId);
                 UIElements.editStreamProfileBtn.disabled = !selectedProfile;
                 UIElements.deleteStreamProfileBtn.disabled = !selectedProfile || selectedProfile.isDefault;
+                
                 const selectedUAId = UIElements.userAgentSelect.value;
                 const selectedUA = (settings.userAgents || []).find(ua => ua.id === selectedUAId);
                 UIElements.editUserAgentBtn.disabled = !selectedUA;
@@ -1205,7 +1233,7 @@
                 UIElements.videoElement.addEventListener('volumechange', () => localStorage.setItem('iptvPlayerVolume', UIElements.videoElement.volume));
                 UIElements.sidebarToggle.addEventListener('click', () => toggleSidebar(true));
                 UIElements.sidebarOverlay.addEventListener('click', () => toggleSidebar(false));
-                UIElements.channelList.addEventListener('click', async (e) => {
+                UIElements.channelList.addEventListener('click', (e) => {
                     const favoriteStar = e.target.closest('.favorite-star');
                     if (favoriteStar) {
                         const channelId = favoriteStar.dataset.channelId;
@@ -1213,8 +1241,9 @@
                         if (!channel) return;
                         channel.isFavorite = !channel.isFavorite;
                         favoriteStar.classList.toggle('favorited', channel.isFavorite);
-                        guideState.settings.favorites = guideState.channels.filter(c => c.isFavorite).map(c => c.id);
-                        await saveSettings();
+                        const favoriteIds = guideState.channels.filter(c => c.isFavorite).map(c => c.id);
+                        guideState.settings.favorites = favoriteIds; // Update local state immediately
+                        saveUserSetting('favorites', favoriteIds); // Persist this user setting
                         if (UIElements.groupFilter.value === 'favorites') handleSearchAndFilter();
                         return;
                     }
@@ -1243,15 +1272,32 @@
                     if (progItemData) {
                         const progStart = new Date(progItemData.dataset.progStart);
                         guideState.currentDate = progStart;
-                        handleSearchAndFilter();
+                        handleSearchAndFilter(); // Re-render the guide for the correct day
+                        
                         setTimeout(() => {
                             const guideStartTime = new Date(guideState.currentDate);
                             guideStartTime.setHours(0,0,0,0);
                             const channelIndex = guideState.visibleChannels.findIndex(ch => ch.id === progItemData.dataset.channelId);
-                            if (channelIndex === -1) return;
+                            if (channelIndex === -1) return; // Channel not visible in current filter
+                            
                             const hScroll = ((progStart - guideStartTime) / 3600000) * guideState.hourWidthPixels;
-                            UIElements.guideTimeline.scrollTo({ top: channelIndex * 80, left: hScroll - (UIElements.guideTimeline.clientWidth / 4), behavior: 'smooth' });
-                        }, 150);
+                            // Scroll vertically to the channel
+                            UIElements.guideTimeline.scrollTo({ top: channelIndex * 80, behavior: 'smooth' });
+                            // Scroll horizontally to the program
+                            UIElements.guideTimeline.scrollLeft = hScroll - (UIElements.guideTimeline.clientWidth / 4);
+                            
+                            // Highlight the program
+                            document.querySelectorAll('.programme-item.highlighted-search').forEach(el => el.classList.remove('highlighted-search'));
+                            const targetProg = Array.from(document.querySelectorAll('.programme-item')).find(p =>
+                                p.dataset.channelId === progItemData.dataset.channelId &&
+                                p.dataset.progStart === progItemData.dataset.progStart
+                            );
+                            if (targetProg) {
+                                targetProg.classList.add('highlighted-search');
+                                setTimeout(() => targetProg.classList.remove('highlighted-search'), 5000);
+                            }
+                        }, 200); // A small delay to allow for re-render
+                        
                         UIElements.searchResultsContainer.classList.add('hidden');
                         UIElements.searchInput.value = '';
                     }
@@ -1271,14 +1317,15 @@
                 UIElements.nextDayBtn.addEventListener('click', () => { guideState.currentDate.setDate(guideState.currentDate.getDate() + 1); handleSearchAndFilter(); });
                 UIElements.groupFilter.addEventListener('change', () => handleSearchAndFilter());
                 ['m3u', 'epg'].forEach(type => {
-                    UIElements[`${type}TabFile`].addEventListener('click', () => { setDataSourceTab(type, 'file'); guideState.settings[`${type}SourceType`] = 'file'; saveSettings(); });
-                    UIElements[`${type}TabUrl`].addEventListener('click', () => { setDataSourceTab(type, 'url'); guideState.settings[`${type}SourceType`] = 'url'; saveSettings(); });
+                    UIElements[`${type}TabFile`].addEventListener('click', () => { setDataSourceTab(type, 'file'); saveGlobalSetting({[`${type}SourceType`]: 'file'}); });
+                    UIElements[`${type}TabUrl`].addEventListener('click', () => { setDataSourceTab(type, 'url'); saveGlobalSetting({[`${type}SourceType`]: 'url'}); });
                     UIElements[`${type}UrlSelect`].addEventListener('change', () => {
                         updateCustomUrlVisibility(type);
                         const selectedUrl = UIElements[`${type}UrlSelect`].value;
-                        if (selectedUrl !== 'custom') { guideState.settings[`${type}Url`] = selectedUrl; UIElements[`${type}UrlInput`].value = selectedUrl; } 
-                        else { guideState.settings[`${type}Url`] = ''; UIElements[`${type}UrlInput`].value = ''; }
-                        saveSettings();
+                        const urlToSave = (selectedUrl !== 'custom') ? selectedUrl : '';
+                        guideState.settings[`${type}Url`] = urlToSave;
+                        UIElements[`${type}UrlInput`].value = urlToSave;
+                        saveGlobalSetting({[`${type}Url`]: urlToSave});
                     });
                     UIElements[`save${type.charAt(0).toUpperCase() + type.slice(1)}UrlBtn`].addEventListener('click', () => saveCustomUrl(type));
                 });
@@ -1325,7 +1372,7 @@
                 });
 
                 UIElements.clearDataBtn.addEventListener('click', () => {
-                    showConfirm('Clear All Data?', 'This will permanently delete ALL settings and files from the server and browser cache. The page will reload.', async () => {
+                    showConfirm('Clear All Data?', 'This will permanently delete ALL settings and files from the server and your browser cache. The page will reload.', async () => {
                         const res = await apiFetch('/api/data', { method: 'DELETE' });
                         if (res) {
                             await clearDB();
@@ -1334,16 +1381,24 @@
                         }
                     });
                 });
-                UIElements.autoRefreshSelect.addEventListener('change', async (e) => { guideState.settings.autoRefresh = parseInt(e.target.value, 10); await saveSettings(); setupAutoRefresh(guideState.settings.autoRefresh); });
+                
+                // Event listeners for global app settings
+                UIElements.autoRefreshSelect.addEventListener('change', (e) => { 
+                    const value = parseInt(e.target.value, 10);
+                    guideState.settings.autoRefresh = value;
+                    saveGlobalSetting({ autoRefresh: value });
+                    setupAutoRefresh(value);
+                });
                 UIElements.timezoneOffsetSelect.addEventListener('change', async (e) => { 
-                    guideState.settings.timezoneOffset = parseInt(e.target.value, 10); 
-                    await saveSettings();
+                    const value = parseInt(e.target.value, 10);
+                    guideState.settings.timezoneOffset = value; 
+                    await saveGlobalSetting({ timezoneOffset: value });
                     await clearDB(); 
                     showNotification(`Timezone offset set. Reload guide to apply changes.`); 
                 });
-                UIElements.searchScopeSelect.addEventListener('change', async (e) => {
+                UIElements.searchScopeSelect.addEventListener('change', (e) => {
                     guideState.settings.searchScope = e.target.value;
-                    await saveSettings();
+                    saveGlobalSetting({ searchScope: e.target.value });
                     showNotification('Search scope updated.');
                 });
                 
@@ -1361,7 +1416,7 @@
                         if (guideState.settings.activeUserAgentId === selectedId) {
                            guideState.settings.activeUserAgentId = guideState.settings.userAgents[0]?.id || null;
                         }
-                        await saveSettings();
+                        await saveGlobalSetting({ userAgents: guideState.settings.userAgents, activeUserAgentId: guideState.settings.activeUserAgentId });
                         updateUIFromSettings();
                         showNotification('User Agent deleted.');
                     });
@@ -1381,21 +1436,21 @@
                          if (guideState.settings.activeStreamProfileId === selectedId) {
                            guideState.settings.activeStreamProfileId = guideState.settings.streamProfiles[0]?.id || null;
                         }
-                        await saveSettings();
+                        await saveGlobalSetting({ streamProfiles: guideState.settings.streamProfiles, activeStreamProfileId: guideState.settings.activeStreamProfileId });
                         updateUIFromSettings();
                         showNotification('Stream Profile deleted.');
                     });
                 });
                 
-                UIElements.userAgentSelect.addEventListener('change', async (e) => {
+                UIElements.userAgentSelect.addEventListener('change', (e) => {
                     guideState.settings.activeUserAgentId = e.target.value;
-                    await saveSettings();
+                    saveGlobalSetting({ activeUserAgentId: e.target.value });
                     showNotification('Active User Agent set.', false, 2000);
                 });
-                UIElements.streamProfileSelect.addEventListener('change', async (e) => {
+                UIElements.streamProfileSelect.addEventListener('change', (e) => {
                     guideState.settings.activeStreamProfileId = e.target.value;
                     updateUIFromSettings(); 
-                    await saveSettings();
+                    saveGlobalSetting({ activeStreamProfileId: e.target.value });
                     showNotification('Active Stream Profile set.', false, 2000);
                 });
 
@@ -1407,26 +1462,25 @@
                     const name = UIElements.editorName.value.trim();
                     const value = UIElements.editorValue.value.trim();
                     if (!name || !value) return showNotification('Name and value cannot be empty.', true);
-
-                    const isNew = type === 'userAgent' 
-                        ? !guideState.settings.userAgents.some(ua => ua.id === id)
-                        : !guideState.settings.streamProfiles.some(p => p.id === id);
-
-                    if (type === 'userAgent') {
-                        const existingIndex = guideState.settings.userAgents.findIndex(ua => ua.id === id);
-                        if (existingIndex > -1) guideState.settings.userAgents[existingIndex] = { ...guideState.settings.userAgents[existingIndex], name, value };
-                        else guideState.settings.userAgents.push({ id, name, value });
-                    } else { // streamProfile
-                        const existingIndex = guideState.settings.streamProfiles.findIndex(p => p.id === id);
-                        if (existingIndex > -1) guideState.settings.streamProfiles[existingIndex] = { ...guideState.settings.streamProfiles[existingIndex], name, command: value };
-                        else guideState.settings.streamProfiles.push({ id, name, command: value, isDefault: false });
-                    }
                     
-                    await saveSettings();
+                    const keyToSave = type === 'userAgent' ? 'userAgents' : 'streamProfiles';
+                    const list = guideState.settings[keyToSave] || [];
+
+                    const existingIndex = list.findIndex(item => item.id === id);
+                    if (existingIndex > -1) { // Update existing
+                        const propToUpdate = type === 'userAgent' ? 'value' : 'command';
+                        list[existingIndex] = { ...list[existingIndex], name, [propToUpdate]: value };
+                    } else { // Add new
+                        const newItem = type === 'userAgent' 
+                            ? { id, name, value }
+                            : { id, name, command: value, isDefault: false };
+                        list.push(newItem);
+                    }
+
+                    await saveGlobalSetting({ [keyToSave]: list });
                     updateUIFromSettings();
                     closeModal(UIElements.editorModal);
-                    const typeName = type === 'userAgent' ? 'User Agent' : 'Stream Profile';
-                    showNotification(isNew ? `${typeName} created.` : `${typeName} updated.`);
+                    showNotification(type === 'userAgent' ? 'User Agent saved.' : 'Stream Profile saved.');
                 });
                 
                 UIElements.searchInput.addEventListener('input', () => { clearTimeout(searchDebounceTimer); searchDebounceTimer = setTimeout(() => handleSearchAndFilter(false), 300); });
@@ -1447,29 +1501,24 @@
                 }, false);
             }
             
-            const setupPlayerResize = () => {
-                const modalContainer = UIElements.videoModalContainer;
-
-                const debouncedSave = () => {
+            const setupResizableModal = (containerId, settingKey) => {
+                const modalContainer = document.getElementById(containerId);
+                const modal = modalContainer.closest('.fixed');
+                if (!modalContainer || !modal) return;
+                
+                const resizeObserver = new ResizeObserver(() => {
                     clearTimeout(appState.resizeTimeout);
-                    appState.resizeTimeout = setTimeout(async () => {
-                        const rect = modalContainer.getBoundingClientRect();
-                        guideState.settings.playerDimensions = {
-                            width: Math.round(rect.width),
-                            height: Math.round(rect.height)
-                        };
-                        await saveSettings();
-                    }, 500);
-                };
-
-                const resizeObserver = new ResizeObserver(entries => {
-                    for (let entry of entries) {
-                        if (UIElements.videoModal.classList.contains('flex')) {
-                            debouncedSave();
+                    appState.resizeTimeout = setTimeout(() => {
+                        // Only save dimensions if the modal is visible
+                        if (modal.classList.contains('flex')) {
+                            const rect = modalContainer.getBoundingClientRect();
+                            saveUserSetting(settingKey, {
+                                width: Math.round(rect.width),
+                                height: Math.round(rect.height)
+                            });
                         }
-                    }
+                    }, 500);
                 });
-
                 resizeObserver.observe(modalContainer);
             };
 
@@ -1485,7 +1534,10 @@
 
                 populateTimezoneSelector();
                 setupEventListeners();
-                setupPlayerResize();
+                
+                // Setup resizable modals
+                setupResizableModal('video-modal-container', 'playerDimensions');
+                setupResizableModal('program-details-container', 'programDetailsDimensions');
 
                 try {
                     const response = await apiFetch(`/api/config?t=${new Date().getTime()}`);
@@ -1494,10 +1546,16 @@
                     const config = await response.json();
                     guideState.settings = config.settings || {}; 
                     
+                    // Apply saved dimensions on load
                     if (guideState.settings.playerDimensions) {
                         const { width, height } = guideState.settings.playerDimensions;
                         UIElements.videoModalContainer.style.width = `${width}px`;
                         UIElements.videoModalContainer.style.height = `${height}px`;
+                    }
+                     if (guideState.settings.programDetailsDimensions) {
+                        const { width, height } = guideState.settings.programDetailsDimensions;
+                        UIElements.programDetailsContainer.style.width = `${width}px`;
+                        UIElements.programDetailsContainer.style.height = `${height}px`;
                     }
                     
                     updateUIFromSettings(); 
