@@ -36,6 +36,14 @@
         button:disabled { cursor: not-allowed; background-color: #4b5563; opacity: 0.7; }
         .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3b82f6; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        /* Styles for resizable modal */
+        #video-modal-container {
+            resize: both;
+            overflow: auto;
+            min-width: 400px;
+            min-height: 300px;
+        }
     </style>
 </head>
 <body class="h-screen">
@@ -315,9 +323,10 @@
     </div>
 
     <!-- Modals -->
-    <div id="video-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-        <div class="bg-gray-900 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
-            <div class="flex justify-between items-center p-3 border-b border-gray-700">
+    <div id="video-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+        <!-- MODIFIED: Added an ID to the container for resizing -->
+        <div id="video-modal-container" class="bg-gray-900 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center p-3 border-b border-gray-700 flex-shrink-0">
                 <h3 id="video-title" class="text-lg font-semibold text-white truncate"></h3>
                 <div class="flex items-center gap-2">
                     <button id="pip-btn" class="text-gray-400 hover:text-white p-2 rounded-md hover:bg-gray-700" title="Picture-in-Picture"><svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M12.5 5.5h-5a1 1 0 00-1 1v2.5a.5.5 0 001 0v-2a.5.5 0 01.5-.5h4a.5.5 0 01.5.5v4a.5.5 0 01-.5.5h-2a.5.5 0 000 1h2.5a1 1 0 001-1v-5a1 1 0 00-1-1z"></path><path d="M3.5 3A1.5 1.5 0 002 4.5v11A1.5 1.5 0 003.5 17h13a1.5 1.5 0 001.5-1.5v-11A1.5 1.5 0 0016.5 3h-13zm0 1h13a.5.5 0 01.5.5v11a.5.5 0 01-.5.5h-13a.5.5 0 01-.5-.5v-11a.5.5 0 01.5-.5z"></path></svg></button>
@@ -501,7 +510,8 @@
             // --- Global State & Configuration ---
             const appState = {
                 currentUser: null, // { username, isAdmin }
-                appInitialized: false
+                appInitialized: false,
+                resizeTimeout: null
             };
             const guideState = {
                 channels: [],
@@ -517,7 +527,6 @@
             let confirmCallback = null;
             let db = null;
             
-            // --- Cache UI Elements ---
             const UIElements = Object.fromEntries(
                 [...document.querySelectorAll('[id]')].map(el => [
                     el.id.replace(/-(\w)/g, (match, letter) => letter.toUpperCase()), 
@@ -525,7 +534,6 @@
                 ])
             );
             
-            // --- API Fetch Helper ---
             async function apiFetch(url, options = {}) {
                 try {
                     const response = await fetch(url, options);
@@ -541,7 +549,6 @@
                 }
             }
 
-            // --- Auth Flow ---
             const showLoginScreen = (errorMsg = null) => {
                 UIElements.authContainer.classList.remove('hidden');
                 UIElements.appContainer.classList.add('hidden');
@@ -600,20 +607,15 @@
                 }
             };
 
-            // --- IndexedDB Caching Logic ---
-            const DB_NAME = 'ViniPlayDB';
-            const DB_VERSION = 1;
-            const STORE_NAME = 'guideData';
-
             function openDB() {
                 return new Promise((resolve, reject) => {
-                    const request = indexedDB.open(DB_NAME, DB_VERSION);
+                    const request = indexedDB.open('ViniPlayDB', 1);
                     request.onerror = () => reject("Error opening IndexedDB.");
                     request.onsuccess = (event) => resolve(event.target.result);
                     request.onupgradeneeded = (event) => {
                         const dbInstance = event.target.result;
-                        if (!dbInstance.objectStoreNames.contains(STORE_NAME)) {
-                            dbInstance.createObjectStore(STORE_NAME);
+                        if (!dbInstance.objectStoreNames.contains('guideData')) {
+                            dbInstance.createObjectStore('guideData');
                         }
                     };
                 });
@@ -622,8 +624,8 @@
             async function saveDataToDB(key, data) {
                 if (!db) return;
                 return new Promise((resolve, reject) => {
-                    const transaction = db.transaction([STORE_NAME], 'readwrite');
-                    const store = transaction.objectStore(STORE_NAME);
+                    const transaction = db.transaction(['guideData'], 'readwrite');
+                    const store = transaction.objectStore('guideData');
                     const request = store.put(data, key);
                     request.onsuccess = () => resolve();
                     request.onerror = () => reject("Error saving data to DB.");
@@ -633,8 +635,8 @@
             async function loadDataFromDB(key) {
                 if (!db) return null;
                 return new Promise((resolve, reject) => {
-                    const transaction = db.transaction([STORE_NAME], 'readonly');
-                    const store = transaction.objectStore(STORE_NAME);
+                    const transaction = db.transaction(['guideData'], 'readonly');
+                    const store = transaction.objectStore('guideData');
                     const request = store.get(key);
                     request.onsuccess = () => resolve(request.result);
                     request.onerror = () => reject("Error loading data from DB.");
@@ -644,15 +646,14 @@
             async function clearDB() {
                 if (!db) return;
                  return new Promise((resolve, reject) => {
-                    const transaction = db.transaction([STORE_NAME], 'readwrite');
-                    const store = transaction.objectStore(STORE_NAME);
+                    const transaction = db.transaction(['guideData'], 'readwrite');
+                    const store = transaction.objectStore('guideData');
                     const request = store.clear();
                     request.onsuccess = () => resolve();
                     request.onerror = () => reject("Error clearing DB.");
                 });
             }
 
-            // --- UI Helper Functions ---
             const showNotification = (message, isError = false, duration = 3000) => {
                 UIElements.notificationMessage.textContent = message;
                 UIElements.notificationModal.className = `fixed top-5 right-5 text-white py-2 px-4 rounded-lg shadow-lg z-[100] ${isError ? 'bg-red-500' : 'bg-green-500'}`;
@@ -688,7 +689,7 @@
                 UIElements.pageSettings.classList.toggle('flex', !isGuide);
                 
                 UIElements.sidebarToggle.classList.toggle('hidden', !isGuide);
-                if (appState.currentUser.isAdmin && !isGuide) {
+                if (appState.currentUser && appState.currentUser.isAdmin && !isGuide) {
                     refreshUserList();
                 }
             };
@@ -729,7 +730,6 @@
                 }
             };
             
-            // --- Main Application Logic (post-auth) ---
             const setButtonLoadingState = (isLoading) => {
                 UIElements.loadGuideBtn.disabled = isLoading;
                 UIElements.loadGuideBtnContent.innerHTML = isLoading ?
@@ -801,8 +801,7 @@
             };
 
             const renderGuide = (channelsToRender, resetScroll = false) => {
-                // This function's implementation remains the same as your original code
-                 guideState.visibleChannels = channelsToRender;
+                guideState.visibleChannels = channelsToRender;
                 const showNoData = guideState.channels.length === 0;
 
                 UIElements.guidePlaceholder.classList.toggle('hidden', !showNoData);
@@ -866,7 +865,6 @@
             };
 
             const updateNowLine = (guideStart, shouldScroll, totalGuideHeight) => {
-                // This function's implementation remains the same as your original code
                 const nowLineEl = document.getElementById('now-line');
                 if (!nowLineEl) return;
                 nowLineEl.style.height = `${totalGuideHeight}px`;
@@ -1022,7 +1020,6 @@
             };
             
             const handleSearchAndFilter = (isFirstLoad = false) => {
-                // This function's implementation remains the same as your original code
                 const searchTerm = UIElements.searchInput.value.toLowerCase().trim();
                 const selectedGroup = UIElements.groupFilter.value;
                 let filteredChannels = guideState.channels;
@@ -1094,7 +1091,6 @@
             };
 
             const openEditorModal = (type, item = null) => {
-                // This function's implementation remains the same as your original code
                 const isUserAgent = type === 'userAgent';
                 const title = item ? `Edit ${isUserAgent ? 'User Agent' : 'Stream Profile'}` : `Create New ${isUserAgent ? 'User Agent' : 'Stream Profile'}`;
                 const valueLabel = isUserAgent ? 'User Agent String' : 'Command';
@@ -1177,7 +1173,6 @@
                 ['tabGuide', 'bottomNavGuide'].forEach(id => UIElements[id].addEventListener('click', () => switchTab('guide')));
                 ['tabSettings', 'bottomNavSettings'].forEach(id => UIElements[id].addEventListener('click', () => switchTab('settings')));
                 window.addEventListener('popstate', handleRouteChange);
-                // All other event listeners from your original code are here...
                 UIElements.confirmCancelBtn.addEventListener('click', () => closeModal(UIElements.confirmModal));
                 UIElements.confirmOkBtn.addEventListener('click', () => { if (confirmCallback) confirmCallback(); closeModal(UIElements.confirmModal); });
                 UIElements.detailsCloseBtn.addEventListener('click', () => closeModal(UIElements.programDetailsModal));
@@ -1441,6 +1436,32 @@
                     window.addEventListener('mouseup', stopResize);
                 }, false);
             }
+            
+            const setupPlayerResize = () => {
+                const modalContainer = UIElements.videoModalContainer;
+
+                const debouncedSave = () => {
+                    clearTimeout(appState.resizeTimeout);
+                    appState.resizeTimeout = setTimeout(async () => {
+                        const rect = modalContainer.getBoundingClientRect();
+                        guideState.settings.playerDimensions = {
+                            width: Math.round(rect.width),
+                            height: Math.round(rect.height)
+                        };
+                        await saveSettings();
+                    }, 500);
+                };
+
+                const resizeObserver = new ResizeObserver(entries => {
+                    for (let entry of entries) {
+                        if (UIElements.videoModal.classList.contains('flex')) {
+                            debouncedSave();
+                        }
+                    }
+                });
+
+                resizeObserver.observe(modalContainer);
+            };
 
             const initMainApp = async () => {
                 const blob = new Blob([document.querySelector('#parser-worker').textContent], { type: 'text/javascript' });
@@ -1454,13 +1475,21 @@
 
                 populateTimezoneSelector();
                 setupEventListeners();
-                
+                setupPlayerResize();
+
                 try {
                     const response = await apiFetch(`/api/config?t=${new Date().getTime()}`);
                     if (!response) return;
                     if (!response.ok) throw new Error('Could not connect to the server.');
                     const config = await response.json();
                     guideState.settings = config.settings || {}; 
+                    
+                    if (guideState.settings.playerDimensions) {
+                        const { width, height } = guideState.settings.playerDimensions;
+                        UIElements.videoModalContainer.style.width = `${width}px`;
+                        UIElements.videoModalContainer.style.height = `${height}px`;
+                    }
+                    
                     updateUIFromSettings(); 
 
                     UIElements.initialLoadingIndicator.classList.remove('hidden');
@@ -1490,7 +1519,6 @@
                 }
             };
 
-            // --- Auth Event Listeners ---
             UIElements.loginForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 UIElements.loginError.classList.add('hidden');
@@ -1522,7 +1550,7 @@
                 });
                 const data = await res.json();
                 if (res.ok) {
-                    checkAuthStatus(); // Re-check to log in
+                    checkAuthStatus();
                 } else {
                     UIElements.setupError.textContent = data.error;
                     UIElements.setupError.classList.remove('hidden');
@@ -1534,7 +1562,6 @@
                 window.location.reload();
             });
 
-            // --- User Management Logic & Event Listeners ---
             const openUserEditor = (user = null) => {
                 UIElements.userEditorId.value = user ? user.id : '';
                 UIElements.userEditorUsername.value = user ? user.username : '';
@@ -1623,7 +1650,6 @@
                 }
             });
 
-            // --- START THE APP ---
             checkAuthStatus();
         });
     </script>
