@@ -1,6 +1,6 @@
 {
   "name": "ardo-iptv-player",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "A simple IPTV player with server-side storage and user authentication.",
   "main": "server.js",
   "scripts": {
@@ -15,6 +15,8 @@
     "bcrypt": "^5.1.1",
     "express-session": "^1.18.0",
     "sqlite3": "^5.1.7",
-    "connect-sqlite3": "^0.9.15"
+    "connect-sqlite3": "^0.9.15",
+    "dotenv": "^16.4.5",
+    "xml-js": "^1.6.11"
   }
 }
