@@ -6,14 +6,12 @@ services:
   # Define the main application service.
   viniplay:
     # Build from the Dockerfile in the current directory.
-    # We use build instead of image so changes to the Dockerfile are applied.
     build: .
     
     # Set a consistent name for the container for easy management.
     container_name: viniplay
     
     # Map port 8998 on your host machine to port 8998 inside the container.
-    # This makes the web player accessible at http://localhost:8998.
     ports:
       - "8998:8998"
       
@@ -22,9 +20,14 @@ services:
     # but not when you manually stop it.
     restart: unless-stopped
     
-    # NEW: Add a volume for persistent data.
+    # Add a volume for persistent data.
     # This maps the './viniplay-data' directory on your host to the '/data'
-    # directory inside the container. All M3U, EPG, and settings files
-    # will be stored here, persisting across container restarts and updates.
+    # directory inside the container.
     volumes:
       - ./viniplay-data:/data
+    
+    # NEW: Load environment variables from a file on the host.
+    # This allows you to set sensitive values like the session secret
+    # without hardcoding them in the source code or this file.
+    env_file:
+      - ./.env
