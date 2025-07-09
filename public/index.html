@@ -7,6 +7,7 @@
     <link rel="icon" type="image/png" href="https://i.imgur.com/rwa8SjI.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/mpegts.js/dist/mpegts.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/fuse.js/dist/fuse.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #111827; color: #d1d5db; }
@@ -37,7 +38,6 @@
         .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3b82f6; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
-        /* --- Enhanced Resizer Styles --- */
         #resizer { width: 8px; cursor: col-resize; background-color: #1f2937; transition: background-color 0.2s ease; position: relative; }
         #resizer:hover { background-color: #3b82f6; }
         #resizer::after { content: '⋮'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #9ca3af; font-size: 18px; font-weight: bold; line-height: 1; pointer-events: none; text-shadow: 0 1px 1px rgba(0,0,0,0.5); }
@@ -48,7 +48,24 @@
         #video-modal-container { min-width: 400px; min-height: 300px; position: relative; }
         #program-details-container { min-width: 320px; min-height: 250px; position: relative; }
         #details-desc { overflow-y: auto; }
-        .programme-item.highlighted-search { outline: 3px solid #facc15; box-shadow: 0 0 15px rgba(250, 204, 21, 0.5); z-index: 15; transition: all 0.3s ease-out; }
+        .programme-item.highlighted-search {
+            outline: 3px solid #facc15;
+            box-shadow: 0 0 15px rgba(250, 204, 21, 0.5), inset 0 0 0 2px #facc15;
+            z-index: 15;
+            transition: all 0.3s ease-out;
+            transform: scale(1.02);
+        }
+        /* New styles for search results */
+        .search-results-header {
+            padding: 0.5rem 0.75rem;
+            background-color: #374151; /* gray-700 */
+            color: #d1d5db; /* gray-300 */
+            font-size: 0.75rem; /* text-xs */
+            font-weight: 700; /* font-bold */
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-bottom: 1px solid #4b5563; /* gray-600 */
+        }
     </style>
 </head>
 <body class="h-screen">
