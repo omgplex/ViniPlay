@@ -85,3 +85,4 @@ public/
 │       ├── ui.js           // General UI functions (modals, notifications)
 │       └── utils.js        // Helper functions like the M3U parser
 └── index.html
+
