@@ -66,3 +66,22 @@ This application is distributed as a Docker image. To run it, you will need [Doc
 Remember to replace **YOUR_GITHUB_USERNAME** in the commands above with your actual GitHub username.
 
 Once the container is running, you can access your IPTV player by navigating to **[http://localhost:8998](http://localhost:8998)** in your web browser.
+
+
+
+
+
+
+public/
+├── js/
+│   ├── main.js         // The new, lean entry point
+│   └── modules/
+│       ├── api.js          // For all fetch requests to the backend
+│       ├── auth.js         // Handles the entire authentication flow
+│       ├── guide.js        // All logic for the TV Guide
+│       ├── player.js       // Video player logic
+│       ├── settings.js     // Logic for the settings page
+│       ├── state.js        // Shared application state and UI elements
+│       ├── ui.js           // General UI functions (modals, notifications)
+│       └── utils.js        // Helper functions like the M3U parser
+└── index.html
