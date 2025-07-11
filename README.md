@@ -72,17 +72,18 @@ Once the container is running, you can access your IPTV player by navigating to 
 
 
 
+```text
 public/
 ├── js/
-│   ├── main.js         // The new, lean entry point
+│   ├── main.js       // The new, lean entry point
 │   └── modules/
-│       ├── api.js          // For all fetch requests to the backend
-│       ├── auth.js         // Handles the entire authentication flow
-│       ├── guide.js        // All logic for the TV Guide
-│       ├── player.js       // Video player logic
-│       ├── settings.js     // Logic for the settings page
-│       ├── state.js        // Shared application state and UI elements
-│       ├── ui.js           // General UI functions (modals, notifications)
-│       └── utils.js        // Helper functions like the M3U parser
+│       ├── api.js        // For all fetch requests to the backend
+│       ├── auth.js       // Handles the entire authentication flow
+│       ├── guide.js      // All logic for the TV Guide
+│       ├── player.js     // Video player logic
+│       ├── settings.js   // Logic for the settings page
+│       ├── state.js      // Shared application state and UI elements
+│       ├── ui.js         // General UI functions (modals, notifications)
+│       └── utils.js      // Helper functions like the M3U parser
 └── index.html
 
