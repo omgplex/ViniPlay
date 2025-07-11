@@ -194,7 +194,7 @@ async function processAndMergeSources() {
         try {
             let content = '';
             if (source.type === 'file') {
-                const sourceFilePath = path.join(SOURCES_DIR, `m3u_${source.id}.m3u`);
+                const sourceFilePath = path.join(SOURCES_DIR, path.basename(source.path));
                 if (fs.existsSync(sourceFilePath)) {
                     content = fs.readFileSync(sourceFilePath, 'utf-8');
                 } else {
@@ -205,24 +205,34 @@ async function processAndMergeSources() {
                 content = await fetchUrlContent(source.path);
             }
 
-            // --- NEW: Tagging logic ---
-            // Add source name and a unique ID to each channel entry
+            // --- FIXED: Tagging logic ---
             const lines = content.split('\n');
             let processedContent = '';
             for (let i = 0; i < lines.length; i++) {
-                let line = lines[i];
+                let line = lines[i].trim();
                 if (line.startsWith('#EXTINF:')) {
                     const tvgIdMatch = line.match(/tvg-id="([^"]*)"/);
                     const tvgId = tvgIdMatch ? tvgIdMatch[1] : `no-id-${Math.random()}`;
-                    
-                    // Create a new unique ID by combining source and original tvg-id
                     const uniqueChannelId = `${source.id}_${tvgId}`;
 
-                    // Inject the unique ID and the source name into the EXTINF line
-                    line = line.replace(/tvg-id="[^"]*"/, `tvg-id="${uniqueChannelId}"`);
-                    line += ` tvg-chno="${source.name}"`; // Using tvg-chno as a free field for the source name
+                    const commaIndex = line.lastIndexOf(',');
+                    const attributesPart = commaIndex !== -1 ? line.substring(0, commaIndex) : line;
+                    const namePart = commaIndex !== -1 ? line.substring(commaIndex) : '';
+
+                    let processedAttributes = attributesPart;
+                    if (tvgIdMatch) {
+                        processedAttributes = processedAttributes.replace(/tvg-id="[^"]*"/, `tvg-id="${uniqueChannelId}"`);
+                    } else {
+                        const extinfEnd = processedAttributes.indexOf(' ') + 1;
+                        processedAttributes = processedAttributes.slice(0, extinfEnd) + `tvg-id="${uniqueChannelId}" ` + processedAttributes.slice(extinfEnd);
+                    }
+                    
+                    processedAttributes += ` vini-source="${source.name}"`;
+                    line = processedAttributes + namePart;
                 }
-                processedContent += line + '\n';
+                if (line) {
+                   processedContent += line + '\n';
+                }
             }
             
             mergedM3uContent += processedContent.replace(/#EXTM3U/i, '') + '\n';
@@ -248,17 +258,22 @@ async function processAndMergeSources() {
         console.log(`[EPG] Processing: ${source.name}`);
         try {
             let xmlString = '';
-             const epgFilePath = path.join(SOURCES_DIR, `epg_${source.id}.xml`);
+            const epgFilePath = path.join(SOURCES_DIR, `epg_${source.id}.xml`);
             if (source.type === 'file') {
                 if (fs.existsSync(epgFilePath)) {
                     xmlString = fs.readFileSync(epgFilePath, 'utf-8');
                 } else {
-                    console.error(`[EPG] File not found for source "${source.name}": ${epgFilePath}`);
-                    continue;
+                     const oldPath = path.join(SOURCES_DIR, path.basename(source.path));
+                     if (fs.existsSync(oldPath)) {
+                        xmlString = fs.readFileSync(oldPath, 'utf-8');
+                     } else {
+                        console.error(`[EPG] File not found for source "${source.name}": ${epgFilePath}`);
+                        continue;
+                     }
                 }
             } else if (source.type === 'url') {
                 xmlString = await fetchUrlContent(source.path);
-                 fs.writeFileSync(epgFilePath, xmlString); // Cache it
+                fs.writeFileSync(epgFilePath, xmlString); // Cache it
             }
 
             const epgJson = xmlJS.xml2js(xmlString, { compact: true });
@@ -268,11 +283,9 @@ async function processAndMergeSources() {
                 const originalChannelId = prog._attributes?.channel;
                 if (!originalChannelId) continue;
                 
-                // Find all M3U sources that might provide this EPG
                 const m3uSourceProviders = settings.m3uSources.filter(m3u => m3u.isActive);
 
                 for(const m3uSource of m3uSourceProviders) {
-                    // Recreate the unique ID to match the one in the M3U
                     const uniqueChannelId = `${m3uSource.id}_${originalChannelId}`;
 
                     if (!mergedProgramData[uniqueChannelId]) {
@@ -512,60 +525,106 @@ app.get('/api/config', requireAuth, (req, res) => {
     }
 });
 
-// --- NEW/REFACTORED SOURCE MANAGEMENT ---
+// --- REFACTORED SOURCE MANAGEMENT ---
 
 const upload = multer({
     storage: multer.diskStorage({
         destination: (req, file, cb) => cb(null, SOURCES_DIR),
         filename: (req, file, cb) => {
-            // Use a unique name to prevent overwrites, but store it based on the source type and ID later
             cb(null, `${file.fieldname}-${Date.now()}${path.extname(file.originalname)}`);
         }
     })
 });
 
+// --- FIXED: Handles both CREATE and UPDATE for sources ---
 app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, res) => {
-    const { sourceType, name, url, isActive } = req.body; // m3u or epg
+    const { sourceType, name, url, isActive, id } = req.body;
+
     if (!sourceType || !name) {
-        if(req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
         return res.status(400).json({ error: 'Source type and name are required.' });
     }
 
     const settings = getSettings();
     const sourceList = sourceType === 'm3u' ? settings.m3uSources : settings.epgSources;
-    
-    const newSource = {
-        id: `src-${Date.now()}`,
-        name,
-        type: req.file ? 'file' : 'url',
-        path: req.file ? req.file.path : url, // Temporary path for file
-        isActive: isActive === 'true',
-        lastUpdated: new Date().toISOString(),
-        status: 'Pending',
-        statusMessage: 'Source added. Process to load data.'
-    };
 
-    if (newSource.type === 'url' && !newSource.path) {
-         return res.status(400).json({ error: 'URL is required for URL-type source.' });
-    }
-    
-    // If it's a file, rename it to a permanent, predictable name and update the path
-    if (req.file) {
-        const extension = sourceType === 'm3u' ? '.m3u' : '.xml';
-        const newPath = path.join(SOURCES_DIR, `${sourceType}_${newSource.id}${extension}`);
-        try {
-            fs.renameSync(req.file.path, newPath);
-            newSource.path = newPath;
-        } catch(e) {
-            console.error('Error renaming source file:', e);
-            return res.status(500).json({ error: 'Could not save uploaded file.'});
+    if (id) { // --- UPDATE LOGIC ---
+        const sourceIndex = sourceList.findIndex(s => s.id === id);
+        if (sourceIndex === -1) {
+            if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return res.status(404).json({ error: 'Source to update not found.' });
         }
+
+        const sourceToUpdate = sourceList[sourceIndex];
+        sourceToUpdate.name = name;
+        sourceToUpdate.isActive = isActive === 'true';
+        sourceToUpdate.lastUpdated = new Date().toISOString();
+
+        if (req.file) { // A new file was uploaded for an existing source
+            // Delete the old file if it exists
+            if (sourceToUpdate.type === 'file' && fs.existsSync(sourceToUpdate.path)) {
+                try {
+                    fs.unlinkSync(sourceToUpdate.path);
+                } catch (e) { console.error("Could not delete old source file:", e); }
+            }
+
+            // Rename the newly uploaded temp file to its permanent name
+            const extension = sourceType === 'm3u' ? '.m3u' : '.xml';
+            const newPath = path.join(SOURCES_DIR, `${sourceType}_${id}${extension}`);
+            try {
+                fs.renameSync(req.file.path, newPath);
+                sourceToUpdate.path = newPath;
+                sourceToUpdate.type = 'file'; // Change type in case it was a URL before
+            } catch (e) {
+                console.error('Error renaming updated source file:', e);
+                return res.status(500).json({ error: 'Could not save updated file.' });
+            }
+        } else if (url) { // A URL was provided for an existing source
+            // If the source was a file, delete the old file
+            if (sourceToUpdate.type === 'file' && fs.existsSync(sourceToUpdate.path)) {
+                try {
+                    fs.unlinkSync(sourceToUpdate.path);
+                } catch (e) { console.error("Could not delete old source file:", e); }
+            }
+            sourceToUpdate.path = url;
+            sourceToUpdate.type = 'url';
+        }
+
+        saveSettings(settings);
+        res.json({ success: true, message: 'Source updated successfully.', settings });
+
+    } else { // --- CREATE LOGIC ---
+        const newSource = {
+            id: `src-${Date.now()}`,
+            name,
+            type: req.file ? 'file' : 'url',
+            path: req.file ? req.file.path : url,
+            isActive: isActive === 'true',
+            lastUpdated: new Date().toISOString(),
+            status: 'Pending',
+            statusMessage: 'Source added. Process to load data.'
+        };
+
+        if (newSource.type === 'url' && !newSource.path) {
+            return res.status(400).json({ error: 'URL is required for URL-type source.' });
+        }
+
+        if (req.file) {
+            const extension = sourceType === 'm3u' ? '.m3u' : '.xml';
+            const newPath = path.join(SOURCES_DIR, `${sourceType}_${newSource.id}${extension}`);
+            try {
+                fs.renameSync(req.file.path, newPath);
+                newSource.path = newPath;
+            } catch (e) {
+                console.error('Error renaming new source file:', e);
+                return res.status(500).json({ error: 'Could not save uploaded file.' });
+            }
+        }
+
+        sourceList.push(newSource);
+        saveSettings(settings);
+        res.json({ success: true, message: 'Source added successfully.', settings });
     }
-    
-    sourceList.push(newSource);
-    saveSettings(settings);
-    
-    res.json({ success: true, message: 'Source added successfully.', settings });
 });
 
 
@@ -746,6 +805,10 @@ app.get('/stream', requireAuth, (req, res) => {
 
 // --- Main Route Handling ---
 app.get('*', (req, res) => {
+    const pathToFile = path.join(PUBLIC_DIR, req.path);
+    if(fs.existsSync(pathToFile) && fs.lstatSync(pathToFile).isFile()){
+        return res.sendFile(pathToFile);
+    }
     res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 
