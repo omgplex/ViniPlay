@@ -25,16 +25,18 @@ let epgRefreshTimeout = null;
 
 // --- Configuration ---
 const DATA_DIR = '/data';
+const SOURCES_DIR = path.join(DATA_DIR, 'sources'); // NEW: Directory for uploaded files
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const DB_PATH = path.join(DATA_DIR, 'viniplay.db');
-const M3U_PATH = path.join(DATA_DIR, 'playlist.m3u');
-const EPG_XML_PATH = path.join(DATA_DIR, 'epg.xml'); // Raw EPG
-const EPG_JSON_PATH = path.join(DATA_DIR, 'epg.json'); // Parsed EPG
+const MERGED_M3U_PATH = path.join(DATA_DIR, 'playlist.m3u'); // For the final merged M3U
+const MERGED_EPG_JSON_PATH = path.join(DATA_DIR, 'epg.json'); // For the final merged EPG
 const SETTINGS_PATH = path.join(DATA_DIR, 'settings.json');
+
 
 // Ensure the data and public directories exist.
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true });
+if (!fs.existsSync(SOURCES_DIR)) fs.mkdirSync(SOURCES_DIR, { recursive: true }); // NEW
 
 
 // --- Database Setup ---
@@ -102,6 +104,66 @@ const requireAdmin = (req, res, next) => {
     }
 };
 
+// --- Helper Functions ---
+function getSettings() {
+    if (!fs.existsSync(SETTINGS_PATH)) {
+        // Create default settings if file doesn't exist
+        const defaultSettings = {
+            m3uSources: [],
+            epgSources: [],
+            userAgents: [{ id: `default-ua-${Date.now()}`, name: 'ViniPlay Default', value: 'VLC/3.0.20 (Linux; x86_64)', isDefault: true }],
+            streamProfiles: [
+                { id: 'ffmpeg-default', name: 'ffmpeg (Built in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c copy -f mpegts pipe:1', isDefault: true },
+                { id: 'redirect-default', name: 'Redirect (Built in)', command: 'redirect', isDefault: true }
+            ],
+            activeUserAgentId: `default-ua-${Date.now()}`,
+            activeStreamProfileId: 'ffmpeg-default',
+            searchScope: 'channels_programs',
+            autoRefresh: 0,
+            timezoneOffset: Math.round(-(new Date().getTimezoneOffset() / 60))
+        };
+        fs.writeFileSync(SETTINGS_PATH, JSON.stringify(defaultSettings, null, 2));
+        return defaultSettings;
+    }
+    try {
+        const settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
+        // Ensure defaults for sources if they are missing
+        if (!settings.m3uSources) settings.m3uSources = [];
+        if (!settings.epgSources) settings.epgSources = [];
+        return settings;
+    } catch (e) {
+        console.error("Could not parse settings.json, returning default.", e);
+        return { m3uSources: [], epgSources: [] };
+    }
+}
+
+function saveSettings(settings) {
+    try {
+        fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
+    } catch (e) {
+        console.error("Error saving settings:", e);
+    }
+}
+
+function fetchUrlContent(url) {
+    return new Promise((resolve, reject) => {
+        const protocol = url.startsWith('https') ? https : http;
+        protocol.get(url, (res) => {
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                return fetchUrlContent(new URL(res.headers.location, url).href).then(resolve, reject);
+            }
+            if (res.statusCode !== 200) {
+                return reject(new Error(`Failed to fetch: Status Code ${res.statusCode}`));
+            }
+            let data = '';
+            res.setEncoding('utf8');
+            res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => resolve(data));
+        }).on('error', (err) => reject(err));
+    });
+}
+
+
 // --- EPG Parsing and Caching Logic ---
 const parseEpgTime = (timeStr, offsetHours = 0) => {
     const match = timeStr.match(/(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s*(([+-])(\d{2})(\d{2}))?/);
@@ -120,76 +182,158 @@ const parseEpgTime = (timeStr, offsetHours = 0) => {
     return date;
 };
 
-const parseAndCacheEPG = (timezoneOffset = 0) => {
-    console.log(`[EPG] Starting EPG parsing with timezone offset: ${timezoneOffset} hours.`);
-    if (!fs.existsSync(EPG_XML_PATH)) {
-        console.log('[EPG] epg.xml not found. Skipping parsing.');
-        if (fs.existsSync(EPG_JSON_PATH)) fs.unlinkSync(EPG_JSON_PATH); // Clear old cache
-        return;
-    }
+async function processAndMergeSources() {
+    const settings = getSettings();
+    console.log('[PROCESS] Starting to process and merge all active sources.');
 
-    try {
-        const xmlString = fs.readFileSync(EPG_XML_PATH, 'utf-8');
-        const epgJson = xmlJS.xml2js(xmlString, { compact: true });
-        const programs = epgJson.tv && epgJson.tv.programme ? [].concat(epgJson.tv.programme) : [];
-        const programData = {};
+    // --- Merge M3U Sources ---
+    let mergedM3uContent = '#EXTM3U\n';
+    const activeM3uSources = settings.m3uSources.filter(s => s.isActive);
+    for (const source of activeM3uSources) {
+        console.log(`[M3U] Processing: ${source.name}`);
+        try {
+            let content = '';
+            if (source.type === 'file') {
+                const sourceFilePath = path.join(SOURCES_DIR, `m3u_${source.id}.m3u`);
+                if (fs.existsSync(sourceFilePath)) {
+                    content = fs.readFileSync(sourceFilePath, 'utf-8');
+                } else {
+                    console.error(`[M3U] File not found for source "${source.name}": ${sourceFilePath}`);
+                    continue;
+                }
+            } else if (source.type === 'url') {
+                content = await fetchUrlContent(source.path);
+            }
 
-        for (const prog of programs) {
-            const channelId = prog._attributes?.channel;
-            if (!channelId) continue;
+            // --- NEW: Tagging logic ---
+            // Add source name and a unique ID to each channel entry
+            const lines = content.split('\n');
+            let processedContent = '';
+            for (let i = 0; i < lines.length; i++) {
+                let line = lines[i];
+                if (line.startsWith('#EXTINF:')) {
+                    const tvgIdMatch = line.match(/tvg-id="([^"]*)"/);
+                    const tvgId = tvgIdMatch ? tvgIdMatch[1] : `no-id-${Math.random()}`;
+                    
+                    // Create a new unique ID by combining source and original tvg-id
+                    const uniqueChannelId = `${source.id}_${tvgId}`;
 
-            if (!programData[channelId]) programData[channelId] = [];
-
-            const titleNode = prog.title && prog.title._cdata ? prog.title._cdata : (prog.title?._text || 'No Title');
-            const descNode = prog.desc && prog.desc._cdata ? prog.desc._cdata : (prog.desc?._text || '');
+                    // Inject the unique ID and the source name into the EXTINF line
+                    line = line.replace(/tvg-id="[^"]*"/, `tvg-id="${uniqueChannelId}"`);
+                    line += ` tvg-chno="${source.name}"`; // Using tvg-chno as a free field for the source name
+                }
+                processedContent += line + '\n';
+            }
             
-            programData[channelId].push({
-                start: parseEpgTime(prog._attributes.start, timezoneOffset).toISOString(),
-                stop: parseEpgTime(prog._attributes.stop, timezoneOffset).toISOString(),
-                title: titleNode.trim(),
-                desc: descNode.trim()
-            });
-        }
-        
-        // Sort programs by start time for each channel
-        for (const channelId in programData) {
-            programData[channelId].sort((a, b) => new Date(a.start) - new Date(b.start));
-        }
+            mergedM3uContent += processedContent.replace(/#EXTM3U/i, '') + '\n';
+            source.status = 'Success';
+            source.statusMessage = 'Processed successfully.';
 
-        fs.writeFileSync(EPG_JSON_PATH, JSON.stringify(programData));
-        console.log(`[EPG] Successfully parsed and cached ${programs.length} programs to epg.json.`);
-    } catch (error) {
-        console.error('[EPG] Error parsing EPG XML:', error);
-        if (fs.existsSync(EPG_JSON_PATH)) fs.unlinkSync(EPG_JSON_PATH); // Clear cache on error
+        } catch (error) {
+            console.error(`[M3U] Failed to process source "${source.name}":`, error.message);
+            source.status = 'Error';
+            source.statusMessage = 'Processing failed.';
+        }
+        source.lastUpdated = new Date().toISOString();
     }
-};
+    fs.writeFileSync(MERGED_M3U_PATH, mergedM3uContent);
+    console.log(`[M3U] Finished merging ${activeM3uSources.length} M3U sources.`);
+
+    // --- Merge EPG Sources ---
+    const mergedProgramData = {};
+    const timezoneOffset = settings.timezoneOffset || 0;
+    const activeEpgSources = settings.epgSources.filter(s => s.isActive);
+
+    for (const source of activeEpgSources) {
+        console.log(`[EPG] Processing: ${source.name}`);
+        try {
+            let xmlString = '';
+             const epgFilePath = path.join(SOURCES_DIR, `epg_${source.id}.xml`);
+            if (source.type === 'file') {
+                if (fs.existsSync(epgFilePath)) {
+                    xmlString = fs.readFileSync(epgFilePath, 'utf-8');
+                } else {
+                    console.error(`[EPG] File not found for source "${source.name}": ${epgFilePath}`);
+                    continue;
+                }
+            } else if (source.type === 'url') {
+                xmlString = await fetchUrlContent(source.path);
+                 fs.writeFileSync(epgFilePath, xmlString); // Cache it
+            }
+
+            const epgJson = xmlJS.xml2js(xmlString, { compact: true });
+            const programs = epgJson.tv && epgJson.tv.programme ? [].concat(epgJson.tv.programme) : [];
+
+            for (const prog of programs) {
+                const originalChannelId = prog._attributes?.channel;
+                if (!originalChannelId) continue;
+                
+                // Find all M3U sources that might provide this EPG
+                const m3uSourceProviders = settings.m3uSources.filter(m3u => m3u.isActive);
+
+                for(const m3uSource of m3uSourceProviders) {
+                    // Recreate the unique ID to match the one in the M3U
+                    const uniqueChannelId = `${m3uSource.id}_${originalChannelId}`;
+
+                    if (!mergedProgramData[uniqueChannelId]) {
+                        mergedProgramData[uniqueChannelId] = [];
+                    }
+
+                    const titleNode = prog.title && prog.title._cdata ? prog.title._cdata : (prog.title?._text || 'No Title');
+                    const descNode = prog.desc && prog.desc._cdata ? prog.desc._cdata : (prog.desc?._text || '');
+                    
+                    mergedProgramData[uniqueChannelId].push({
+                        start: parseEpgTime(prog._attributes.start, timezoneOffset).toISOString(),
+                        stop: parseEpgTime(prog._attributes.stop, timezoneOffset).toISOString(),
+                        title: titleNode.trim(),
+                        desc: descNode.trim()
+                    });
+                }
+            }
+            source.status = 'Success';
+            source.statusMessage = 'Processed successfully.';
+        } catch (error) {
+            console.error(`[EPG] Failed to process source "${source.name}":`, error.message);
+            source.status = 'Error';
+            source.statusMessage = 'Processing failed.';
+        }
+         source.lastUpdated = new Date().toISOString();
+    }
+     // Sort programs by start time for each channel
+    for (const channelId in mergedProgramData) {
+        mergedProgramData[channelId].sort((a, b) => new Date(a.start) - new Date(b.start));
+    }
+    fs.writeFileSync(MERGED_EPG_JSON_PATH, JSON.stringify(mergedProgramData));
+    console.log(`[EPG] Finished merging and parsing ${activeEpgSources.length} EPG sources.`);
+    
+    saveSettings(settings); // Save updated statuses
+    return { success: true, message: 'Sources merged successfully.'};
+}
+
 
 const scheduleEpgRefresh = () => {
     clearTimeout(epgRefreshTimeout);
-    let settings = {};
-    if (fs.existsSync(SETTINGS_PATH)) {
-        try {
-            settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
-        } catch (e) {
-            console.error("Could not parse settings.json for scheduling:", e);
-            return;
-        }
-    }
-
+    let settings = getSettings();
     const refreshHours = parseInt(settings.autoRefresh, 10);
-    if (refreshHours > 0 && settings.epgSourceType === 'url' && settings.epgUrl) {
+    
+    if (refreshHours > 0) {
         console.log(`[EPG] Scheduling EPG refresh every ${refreshHours} hours.`);
         epgRefreshTimeout = setTimeout(async () => {
             console.log('[EPG] Triggering scheduled EPG refresh...');
-            try {
-                const content = await fetchUrlContent(settings.epgUrl);
-                fs.writeFileSync(EPG_XML_PATH, content);
-                parseAndCacheEPG(settings.timezoneOffset || 0);
-            } catch (error) {
-                console.error('[EPG] Scheduled EPG refresh failed:', error.message);
-            } finally {
-                scheduleEpgRefresh(); // Reschedule for the next interval
+            const activeEpgUrlSources = settings.epgSources.filter(s => s.isActive && s.type === 'url');
+            for(const source of activeEpgUrlSources) {
+                try {
+                    console.log(`[EPG] Refreshing ${source.name} from ${source.path}`);
+                    const content = await fetchUrlContent(source.path);
+                    const epgFilePath = path.join(SOURCES_DIR, `epg_${source.id}.xml`);
+                    fs.writeFileSync(epgFilePath, content);
+                } catch(error) {
+                     console.error(`[EPG] Scheduled refresh for ${source.name} failed:`, error.message);
+                }
             }
+            await processAndMergeSources();
+            scheduleEpgRefresh(); // Reschedule for the next interval
+            
         }, refreshHours * 3600 * 1000);
     }
 };
@@ -335,43 +479,12 @@ app.delete('/api/users/:id', requireAdmin, (req, res) => {
 app.get('/api/config', requireAuth, (req, res) => {
     try {
         let config = { m3uContent: null, epgContent: null, settings: {} };
-        let globalSettings = {};
-
-        if (fs.existsSync(SETTINGS_PATH)) {
-            try {
-                globalSettings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
-            } catch (e) {
-                console.error("Could not parse settings.json:", e);
-            }
-        }
+        let globalSettings = getSettings();
         config.settings = globalSettings;
 
-        if (fs.existsSync(M3U_PATH)) config.m3uContent = fs.readFileSync(M3U_PATH, 'utf-8');
+        if (fs.existsSync(MERGED_M3U_PATH)) config.m3uContent = fs.readFileSync(MERGED_M3U_PATH, 'utf-8');
         // Return parsed EPG JSON, not the raw XML
-        if (fs.existsSync(EPG_JSON_PATH)) config.epgContent = JSON.parse(fs.readFileSync(EPG_JSON_PATH, 'utf-8'));
-        
-        // Initialize default global settings if they don't exist
-        let settingsChanged = false;
-        if (!config.settings.userAgents || config.settings.userAgents.length === 0) {
-            config.settings.userAgents = [{ id: `default-ua-${Date.now()}`, name: 'ViniPlay Default', value: 'VLC/3.0.20 (Linux; x86_64)', isDefault: true }];
-            config.settings.activeUserAgentId = config.settings.userAgents[0].id;
-            settingsChanged = true;
-        }
-        if (!config.settings.streamProfiles || config.settings.streamProfiles.length === 0) {
-            config.settings.streamProfiles = [
-                { id: 'ffmpeg-default', name: 'ffmpeg (Built in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c copy -f mpegts pipe:1', isDefault: true },
-                { id: 'redirect-default', name: 'Redirect (Built in)', command: 'redirect', isDefault: true }
-            ];
-            config.settings.activeStreamProfileId = 'ffmpeg-default';
-            settingsChanged = true;
-        }
-        if (typeof config.settings.searchScope === 'undefined') {
-            config.settings.searchScope = 'channels_programs';
-            settingsChanged = true;
-        }
-        if (settingsChanged) {
-            fs.writeFileSync(SETTINGS_PATH, JSON.stringify(config.settings, null, 2));
-        }
+        if (fs.existsSync(MERGED_EPG_JSON_PATH)) config.epgContent = JSON.parse(fs.readFileSync(MERGED_EPG_JSON_PATH, 'utf-8'));
         
         // Load user-specific settings from the database and merge them
         db.all(`SELECT key, value FROM user_settings WHERE user_id = ?`, [req.session.userId], (err, rows) => {
@@ -399,51 +512,124 @@ app.get('/api/config', requireAuth, (req, res) => {
     }
 });
 
+// --- NEW/REFACTORED SOURCE MANAGEMENT ---
 
 const upload = multer({
     storage: multer.diskStorage({
-        destination: (req, file, cb) => cb(null, DATA_DIR),
+        destination: (req, file, cb) => cb(null, SOURCES_DIR),
         filename: (req, file, cb) => {
-            if (file.fieldname === 'm3u-file') cb(null, 'playlist.m3u');
-            else if (file.fieldname === 'epg-file') cb(null, 'epg.xml'); // Save as XML
-            else cb(null, file.originalname);
+            // Use a unique name to prevent overwrites, but store it based on the source type and ID later
+            cb(null, `${file.fieldname}-${Date.now()}${path.extname(file.originalname)}`);
         }
     })
 });
 
-app.post('/api/upload', requireAuth, upload.fields([{ name: 'm3u-file', maxCount: 1 }, { name: 'epg-file', maxCount: 1 }]), (req, res) => {
+app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, res) => {
+    const { sourceType, name, url, isActive } = req.body; // m3u or epg
+    if (!sourceType || !name) {
+        if(req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        return res.status(400).json({ error: 'Source type and name are required.' });
+    }
+
+    const settings = getSettings();
+    const sourceList = sourceType === 'm3u' ? settings.m3uSources : settings.epgSources;
+    
+    const newSource = {
+        id: `src-${Date.now()}`,
+        name,
+        type: req.file ? 'file' : 'url',
+        path: req.file ? req.file.path : url, // Temporary path for file
+        isActive: isActive === 'true',
+        lastUpdated: new Date().toISOString(),
+        status: 'Pending',
+        statusMessage: 'Source added. Process to load data.'
+    };
+
+    if (newSource.type === 'url' && !newSource.path) {
+         return res.status(400).json({ error: 'URL is required for URL-type source.' });
+    }
+    
+    // If it's a file, rename it to a permanent, predictable name and update the path
+    if (req.file) {
+        const extension = sourceType === 'm3u' ? '.m3u' : '.xml';
+        const newPath = path.join(SOURCES_DIR, `${sourceType}_${newSource.id}${extension}`);
+        try {
+            fs.renameSync(req.file.path, newPath);
+            newSource.path = newPath;
+        } catch(e) {
+            console.error('Error renaming source file:', e);
+            return res.status(500).json({ error: 'Could not save uploaded file.'});
+        }
+    }
+    
+    sourceList.push(newSource);
+    saveSettings(settings);
+    
+    res.json({ success: true, message: 'Source added successfully.', settings });
+});
+
+
+app.put('/api/sources/:sourceType/:id', requireAuth, (req, res) => {
+    const { sourceType, id } = req.params;
+    const { name, path: newPath, isActive } = req.body;
+    
+    const settings = getSettings();
+    const sourceList = sourceType === 'm3u' ? settings.m3uSources : settings.epgSources;
+    const sourceIndex = sourceList.findIndex(s => s.id === id);
+
+    if (sourceIndex === -1) {
+        return res.status(404).json({ error: 'Source not found.' });
+    }
+
+    const source = sourceList[sourceIndex];
+    source.name = name ?? source.name;
+    source.isActive = isActive ?? source.isActive;
+    if (source.type === 'url') {
+        source.path = newPath ?? source.path;
+    }
+    source.lastUpdated = new Date().toISOString();
+
+    saveSettings(settings);
+    res.json({ success: true, message: 'Source updated.', settings });
+});
+
+app.delete('/api/sources/:sourceType/:id', requireAuth, (req, res) => {
+    const { sourceType, id } = req.params;
+    
+    const settings = getSettings();
+    let sourceList = sourceType === 'm3u' ? settings.m3uSources : settings.epgSources;
+    const source = sourceList.find(s => s.id === id);
+    
+    if (source && source.type === 'file' && fs.existsSync(source.path)) {
+        try {
+            fs.unlinkSync(source.path);
+        } catch (e) {
+            console.error(`Could not delete source file: ${source.path}`, e);
+        }
+    }
+    
+    const newList = sourceList.filter(s => s.id !== id);
+    if (sourceType === 'm3u') settings.m3uSources = newList;
+    else settings.epgSources = newList;
+
+    saveSettings(settings);
+    res.json({ success: true, message: 'Source deleted.', settings });
+});
+
+app.post('/api/process-sources', requireAuth, async (req, res) => {
     try {
-        let settings = {};
-        if (fs.existsSync(SETTINGS_PATH)) {
-             try {
-                settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
-             } catch (e) { console.error("Could not parse settings.json during upload:", e); }
-        }
-        if (req.files['m3u-file']) {
-            settings.m3uSourceType = 'file';
-            delete settings.m3uUrl;
-        }
-        if (req.files['epg-file']) {
-            settings.epgSourceType = 'file';
-            delete settings.epgUrl;
-            // Parse the newly uploaded EPG file
-            parseAndCacheEPG(settings.timezoneOffset || 0);
-        }
-        fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
-        res.json({ success: true, message: "File(s) uploaded successfully." });
+        const result = await processAndMergeSources();
+        res.json(result);
     } catch (error) {
-        console.error("Error saving settings after file upload:", error);
-        res.status(500).json({ error: "Could not save settings after upload." });
+        console.error("Error during manual source processing:", error);
+        res.status(500).json({ error: 'Failed to process sources.' });
     }
 });
 
-app.post('/api/save/settings', requireAuth, (req, res) => {
+
+app.post('/api/save/settings', requireAuth, async (req, res) => {
     try {
-        let currentSettings = {};
-        if (fs.existsSync(SETTINGS_PATH)) {
-            try { currentSettings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8')); }
-            catch (e) { console.error("Could not parse settings.json, will overwrite.", e); }
-        }
+        let currentSettings = getSettings();
         
         const oldTimezone = currentSettings.timezoneOffset;
         const oldRefresh = currentSettings.autoRefresh;
@@ -453,12 +639,12 @@ app.post('/api/save/settings', requireAuth, (req, res) => {
         const userSpecificKeys = ['favorites', 'playerDimensions', 'programDetailsDimensions', 'recentChannels'];
         userSpecificKeys.forEach(key => delete updatedSettings[key]);
 
-        fs.writeFileSync(SETTINGS_PATH, JSON.stringify(updatedSettings, null, 2));
+        saveSettings(updatedSettings);
         
-        // If timezone changed, re-parse EPG
+        // If timezone changed, re-process sources
         if (updatedSettings.timezoneOffset !== oldTimezone) {
-            console.log("Timezone changed, re-parsing EPG.");
-            parseAndCacheEPG(updatedSettings.timezoneOffset);
+            console.log("Timezone changed, re-processing sources.");
+            await processAndMergeSources();
         }
         // If auto-refresh setting changed, update the scheduler
         if (updatedSettings.autoRefresh !== oldRefresh) {
@@ -489,34 +675,19 @@ app.post('/api/user/settings', requireAuth, (req, res) => {
     });
 });
 
-app.post('/api/save/url', requireAuth, (req, res) => {
-    const { type, url } = req.body;
-    if (!type || !url) return res.status(400).json({ error: 'Type and URL are required.' });
-    
-    try {
-        let settings = {};
-        if (fs.existsSync(SETTINGS_PATH)) {
-             try { settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8')); }
-             catch(e) { console.error("Could not parse settings.json, will overwrite.", e); }
-        }
-        const urlListName = `${type}CustomUrls`;
-        if (!settings[urlListName]) settings[urlListName] = [];
-        if (!settings[urlListName].includes(url)) settings[urlListName].push(url);
-        settings[`${type}Url`] = url;
-
-        fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
-        res.json({ success: true, message: 'URL saved.', settings });
-    } catch (error) {
-        console.error('Error saving custom URL:', error);
-        res.status(500).json({ error: 'Failed to save URL.' });
-    }
-});
 
 app.delete('/api/data', requireAuth, (req, res) => {
     try {
-        [M3U_PATH, EPG_XML_PATH, EPG_JSON_PATH, SETTINGS_PATH].forEach(file => {
+        // Delete merged files
+        [MERGED_M3U_PATH, MERGED_EPG_JSON_PATH, SETTINGS_PATH].forEach(file => {
             if (fs.existsSync(file)) fs.unlinkSync(file);
         });
+        // Delete individual source files
+        if(fs.existsSync(SOURCES_DIR)) {
+            fs.rmSync(SOURCES_DIR, { recursive: true, force: true });
+            fs.mkdirSync(SOURCES_DIR, { recursive: true }); // Recreate empty dir
+        }
+        
         db.run(`DELETE FROM user_settings WHERE user_id = ?`, [req.session.userId], (err) => {
             if (err) console.error("Error clearing user settings from DB:", err);
         });
@@ -527,71 +698,11 @@ app.delete('/api/data', requireAuth, (req, res) => {
     }
 });
 
-function fetchUrlContent(url) {
-    return new Promise((resolve, reject) => {
-        const protocol = url.startsWith('https') ? https : http;
-        protocol.get(url, (res) => {
-            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                return fetchUrlContent(new URL(res.headers.location, url).href).then(resolve, reject);
-            }
-            if (res.statusCode !== 200) {
-                return reject(new Error(`Failed to fetch: Status Code ${res.statusCode}`));
-            }
-            let data = '';
-            res.setEncoding('utf8');
-            res.on('data', (chunk) => { data += chunk; });
-            res.on('end', () => resolve(data));
-        }).on('error', (err) => reject(err));
-    });
-}
-
-const createFetchEndpoint = (type) => async (req, res) => {
-    const url = req.query.url;
-    if (!url) return res.status(400).send('Error: URL query parameter is required.');
-    
-    try {
-        let settings = {};
-        if (fs.existsSync(SETTINGS_PATH)) {
-             try { settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8')); }
-             catch(e) { console.error("Could not parse settings.json", e); }
-        }
-        
-        console.log(`Fetching ${type.toUpperCase()} from ${url}`);
-        const content = await fetchUrlContent(url);
-        
-        if (type === 'm3u') {
-            fs.writeFileSync(M3U_PATH, content);
-        } else if (type === 'epg') {
-            fs.writeFileSync(EPG_XML_PATH, content);
-            // After fetching, parse and cache it immediately
-            parseAndCacheEPG(settings.timezoneOffset || 0);
-        }
-        
-        settings[`${type}SourceType`] = 'url';
-        settings[`${type}Url`] = url;
-        fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
-
-        if(type === 'epg') scheduleEpgRefresh(); // Reschedule after manual fetch
-        
-        res.json({ success: true, message: `${type.toUpperCase()} fetched and saved.` });
-    } catch (error) {
-        console.error(`Error fetching ${type.toUpperCase()} URL:`, error);
-        res.status(500).send(`Failed to fetch from URL. Error: ${error.message}`);
-    }
-};
-
-app.get('/fetch-m3u', requireAuth, createFetchEndpoint('m3u'));
-app.get('/fetch-epg', requireAuth, createFetchEndpoint('epg'));
-
 app.get('/stream', requireAuth, (req, res) => {
     const { url: streamUrl, profileId, userAgentId } = req.query;
     if (!streamUrl) return res.status(400).send('Error: `url` query parameter is required.');
 
-    let settings = {};
-    if (fs.existsSync(SETTINGS_PATH)) {
-        try { settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8')); }
-        catch (e) { return res.status(500).send('Error reading server settings.'); }
-    }
+    let settings = getSettings();
     
     const profile = (settings.streamProfiles || []).find(p => p.id === profileId);
     if (!profile) return res.status(404).send(`Error: Stream profile with ID "${profileId}" not found.`);
