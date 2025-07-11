@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let db = null; // IndexedDB instance
     let fuseChannels = null; // Fuse.js instance for channels
     let fusePrograms = null; // Fuse.js instance for programs
+    let currentSourceTypeForEditor = 'url'; // FIX: Declared in a higher scope
     
     // --- UI Element Cache ---
     const UIElements = Object.fromEntries(
@@ -1135,12 +1136,12 @@ document.addEventListener('DOMContentLoaded', () => {
                  return;
             }
             
-            const url = `/api/sources`;
-            const method = 'POST';
-            // If editing, add the ID to the form data for the backend to handle it as an update.
+            // For updates, we send the ID along with the POST request
             if(id) {
                 formData.append('id', id);
             }
+            const url = `/api/sources`;
+            const method = 'POST';
 
             const res = await apiFetch(url, { method, body: formData });
 
