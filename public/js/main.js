@@ -424,7 +424,16 @@ document.addEventListener('DOMContentLoaded', () => {
             UIElements.sourceFilter.innerHTML += `<option value="${cleanSource}">${source}</option>`;
         });
         UIElements.sourceFilter.value = currentVal && UIElements.sourceFilter.querySelector(`option[value="${currentVal.replace(/"/g, '&quot;')}"]`) ? currentVal : 'all';
-        UIElements.sourceFilter.classList.toggle('hidden', guideState.channelSources.size <= 1);
+        
+        // Remove the 'hidden' class which sets display:none
+        UIElements.sourceFilter.classList.remove('hidden');
+        
+        // Control visibility to keep the element in the layout flow
+        if (guideState.channelSources.size <= 1) {
+            UIElements.sourceFilter.style.visibility = 'hidden';
+        } else {
+            UIElements.sourceFilter.style.visibility = 'visible';
+        }
     };
 
     const renderGuide = (channelsToRender, resetScroll = false) => {
