@@ -12,7 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
         hourWidthPixels: window.innerWidth < 768 ? 200 : 300,
         currentDate: new Date(),
         channelGroups: new Set(),
-        channelSources: new Set(), // NEW: For the source filter
+        channelSources: new Set(), // For the source filter
         visibleChannels: [],
     };
     let player, searchDebounceTimer;
@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let db = null; // IndexedDB instance
     let fuseChannels = null; // Fuse.js instance for channels
     let fusePrograms = null; // Fuse.js instance for programs
-    let currentSourceTypeForEditor = 'url'; // FIX: Declared in a higher scope
+    let currentSourceTypeForEditor = 'url';
     
     // --- UI Element Cache ---
     const UIElements = Object.fromEntries(
@@ -136,8 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- M3U Parser (Client-side) ---
-    // Now expects the backend-processed M3U with the unique ID and source name (tvg-chno)
+    // --- FIXED: M3U Parser (Client-side) ---
     function parseM3U(data) {
         const lines = data.split('\n');
         const channels = [];
@@ -150,7 +149,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     const logoMatch = line.match(/tvg-logo="([^"]*)"/);
                     const nameMatch = line.match(/tvg-name="([^"]*)"/);
                     const groupMatch = line.match(/group-title="([^"]*)"/);
-                    const sourceMatch = line.match(/tvg-chno="([^"]*)"/); // NEW: Read the source name
+                    const chnoMatch = line.match(/tvg-chno="([^"]*)"/); // For the channel number
+                    const sourceMatch = line.match(/vini-source="([^"]*)"/); // For the source name
                     const commaIndex = line.lastIndexOf(',');
                     const displayName = (commaIndex !== -1) ? line.substring(commaIndex + 1).trim() : 'Unknown';
                     
@@ -159,7 +159,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         logo: logoMatch ? logoMatch[1] : '',
                         name: nameMatch ? nameMatch[1] : displayName,
                         group: groupMatch ? groupMatch[1] : 'Uncategorized',
-                        source: sourceMatch ? sourceMatch[1] : 'Unknown', // NEW: Store the source
+                        chno: chnoMatch ? chnoMatch[1] : null,
+                        source: sourceMatch ? sourceMatch[1] : 'Default',
                         displayName: displayName,
                         url: nextLine
                     });
@@ -362,15 +363,13 @@ document.addEventListener('DOMContentLoaded', () => {
         populateGroupFilter();
         populateSourceFilter();
 
-        // --- NEW: Initialize Fuse.js for fuzzy search ---
-        // 1. Initialize Fuse for Channels
+        // Initialize Fuse.js for fuzzy search
         fuseChannels = new Fuse(guideState.channels, {
-            keys: ['name', 'displayName', 'source'],
-            threshold: 0.4, // Adjust for more/less strict matching
+            keys: ['name', 'displayName', 'source', 'chno'],
+            threshold: 0.4,
             includeScore: true,
         });
 
-        // 2. Create a flat list of all programs with their parent channel info for searching
         const allPrograms = [];
         const guideStart = new Date(guideState.currentDate);
         guideStart.setHours(0, 0, 0, 0);
@@ -380,12 +379,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const channel = guideState.channels.find(c => c.id === channelId);
             if (channel) {
                 guideState.programs[channelId].forEach(prog => {
-                     // Only include programs within the visible guide window for search
                     const progStart = new Date(prog.start);
                     const progStop = new Date(prog.stop);
                     if (progStop > guideStart && progStart < guideEnd) {
                         allPrograms.push({
-                           // Spread program data and add a reference to the channel
                            ...prog,
                            channel: {
                                id: channel.id,
@@ -399,10 +396,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         
-        // 3. Initialize Fuse for Programs
         fusePrograms = new Fuse(allPrograms, {
             keys: ['title'],
-            threshold: 0.4, // Adjust for more/less strict matching
+            threshold: 0.4,
             includeScore: true,
         });
 
@@ -475,15 +471,29 @@ document.addEventListener('DOMContentLoaded', () => {
         channelsToRender.forEach(channel => {
             const channelName = channel.displayName || channel.name;
 
-            // Assign a consistent color to each source
             if (!sourceColorMap.has(channel.source)) {
                 sourceColorMap.set(channel.source, sourceColors[colorIndex % sourceColors.length]);
                 colorIndex++;
             }
             const sourceBadgeColor = sourceColorMap.get(channel.source);
-            const sourceBadge = guideState.channelSources.size > 1 ? `<span class="source-badge ${sourceBadgeColor} text-white">${channel.source}</span>` : '';
+            const sourceBadgeHTML = guideState.channelSources.size > 1 ? `<span class="source-badge ${sourceBadgeColor} text-white">${channel.source}</span>` : '';
+            const chnoBadgeHTML = channel.chno ? `<span class="chno-badge">${channel.chno}</span>` : '';
 
-            UIElements.channelList.innerHTML += `<div class="h-24 flex items-center justify-between p-2 border-b border-gray-700/50 flex-shrink-0"><div class="flex items-center overflow-hidden cursor-pointer flex-grow min-w-0" data-url="${channel.url}" data-name="${channelName}" data-id="${channel.id}"><img src="${channel.logo}" onerror="this.onerror=null; this.src='https.placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-3 flex-shrink-0 rounded-md bg-gray-700"><div class="flex-grow min-w-0"><span class="font-semibold text-sm truncate block">${channelName}</span>${sourceBadge}</div></div><svg data-channel-id="${channel.id}" class="w-6 h-6 text-gray-500 hover:text-yellow-400 favorite-star cursor-pointer flex-shrink-0 ml-2 ${channel.isFavorite ? 'favorited' : ''}" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8-2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg></div>`;
+            // --- FIXED: Channel List Item HTML ---
+            UIElements.channelList.innerHTML += `<div class="h-24 flex items-center justify-between p-2 border-b border-gray-700/50 flex-shrink-0">
+                <div class="flex items-center overflow-hidden cursor-pointer flex-grow min-w-0" data-url="${channel.url}" data-name="${channelName}" data-id="${channel.id}">
+                    <img src="${channel.logo}" onerror="this.onerror=null; this.src='https.placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-3 flex-shrink-0 rounded-md bg-gray-700">
+                    <div class="flex-grow min-w-0">
+                        <span class="font-semibold text-sm truncate block">${channelName}</span>
+                        <div class="flex items-center gap-2 mt-1">
+                            ${chnoBadgeHTML}
+                            ${sourceBadgeHTML}
+                        </div>
+                    </div>
+                </div>
+                <svg data-channel-id="${channel.id}" class="w-6 h-6 text-gray-500 hover:text-yellow-400 favorite-star cursor-pointer flex-shrink-0 ml-2 ${channel.isFavorite ? 'favorited' : ''}" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8-2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>
+            </div>`;
+            
             UIElements.logoList.innerHTML += `<div class="h-24 flex items-center justify-center p-1 border-b border-gray-700/50 flex-shrink-0 cursor-pointer" data-url="${channel.url}" data-name="${channelName}" data-id="${channel.id}"><img src="${channel.logo}" onerror="this.onerror=null; this.src='https.placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-14 h-14 object-contain pointer-events-none"></div>`;
             
             let programsHTML = '';
@@ -553,10 +563,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const handleSearchAndFilter = (isFirstLoad = false) => {
         const searchTerm = UIElements.searchInput.value.trim();
         const selectedGroup = UIElements.groupFilter.value;
-        const selectedSource = UIElements.sourceFilter.value; // NEW
+        const selectedSource = UIElements.sourceFilter.value;
         let channelsForGuide = guideState.channels;
         
-        // Filter channels based on the selected group
         if (selectedGroup !== 'all') {
             if (selectedGroup === 'favorites') {
                 const favoriteIds = new Set(guideState.settings.favorites || []);
@@ -569,21 +578,18 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         
-        // NEW: Filter by selected source
         if (selectedSource !== 'all') {
             channelsForGuide = channelsForGuide.filter(ch => ch.source === selectedSource);
         }
         
-        // --- Fuzzy Search Logic ---
         if (searchTerm && fuseChannels && fusePrograms) {
-            // The main guide view is filtered by simple text inclusion for responsiveness
             const lowerCaseSearchTerm = searchTerm.toLowerCase();
             channelsForGuide = channelsForGuide.filter(ch => 
                 (ch.displayName || ch.name).toLowerCase().includes(lowerCaseSearchTerm) ||
-                (ch.source && ch.source.toLowerCase().includes(lowerCaseSearchTerm))
+                (ch.source && ch.source.toLowerCase().includes(lowerCaseSearchTerm)) ||
+                (ch.chno && ch.chno.toLowerCase().includes(lowerCaseSearchTerm))
             );
             
-            // The dropdown, however, is powered by Fuse.js for better results
             const channelResults = fuseChannels.search(searchTerm).slice(0, 10);
             
             let programResults = [];
@@ -594,7 +600,6 @@ document.addEventListener('DOMContentLoaded', () => {
             renderSearchResults(channelResults, programResults);
 
         } else {
-            // No search term, hide the results dropdown
             UIElements.searchResultsContainer.innerHTML = '';
             UIElements.searchResultsContainer.classList.add('hidden');
         }
@@ -602,25 +607,22 @@ document.addEventListener('DOMContentLoaded', () => {
         renderGuide(channelsForGuide, isFirstLoad);
     };
     
-    // --- NEW: Function to render the rich search results dropdown ---
     const renderSearchResults = (channelResults, programResults) => {
         let html = '';
         
-        // Render Channel Results
         if (channelResults.length > 0) {
             html += '<div class="search-results-header">Channels</div>';
             html += channelResults.map(({ item }) => `
                 <div class="search-result-channel flex items-center p-3 border-b border-gray-700/50 hover:bg-gray-700 cursor-pointer" data-channel-id="${item.id}">
                     <img src="${item.logo}" onerror="this.onerror=null; this.src='https.placehold.co/40x40/1f2937/d1d5db?text=?';" class="w-10 h-10 object-contain mr-3 rounded-md bg-gray-700 flex-shrink-0">
                     <div class="overflow-hidden">
-                        <p class="font-semibold text-white text-sm truncate">${item.displayName || item.name}</p>
+                        <p class="font-semibold text-white text-sm truncate">${item.chno ? `[${item.chno}] ` : ''}${item.displayName || item.name}</p>
                         <p class="text-gray-400 text-xs truncate">${item.group} &bull; ${item.source}</p>
                     </div>
                 </div>
             `).join('');
         }
         
-        // Render Program Results
         if (programResults.length > 0) {
             html += '<div class="search-results-header">Programs</div>';
             const timeFormat = { hour: '2-digit', minute: '2-digit' };
@@ -830,7 +832,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.removeEventListener('mouseup', stopResize);
                 document.body.style.cursor = '';
 
-                // Debounce saving the setting to avoid spamming the server
                 clearTimeout(resizeDebounceTimer);
                 resizeDebounceTimer = setTimeout(() => {
                     saveUserSetting(settingKey, {
@@ -930,93 +931,77 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         UIElements.nextDayBtn.addEventListener('click', () => { guideState.currentDate.setDate(guideState.currentDate.getDate() + 1); finalizeGuideLoad(); });
         UIElements.groupFilter.addEventListener('change', () => handleSearchAndFilter());
-        UIElements.sourceFilter.addEventListener('change', () => handleSearchAndFilter()); // NEW
+        UIElements.sourceFilter.addEventListener('change', () => handleSearchAndFilter());
         UIElements.searchInput.addEventListener('input', () => { clearTimeout(searchDebounceTimer); searchDebounceTimer = setTimeout(() => handleSearchAndFilter(false), 250); });
         document.addEventListener('click', e => { if (!UIElements.searchInput.contains(e.target) && !UIElements.searchResultsContainer.contains(e.target)) UIElements.searchResultsContainer.classList.add('hidden'); });
 
-        // --- NEW/ENHANCED: Search Results Interaction ---
         UIElements.searchResultsContainer.addEventListener('click', e => {
             const programItem = e.target.closest('.search-result-program');
             const channelItem = e.target.closest('.search-result-channel');
             
-            // Hide search results and clear input immediately after any click inside the container.
             UIElements.searchResultsContainer.classList.add('hidden');
             UIElements.searchInput.value = '';
 
             if (channelItem) {
-                // When a channel is clicked, filter the guide to that channel's group and scroll to it.
                 const channelId = channelItem.dataset.channelId;
                 const targetChannel = guideState.channels.find(ch => ch.id === channelId);
                 if (!targetChannel) return;
 
-                // Set group filter to the channel's group to make sure it's visible.
                 const groupOption = UIElements.groupFilter.querySelector(`option[value="${targetChannel.group.replace(/"/g, '&quot;')}"]`);
                 UIElements.groupFilter.value = groupOption ? targetChannel.group : 'all';
-                UIElements.sourceFilter.value = 'all'; // Reset source filter
+                UIElements.sourceFilter.value = 'all'; 
                 
-                handleSearchAndFilter(); // Re-render the guide with the new filter
+                handleSearchAndFilter();
 
                 setTimeout(() => {
                     const channelIndex = guideState.visibleChannels.findIndex(ch => ch.id === channelId);
                     if (channelIndex > -1) {
                         const yPos = channelIndex * 96; // 96px for h-24
-                        // Scroll the lists into view
                         [UIElements.guideTimeline, UIElements.channelList, UIElements.logoList].forEach(el => {
                             el.scrollTo({ top: yPos, behavior: 'smooth' });
                         });
                     }
-                }, 100); // A small delay to allow for DOM update
+                }, 100);
 
             } else if (programItem) {
-                // When a program is clicked, navigate to it in the timeline.
                 const channelId = programItem.dataset.channelId;
                 const progStartISO = programItem.dataset.progStart;
                 const progStartDate = new Date(progStartISO);
 
-                // 1. Set the guide to the correct date
                 guideState.currentDate = progStartDate;
                 
-                // 2. Ensure the channel's group is selected so it will be rendered
                 const targetChannel = guideState.channels.find(ch => ch.id === channelId);
                 if (targetChannel) {
                     const groupOption = UIElements.groupFilter.querySelector(`option[value="${targetChannel.group.replace(/"/g, '&quot;')}"]`);
                     UIElements.groupFilter.value = groupOption ? targetChannel.group : 'all';
-                    UIElements.sourceFilter.value = 'all'; // Reset source filter
+                    UIElements.sourceFilter.value = 'all';
                 }
 
-                // 3. Re-render the guide. Since searchInput is now empty, it will use the group filter.
                 finalizeGuideLoad();
                 
-                // 4. After re-render, find the program and scroll to it
                 setTimeout(() => {
                     const guideStartTime = new Date(guideState.currentDate);
                     guideStartTime.setHours(0, 0, 0, 0);
 
-                    // Find channel's vertical position
                     const channelIndex = guideState.visibleChannels.findIndex(ch => ch.id === channelId);
                     if (channelIndex === -1) {
                         showNotification("Could not find channel in current view.", true);
                         return;
                     }
                     
-                    // Calculate horizontal and vertical scroll positions
                     const hScroll = ((progStartDate - guideStartTime) / 3600000) * guideState.hourWidthPixels;
-                    const vScroll = channelIndex * 96; // 96px channel height
+                    const vScroll = channelIndex * 96;
                     
-                    // Scroll the timeline
                     UIElements.guideTimeline.scrollTo({ top: vScroll, left: hScroll - (UIElements.guideTimeline.clientWidth / 4), behavior: 'smooth' });
                     
-                    // Remove any previous highlight
                     document.querySelectorAll('.programme-item.highlighted-search').forEach(el => el.classList.remove('highlighted-search'));
                     
-                    // Find the specific program element and highlight it
                     const targetProg = Array.from(document.querySelectorAll('.programme-item')).find(p => p.dataset.channelId === channelId && p.dataset.progStart === progStartISO);
                     if (targetProg) {
                         targetProg.classList.add('highlighted-search');
-                        // Remove highlight after a few seconds
                         setTimeout(() => targetProg.classList.remove('highlighted-search'), 5000);
                     }
-                }, 200); // Delay to ensure DOM is fully updated
+                }, 200);
             }
         });
 
@@ -1041,7 +1026,7 @@ document.addEventListener('DOMContentLoaded', () => {
         makeModalResizable(UIElements.videoResizeHandle, UIElements.videoModalContainer, 400, 300, 'playerDimensions');
         makeModalResizable(UIElements.detailsResizeHandle, UIElements.programDetailsContainer, 320, 250, 'programDetailsDimensions');
 
-        // --- NEW: Settings Page - Source Management ---
+        // Settings Page - Source Management
         UIElements.processSourcesBtn.addEventListener('click', async () => {
              const originalContent = UIElements.processSourcesBtnContent.innerHTML;
              setButtonLoadingState(UIElements.processSourcesBtn, true, originalContent);
@@ -1117,6 +1102,7 @@ document.addEventListener('DOMContentLoaded', () => {
              UIElements.sourceEditorFileContainer.classList.remove('hidden');
         });
 
+        // --- FIXED: Source Editor Form Submission ---
         UIElements.sourceEditorForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const id = UIElements.sourceEditorId.value;
@@ -1131,19 +1117,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 formData.append('url', UIElements.sourceEditorUrl.value);
             } else if (UIElements.sourceEditorFile.files[0]) {
                 formData.append('sourceFile', UIElements.sourceEditorFile.files[0]);
-            } else if (!id) { // File is required for new file-based sources
-                 showNotification('A file must be selected.', true);
+            } else if (!id) { // File is required for new file-based sources, but not for URL edits
+                 showNotification('A file must be selected for new file-based sources.', true);
                  return;
             }
             
-            // For updates, we send the ID along with the POST request
-            if(id) {
-                formData.append('id', id);
+            if (id) {
+                formData.append('id', id); // Send ID for updates
             }
-            const url = `/api/sources`;
-            const method = 'POST';
 
-            const res = await apiFetch(url, { method, body: formData });
+            const res = await apiFetch('/api/sources', { method: 'POST', body: formData });
 
             if (res && res.ok) {
                 const data = await res.json();
@@ -1162,9 +1145,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const row = target.closest('tr');
             if (!row) return;
             const sourceId = row.dataset.sourceId;
+            const source = guideState.settings[`${sourceType}Sources`].find(s => s.id === sourceId);
+            if(!source) return;
 
             if (target.closest('.edit-source-btn')) {
-                const source = guideState.settings[`${sourceType}Sources`].find(s => s.id === sourceId);
                 openSourceEditor(sourceType, source);
             } else if (target.closest('.delete-source-btn')) {
                 showConfirm('Delete Source?', 'Are you sure?', async () => {
@@ -1179,7 +1163,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             } else if (target.classList.contains('activate-switch')) {
                 const isActive = target.checked;
-                const source = guideState.settings[`${sourceType}Sources`].find(s => s.id === sourceId);
                 const res = await apiFetch(`/api/sources/${sourceType}/${sourceId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
@@ -1209,12 +1192,11 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
         
-        // App Settings with Notifications
         UIElements.autoRefreshSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { autoRefresh: parseInt(e.target.value, 10) }));
         UIElements.timezoneOffsetSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { timezoneOffset: parseInt(e.target.value, 10) }));
         UIElements.searchScopeSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { searchScope: e.target.value }));
         
-        // Player Settings with Notifications
+        // Player Settings
         UIElements.addUserAgentBtn.addEventListener('click', () => openEditorModal('userAgent'));
         UIElements.editUserAgentBtn.addEventListener('click', () => {
             const agent = guideState.settings.userAgents.find(ua => ua.id === UIElements.userAgentSelect.value);
@@ -1248,7 +1230,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const success = await saveGlobalSetting({ streamProfiles: updatedList, activeStreamProfileId: newActiveId });
                 if (success) {
                     updateUIFromSettings();
-                    showNotification('Stream Profile deleted.');
+                    showNotification('Stream Profile saved.');
                 }
             });
         });
@@ -1334,7 +1316,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const config = await response.json();
             guideState.settings = config.settings || {}; 
             
-            // Apply saved dimensions from user settings
             if (guideState.settings.playerDimensions) {
                 const { width, height } = guideState.settings.playerDimensions;
                 if (width) UIElements.videoModalContainer.style.width = `${width}px`;
