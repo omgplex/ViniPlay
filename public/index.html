@@ -52,7 +52,7 @@
         #show-header-btn { transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out; }
         #show-header-btn.hidden { opacity: 0; transform: translateY(20px); }
 
-        /* --- NEW: Virtualized Guide Styles --- */
+        /* --- Virtualized Guide Styles --- */
         #guide-container { --channel-width: 320px; }
         .guide-grid { display: grid; grid-template-columns: var(--channel-width) 1fr; }
         .channel-header, .time-bar-header { height: 6rem; /* 96px */ }
@@ -62,11 +62,28 @@
         #guide-grid-container { will-change: scroll-position; }
         #guide-grid-content { will-change: transform; }
         #now-line { z-index: 15; }
+        
+        /* Styles for the sources table */
+        .sources-table th { @apply px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider; }
+        .sources-table td { @apply px-4 py-3 whitespace-nowrap text-sm text-gray-300; }
+        .sources-table tbody tr { @apply border-b border-gray-700/50; }
+        .sources-table tbody tr:last-child { @apply border-none; }
+        .sources-table .action-btn { @apply text-gray-400 hover:text-white transition-colors; }
+
+        /* Custom Switch */
+        .switch { position: relative; display: inline-block; width: 38px; height: 22px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #4b5563; transition: .4s; border-radius: 22px; }
+        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #2563eb; }
+        input:focus + .slider { box-shadow: 0 0 1px #2563eb; }
+        input:checked + .slider:before { transform: translateX(16px); }
+
     </style>
 </head>
 <body class="h-screen">
 
-    <!-- Auth Container -->
+    <!-- Auth Container: Covers the entire screen initially -->
     <div id="auth-container" class="fixed inset-0 bg-gray-900 z-[100] flex items-center justify-center p-4">
         <div class="w-full max-w-sm mx-auto">
              <img src="https://i.imgur.com/rwa8SjI.png" alt="VINI PLAY Logo" class="h-16 w-16 mx-auto mb-4">
@@ -150,14 +167,6 @@
                     </div>
                 </div>
 
-                <!--
-                    REFACTORED GUIDE CONTAINER
-                    - Uses CSS Grid for a robust, sticky channel column layout.
-                    - `guide-grid-container` is the main scrollable element for rows (vertically).
-                    - `timeline-container` is scrollable for programs (horizontally).
-                    - `guide-grid-scroller` creates the full scroll height for virtualization.
-                    - `guide-grid-content` is the "window" where visible rows are rendered.
-                -->
                 <div id="guide-container" class="flex-grow flex flex-col bg-gray-900 overflow-hidden relative">
                     <!-- Placeholder for loading/no-data states -->
                     <div id="guide-placeholder" class="absolute inset-0 flex items-center justify-center z-40">
@@ -514,6 +523,11 @@
         </div>
     </div>
 
+    <!-- TEMPLATES for elements that are dynamically created -->
+    <template id="now-line-template">
+        <div id="now-line" class="absolute top-0 bottom-0 bg-red-500 w-0.5 hidden"></div>
+    </template>
+    
     <!-- Main Application Script (Refactored) -->
     <script type="module" src="/js/main.js"></script>
 
