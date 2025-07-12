@@ -540,4 +540,30 @@ export function setupGuideEventListeners() {
         window.addEventListener('mousemove', doResize);
         window.addEventListener('mouseup', stopResize);
     }, false);
+
+    // --- NEW: Collapsing Header on Scroll ---
+    let lastScrollTop = 0;
+    const headerCollapseThreshold = 50; // Pixels to scroll before hiding header
+
+    UIElements.guideTimeline.addEventListener('scroll', () => {
+        const currentScrollTop = UIElements.guideTimeline.scrollTop;
+
+        // Ensure appContainer is available
+        if (!UIElements.appContainer) return;
+
+        // If scrolling back to the very top, always show the header
+        if (currentScrollTop < headerCollapseThreshold) {
+            UIElements.appContainer.classList.remove('header-collapsed');
+        }
+        // If scrolling down past the threshold, hide the header
+        else if (currentScrollTop > lastScrollTop) {
+            UIElements.appContainer.classList.add('header-collapsed');
+        }
+        // If scrolling up, show the header
+        else if (currentScrollTop < lastScrollTop) {
+            UIElements.appContainer.classList.remove('header-collapsed');
+        }
+
+        lastScrollTop = currentScrollTop <= 0 ? 0 : currentScrollTop;
+    }, { passive: true }); // Use a passive listener for better scroll performance
 }
