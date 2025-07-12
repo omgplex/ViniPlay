@@ -560,29 +560,43 @@ export function setupGuideEventListeners() {
         window.addEventListener('mouseup', stopResize);
     }, false);
 
-    // --- Collapsing Header and "Show" Button (v2) ---
+    // --- Collapsing Header and "Show" Button (v3 - The Good One) ---
+    let lastScrollTop = 0;
     const handleHeaderAndButtonVisibility = () => {
         const scrollTop = UIElements.guideTimeline.scrollTop;
+
+        // A small buffer to prevent jittering from minor scroll adjustments.
+        if (Math.abs(scrollTop - lastScrollTop) <= 5) {
+            return;
+        }
+
+        const isScrollingDown = scrollTop > lastScrollTop;
         const isCollapsed = UIElements.appContainer.classList.contains('header-collapsed');
 
-        // Collapse the header if scrolled down past the threshold
-        if (scrollTop > 150 && !isCollapsed) {
+        // SCROLLING DOWN: Collapse the header if we scroll past a certain point.
+        if (isScrollingDown && scrollTop > 150 && !isCollapsed) {
             UIElements.appContainer.classList.add('header-collapsed');
             UIElements.showHeaderBtn.classList.remove('hidden');
         } 
-        // Expand the header if scrolled back to the top
-        else if (scrollTop < 10 && isCollapsed) {
+        // SCROLLING UP: Only expand the header if we've reached the very top.
+        else if (!isScrollingDown && scrollTop < 10 && isCollapsed) {
             UIElements.appContainer.classList.remove('header-collapsed');
             UIElements.showHeaderBtn.classList.add('hidden');
         }
+
+        lastScrollTop = scrollTop <= 0 ? 0 : scrollTop; // For mobile or negative scroll values.
     };
 
-    // Listen to scroll events, but throttled to prevent lag
-    UIElements.guideTimeline.addEventListener('scroll', throttle(handleHeaderAndButtonVisibility, 150), { passive: true });
+    // Listen to scroll events, but throttled to prevent lag.
+    UIElements.guideTimeline.addEventListener('scroll', throttle(handleHeaderAndButtonVisibility, 100), { passive: true });
 
-    // Handle click on the "Show Header" button
+    // Handle click on the "Show Header" button with a direct action.
     UIElements.showHeaderBtn.addEventListener('click', () => {
+        // First, directly change the state by removing the class and hiding the button.
+        UIElements.appContainer.classList.remove('header-collapsed');
+        UIElements.showHeaderBtn.classList.add('hidden');
+        
+        // Then, perform the smooth scroll to the top.
         UIElements.guideTimeline.scrollTo({ top: 0, behavior: 'smooth' });
-        // The scroll listener will automatically handle expanding the header and hiding the button
     });
 }
