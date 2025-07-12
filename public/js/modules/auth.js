@@ -43,9 +43,8 @@ const showApp = (user) => {
     UIElements.appContainer.classList.remove('hidden');
     UIElements.appContainer.classList.add('flex');
 
-    // UPDATED: Set user display text in the new sidebar location
-    UIElements.sidebarUserDisplay.textContent = `Welcome, ${user.username}`;
-    
+    UIElements.userDisplay.textContent = `Welcome, ${user.username}`;
+    UIElements.userDisplay.classList.remove('hidden');
     UIElements.userManagementSection.classList.toggle('hidden', !user.isAdmin);
 
     // Initialize the main app logic only once
@@ -124,8 +123,7 @@ export function setupAuthEventListeners() {
         }
     });
 
-    // UPDATED: Listener attached to the new logout button in the sidebar
-    UIElements.sidebarLogoutBtn.addEventListener('click', async () => {
+    UIElements.logoutBtn.addEventListener('click', async () => {
         await fetch('/api/auth/logout', { method: 'POST' });
         window.location.reload();
     });
