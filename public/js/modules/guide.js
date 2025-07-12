@@ -387,6 +387,25 @@ const renderSearchResults = (channelResults, programResults) => {
     }
 };
 
+/**
+ * A utility function to limit the execution of a function to once every specified time limit.
+ * @param {Function} func The function to throttle.
+ * @param {number} limit The time limit in milliseconds.
+ * @returns {Function} The throttled function.
+ */
+const throttle = (func, limit) => {
+    let inThrottle;
+    return function() {
+        const args = arguments;
+        const context = this;
+        if (!inThrottle) {
+            func.apply(context, args);
+            inThrottle = true;
+            setTimeout(() => inThrottle = false, limit);
+        }
+    };
+};
+
 
 // --- Event Listeners ---
 
@@ -541,29 +560,32 @@ export function setupGuideEventListeners() {
         window.addEventListener('mouseup', stopResize);
     }, false);
 
-    // --- NEW: Collapsing Header on Scroll ---
+    // --- Collapsing Header on Scroll (Improved) ---
     let lastScrollTop = 0;
     const headerCollapseThreshold = 50; // Pixels to scroll before hiding header
+    const scrollDelta = 5; // Minimum scroll distance to trigger a direction change
 
-    UIElements.guideTimeline.addEventListener('scroll', () => {
+    const handleHeaderCollapse = () => {
         const currentScrollTop = UIElements.guideTimeline.scrollTop;
 
-        // Ensure appContainer is available
-        if (!UIElements.appContainer) return;
-
-        // If scrolling back to the very top, always show the header
-        if (currentScrollTop < headerCollapseThreshold) {
-            UIElements.appContainer.classList.remove('header-collapsed');
+        // Ensure appContainer is available and we've scrolled enough to matter
+        if (!UIElements.appContainer || Math.abs(lastScrollTop - currentScrollTop) <= scrollDelta) {
+            return;
         }
-        // If scrolling down past the threshold, hide the header
-        else if (currentScrollTop > lastScrollTop) {
+
+        // If scrolling down AND past the collapse threshold, hide the header.
+        if (currentScrollTop > lastScrollTop && currentScrollTop > headerCollapseThreshold) {
             UIElements.appContainer.classList.add('header-collapsed');
+        } else {
+            // If scrolling up OR we are near the top of the page, show the header.
+            if (currentScrollTop < lastScrollTop || currentScrollTop <= headerCollapseThreshold) {
+                UIElements.appContainer.classList.remove('header-collapsed');
+            }
         }
-        // If scrolling up, show the header
-        else if (currentScrollTop < lastScrollTop) {
-            UIElements.appContainer.classList.remove('header-collapsed');
-        }
-
+        
         lastScrollTop = currentScrollTop <= 0 ? 0 : currentScrollTop;
-    }, { passive: true }); // Use a passive listener for better scroll performance
+    };
+
+    // Use the throttled function as the event listener
+    UIElements.guideTimeline.addEventListener('scroll', throttle(handleHeaderCollapse, 100), { passive: true });
 }
