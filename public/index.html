@@ -30,6 +30,8 @@
         .programme-item .prog-time { font-size: 0.75rem; }
         #group-filter, #source-filter, #search-input, #timezone-offset-select { transition: all 0.2s ease; }
         #group-filter:hover, #source-filter:hover, #search-input:hover, #timezone-offset-select:hover { background-color: #4b5563; }
+        #channel-panel-container { transition: transform 0.3s ease-in-out; }
+        #sidebar-overlay { transition: opacity 0.3s ease-in-out; }
         body.modal-open { overflow: hidden; }
         button:disabled { cursor: not-allowed; opacity: 0.6; }
         .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3b82f6; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
@@ -39,30 +41,30 @@
         #resizer:hover { background-color: #3b82f6; }
         #resizer::after { content: '⋮'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #9ca3af; font-size: 18px; font-weight: bold; line-height: 1; pointer-events: none; text-shadow: 0 1px 1px rgba(0,0,0,0.5); }
         .resize-handle { position: absolute; bottom: 0; right: 0; width: 20px; height: 20px; cursor: se-resize; z-index: 10; }
-        #video-modal-container, #program-details-container { overflow: hidden; min-width: 400px; min-height: 300px; position: relative; }
+        .resize-handle::after { content: ''; position: absolute; display: block; width: 12px; height: 12px; bottom: 2px; right: 2px; background-image: linear-gradient(45deg, #9ca3af 25%, transparent 25%, transparent 75%, #9ca3af 75%), linear-gradient(45deg, #9ca3af 25%, transparent 25%, transparent 75%, #9ca3af 75%); background-size: 6px 6px; background-position: 0 0, 3px 3px; opacity: 0.6; }
+        .resize-handle:hover::after { opacity: 1; }
+        #video-modal-container, #program-details-container { overflow: hidden; }
+        #video-modal-container { min-width: 400px; min-height: 300px; position: relative; }
         #program-details-container { min-width: 320px; min-height: 250px; position: relative; }
         #details-desc { overflow-y: auto; }
-        
-        .source-badge { font-size: 0.6rem; font-weight: 700; padding: 2px 6px; border-radius: 10px; flex-shrink: 0; text-transform: uppercase; }
-        .chno-badge { font-size: 0.65rem; font-weight: 600; padding: 2px 6px; border-radius: 4px; background-color: #3b82f6; color: white; flex-shrink: 0; }
-
-        /* --- Collapsing Header Styles --- */
-        #main-header, #desktop-tabs, #guide-controls-bar { overflow: hidden; transition: all 0.3s ease-in-out; max-height: 100px; /* Adjust if taller */ }
-        .header-collapsed #main-header, .header-collapsed #desktop-tabs, .header-collapsed #guide-controls-bar { max-height: 0; padding-top: 0; padding-bottom: 0; border-width: 0; margin: 0; }
-        #show-header-btn { transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out; }
-        #show-header-btn.hidden { opacity: 0; transform: translateY(20px); }
-
-        /* --- Virtualized Guide Styles --- */
-        #guide-container { --channel-width: 320px; }
-        .guide-grid { display: grid; grid-template-columns: var(--channel-width) 1fr; }
-        .channel-header, .time-bar-header { height: 6rem; /* 96px */ }
-        .channel-cell, .program-cell { height: 6rem; /* 96px */ }
-        .channel-header, .channel-cell { position: sticky; left: 0; background-color: #1f2937; z-index: 20; }
-        .time-bar-header, .program-cell { z-index: 10; }
-        #guide-grid-container { will-change: scroll-position; }
-        #guide-grid-content { will-change: transform; }
-        #now-line { z-index: 15; }
-        
+        .programme-item.highlighted-search {
+            outline: 3px solid #facc15;
+            box-shadow: 0 0 15px rgba(250, 204, 21, 0.5), inset 0 0 0 2px #facc15;
+            z-index: 15;
+            transition: all 0.3s ease-out;
+            transform: scale(1.02);
+        }
+        /* New styles for search results */
+        .search-results-header {
+            padding: 0.5rem 0.75rem;
+            background-color: #374151; /* gray-700 */
+            color: #d1d5db; /* gray-300 */
+            font-size: 0.75rem; /* text-xs */
+            font-weight: 700; /* font-bold */
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-bottom: 1px solid #4b5563; /* gray-600 */
+        }
         /* Styles for the sources table */
         .sources-table th { @apply px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider; }
         .sources-table td { @apply px-4 py-3 whitespace-nowrap text-sm text-gray-300; }
@@ -78,7 +80,56 @@
         input:checked + .slider { background-color: #2563eb; }
         input:focus + .slider { box-shadow: 0 0 1px #2563eb; }
         input:checked + .slider:before { transform: translateX(16px); }
+        .source-badge {
+            font-size: 0.6rem;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 10px;
+            margin-left: 8px;
+            flex-shrink: 0;
+            text-transform: uppercase;
+        }
 
+        .source-badge {
+            font-size: 0.6rem;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 10px;
+            flex-shrink: 0;
+            text-transform: uppercase;
+        }
+        .chno-badge {
+            font-size: 0.65rem;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background-color: #3b82f6;
+            color: white;
+            flex-shrink: 0;
+        }
+
+        /* --- Collapsing Header Styles --- */
+        #main-header, #desktop-tabs, #guide-controls-bar {
+            overflow: hidden;
+            transition: all 0.3s ease-in-out;
+            max-height: 100px; /* Adjust if your headers are taller */
+        }
+        .header-collapsed #main-header,
+        .header-collapsed #desktop-tabs,
+        .header-collapsed #guide-controls-bar {
+            max-height: 0;
+            padding-top: 0;
+            padding-bottom: 0;
+            border-width: 0;
+            margin: 0;
+        }
+        #show-header-btn {
+             transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+        }
+        #show-header-btn.hidden {
+            opacity: 0;
+            transform: translateY(20px);
+        }
     </style>
 </head>
 <body class="h-screen">
@@ -166,11 +217,9 @@
                         <div id="search-results-container" class="hidden absolute top-full right-0 w-full sm:w-96 max-h-80 overflow-y-auto bg-gray-800 border border-gray-600 rounded-md mt-1 z-50 custom-scrollbar shadow-lg"></div>
                     </div>
                 </div>
-
-                <div id="guide-container" class="flex-grow flex flex-col bg-gray-900 overflow-hidden relative">
-                    <!-- Placeholder for loading/no-data states -->
+                <div id="guide-container" class="flex-grow flex bg-gray-900 overflow-hidden relative">
                     <div id="guide-placeholder" class="absolute inset-0 flex items-center justify-center z-40">
-                         <div id="initial-loading-indicator" class="text-center text-gray-400">
+                        <div id="initial-loading-indicator" class="text-center text-gray-400">
                             <div class="loader mx-auto"></div>
                             <p class="mt-4">Loading application...</p>
                         </div>
@@ -180,27 +229,23 @@
                             <p class="mt-1 text-sm">Go to the Settings tab to add and activate your M3U and EPG sources.</p>
                         </div>
                     </div>
-
-                    <!-- Virtualized Grid -->
-                    <div id="guide-grid-container" class="hidden flex-grow flex-col overflow-y-auto custom-scrollbar">
-                        <div class="guide-grid flex-shrink-0 sticky top-0 z-20 bg-gray-800 shadow-md">
-                            <!-- Sticky Header Row -->
-                            <div class="channel-header p-2 border-b border-r border-gray-700/80 flex-shrink-0 flex flex-col gap-2 justify-center">
-                                 <select id="group-filter" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select>
-                                 <select id="source-filter" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select>
-                            </div>
-                            <div id="resizer" class="absolute top-0 bottom-0 z-30" style="left: calc(var(--channel-width) - 4px);"></div>
-
-                            <div id="timeline-container" class="time-bar-header overflow-x-auto custom-scrollbar relative">
-                                <div id="time-bar" class="h-full bg-gray-800/80 relative z-10"></div>
-                            </div>
+                    <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-40 hidden lg:hidden"></div>
+                    <div id="channel-panel-container" class="absolute lg:relative inset-y-0 left-0 w-64 sm:w-80 bg-gray-800/80 lg:bg-gray-800 backdrop-blur-sm lg:backdrop-blur-none z-50 lg:z-20 transform -translate-x-full lg:transform-none lg:translate-x-0 min-w-[250px] max-w-[80vw] lg:max-w-[30vw] flex-shrink-0 flex flex-col hidden lg:flex">
+                        <div class="p-2 border-b border-gray-700/80 flex-shrink-0 flex flex-col gap-2">
+                             <select id="group-filter" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select>
+                             <select id="source-filter" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select>
                         </div>
-
-                        <!-- Scroller creates the virtual height, content is the moving window -->
-                        <div id="guide-grid-scroller" class="relative">
-                            <div id="guide-grid-content" class="absolute top-0 left-0 w-full">
-                                <!-- Virtual rows will be rendered here by JavaScript -->
-                            </div>
+                        <div id="channel-list" class="overflow-y-auto custom-scrollbar flex-grow"></div>
+                    </div>
+                    <div id="resizer" class="hidden lg:block z-30"></div>
+                    <div id="logo-column" class="flex flex-col lg:hidden w-20 flex-shrink-0 bg-gray-900 border-r border-gray-700/50">
+                        <div class="h-24 flex-shrink-0 border-b border-gray-700/80"></div>
+                        <div id="logo-list" class="overflow-y-auto custom-scrollbar flex-grow"></div>
+                    </div>
+                    <div id="timeline-container" class="flex-grow flex flex-col overflow-hidden">
+                        <div id="time-bar" class="h-24 bg-gray-800/80 flex-shrink-0 relative z-10 overflow-x-hidden"></div>
+                        <div id="guide-timeline" class="overflow-auto custom-scrollbar relative flex-grow">
+                            <div id="now-line" class="absolute top-0 bottom-0 bg-red-500 w-0.5 z-20 hidden"></div>
                         </div>
                     </div>
                 </div>
@@ -523,11 +568,6 @@
         </div>
     </div>
 
-    <!-- TEMPLATES for elements that are dynamically created -->
-    <template id="now-line-template">
-        <div id="now-line" class="absolute top-0 bottom-0 bg-red-500 w-0.5 hidden"></div>
-    </template>
-    
     <!-- Main Application Script (Refactored) -->
     <script type="module" src="/js/main.js"></script>
 
