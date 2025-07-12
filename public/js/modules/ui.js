@@ -71,6 +71,8 @@ export function handleConfirm() {
 export const toggleSidebar = (show) => {
     UIElements.sidebarOverlay.classList.toggle('hidden', !show);
     UIElements.channelPanelContainer.classList.toggle('-translate-x-full', !show);
+    // On large screens, the sidebar is always part of the layout, so we don't toggle translate.
+    // This logic is handled by the '-translate-x-full lg:transform-none' classes in the HTML.
 };
 
 /**
@@ -99,34 +101,25 @@ export const setButtonLoadingState = (buttonEl, isLoading, originalContent) => {
  * @param {string} settingKey - The key to save the dimensions under in user settings.
  */
 export const makeModalResizable = (handleEl, containerEl, minWidth, minHeight, settingKey) => {
-    // Lazy import to avoid circular dependencies
     import('./api.js').then(({ saveUserSetting }) => {
         let resizeDebounceTimer;
         handleEl.addEventListener('mousedown', e => {
             e.preventDefault();
-            const startX = e.clientX,
-                startY = e.clientY;
-            const startWidth = containerEl.offsetWidth;
-            const startHeight = containerEl.offsetHeight;
+            const startX = e.clientX, startY = e.clientY;
+            const startWidth = containerEl.offsetWidth, startHeight = containerEl.offsetHeight;
 
             const doResize = (e) => {
-                const newWidth = startWidth + e.clientX - startX;
-                const newHeight = startHeight + e.clientY - startY;
-                containerEl.style.width = `${Math.max(minWidth, newWidth)}px`;
-                containerEl.style.height = `${Math.max(minHeight, newHeight)}px`;
+                containerEl.style.width = `${Math.max(minWidth, startWidth + e.clientX - startX)}px`;
+                containerEl.style.height = `${Math.max(minHeight, startHeight + e.clientY - startY)}px`;
             };
 
             const stopResize = () => {
                 window.removeEventListener('mousemove', doResize);
                 window.removeEventListener('mouseup', stopResize);
                 document.body.style.cursor = '';
-
                 clearTimeout(resizeDebounceTimer);
                 resizeDebounceTimer = setTimeout(() => {
-                    saveUserSetting(settingKey, {
-                        width: containerEl.offsetWidth,
-                        height: containerEl.offsetHeight,
-                    });
+                    saveUserSetting(settingKey, { width: containerEl.offsetWidth, height: containerEl.offsetHeight });
                 }, 500);
             };
 
@@ -144,9 +137,9 @@ export const handleRouteChange = () => {
     const path = window.location.pathname;
     const isGuide = path.startsWith('/tvguide') || path === '/';
 
-    // Toggle active state for desktop and mobile navigation buttons
-    ['tabGuide', 'bottomNavGuide'].forEach(id => UIElements[id]?.classList.toggle('active', isGuide));
-    ['tabSettings', 'bottomNavSettings'].forEach(id => UIElements[id]?.classList.toggle('active', !isGuide));
+    // UPDATED: Toggle active state for the new sidebar navigation buttons
+    UIElements.sidebarNavGuide?.classList.toggle('active', isGuide);
+    UIElements.sidebarNavSettings?.classList.toggle('active', !isGuide);
 
     // Show/hide the relevant page content
     UIElements.pageGuide.classList.toggle('hidden', !isGuide);
@@ -154,10 +147,8 @@ export const handleRouteChange = () => {
     UIElements.pageSettings.classList.toggle('hidden', isGuide);
     UIElements.pageSettings.classList.toggle('flex', !isGuide);
 
-    // Toggle sidebar button visibility (only on guide page)
-    UIElements.sidebarToggle.classList.toggle('hidden', !isGuide);
+    // Sidebar toggle button is always visible in the header now, no need to toggle it.
     
-    // If navigating to the settings page, refresh relevant data
     if (!isGuide) {
         updateUIFromSettings();
         if (appState.currentUser?.isAdmin) {
@@ -171,7 +162,6 @@ export const handleRouteChange = () => {
  * @param {string} path - The new path to navigate to (e.g., '/settings').
  */
 export const navigate = (path) => {
-    // Only push state if the path is different
     if (window.location.pathname !== path) {
         window.history.pushState({}, path, window.location.origin + path);
     }
