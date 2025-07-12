@@ -39,18 +39,14 @@ export async function initMainApp() {
         const config = await response.json();
         guideState.settings = config.settings || {};
         
-        // Restore dimensions of resizable modals
         restoreModalDimensions();
         
-        // Populate UI elements that depend on settings
         populateTimezoneSelector();
         updateUIFromSettings();
 
-        // Show loading indicator while fetching data
         UIElements.initialLoadingIndicator.classList.remove('hidden');
         UIElements.guidePlaceholder.classList.remove('hidden');
 
-        // Try loading from cache first for a faster startup
         const cachedChannels = await loadDataFromDB('channels');
         const cachedPrograms = await loadDataFromDB('programs');
 
@@ -59,22 +55,19 @@ export async function initMainApp() {
             guideState.programs = cachedPrograms;
             finalizeGuideLoad(true);
         } else if (config.m3uContent) {
-            // Fallback to network data if cache is empty
             handleGuideLoad(config.m3uContent, config.epgContent);
         } else {
-            // If no data from cache or network, show the "no data" message
             UIElements.initialLoadingIndicator.classList.add('hidden');
             UIElements.noDataMessage.classList.remove('hidden');
         }
         
-        // Handle the initial route once the app is ready
         handleRouteChange();
 
     } catch (e) {
         showNotification("Initialization failed: " + e.message, true);
         UIElements.initialLoadingIndicator.classList.add('hidden');
         UIElements.noDataMessage.classList.remove('hidden');
-        navigate('/settings'); // Redirect to settings on failure
+        navigate('/settings');
     }
 }
 
@@ -130,9 +123,21 @@ function restoreModalDimensions() {
  * Sets up core application event listeners (navigation, modals, etc.).
  */
 function setupCoreEventListeners() {
-    // Main navigation
-    ['tabGuide', 'bottomNavGuide'].forEach(id => UIElements[id].addEventListener('click', () => switchTab('guide')));
-    ['tabSettings', 'bottomNavSettings'].forEach(id => UIElements[id].addEventListener('click', () => switchTab('settings')));
+    // UPDATED: Main navigation is now in the sidebar
+    UIElements.sidebarNavGuide.addEventListener('click', () => {
+        switchTab('guide');
+        // On mobile, hide sidebar after navigation
+        if (window.innerWidth < 1024) {
+             import('./modules/ui.js').then(({ toggleSidebar }) => toggleSidebar(false));
+        }
+    });
+    UIElements.sidebarNavSettings.addEventListener('click', () => {
+        switchTab('settings');
+        // On mobile, hide sidebar after navigation
+        if (window.innerWidth < 1024) {
+             import('./modules/ui.js').then(({ toggleSidebar }) => toggleSidebar(false));
+        }
+    });
     
     // Browser back/forward navigation
     window.addEventListener('popstate', handleRouteChange);
@@ -162,8 +167,6 @@ function setupCoreEventListeners() {
 
 // --- App Start ---
 document.addEventListener('DOMContentLoaded', () => {
-    // Setup listeners for the initial auth forms first
     setupAuthEventListeners();
-    // Then check the auth status to decide what to show
     checkAuthStatus();
 });
