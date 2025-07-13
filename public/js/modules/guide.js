@@ -138,7 +138,7 @@ const setupGuideForRender = (channelsToRender, resetScroll = false) => {
     UIElements.channelListContent.style.height = `${totalHeight}px`;
     UIElements.logoListContent.style.height = `${totalHeight}px`;
     UIElements.guideTimelineContent.style.height = `${totalHeight}px`;
-    UIElements.guideTimelineContent.style.width = `${totalWidth}px`; // <-- Bug Fix: Set the width for horizontal scrolling
+    UIElements.guideTimelineContent.style.width = `${totalWidth}px`;
     
     // Perform the initial render of visible items
     if (resetScroll) {
@@ -538,6 +538,7 @@ export function setupGuideEventListeners() {
             UIElements.logoList.scrollTop = scrollTop;
             UIElements.timeBar.scrollLeft = scrollLeft;
             renderVisibleItems(scrollTop);
+            updateNowLine(false); // Add this call to reposition the line after re-rendering
             scrollRequest = null;
         });
     }, { passive: true });
