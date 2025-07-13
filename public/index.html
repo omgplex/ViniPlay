@@ -10,9 +10,6 @@
     <script src="https://cdn.jsdelivr.net/npm/fuse.js/dist/fuse.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        :root {
-            --channel-width: 320px; /* Default width for the channel column */
-        }
         body { font-family: 'Inter', sans-serif; background-color: #111827; color: #d1d5db; }
         .custom-scrollbar::-webkit-scrollbar { height: 8px; width: 8px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #1f2937; }
@@ -33,12 +30,14 @@
         .programme-item .prog-time { font-size: 0.75rem; }
         #group-filter, #source-filter, #search-input, #timezone-offset-select { transition: all 0.2s ease; }
         #group-filter:hover, #source-filter:hover, #search-input:hover, #timezone-offset-select:hover { background-color: #4b5563; }
+        #channel-panel-container { transition: transform 0.3s ease-in-out; }
+        #sidebar-overlay { transition: opacity 0.3s ease-in-out; }
         body.modal-open { overflow: hidden; }
         button:disabled { cursor: not-allowed; opacity: 0.6; }
         .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3b82f6; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
-        #resizer { width: 8px; cursor: col-resize; background-color: #1f2937; transition: background-color 0.2s ease; position: relative; flex-shrink: 0; }
+        #resizer { width: 8px; cursor: col-resize; background-color: #1f2937; transition: background-color 0.2s ease; position: relative; }
         #resizer:hover { background-color: #3b82f6; }
         #resizer::after { content: '⋮'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #9ca3af; font-size: 18px; font-weight: bold; line-height: 1; pointer-events: none; text-shadow: 0 1px 1px rgba(0,0,0,0.5); }
         .resize-handle { position: absolute; bottom: 0; right: 0; width: 20px; height: 20px; cursor: se-resize; z-index: 10; }
@@ -90,6 +89,15 @@
             flex-shrink: 0;
             text-transform: uppercase;
         }
+
+        .source-badge {
+            font-size: 0.6rem;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 10px;
+            flex-shrink: 0;
+            text-transform: uppercase;
+        }
         .chno-badge {
             font-size: 0.65rem;
             font-weight: 600;
@@ -122,24 +130,6 @@
             opacity: 0;
             transform: translateY(20px);
         }
-
-        /* --- Virtual Guide Styles --- */
-        .guide-row {
-            display: flex;
-            position: absolute;
-            left: 0;
-            right: 0;
-            height: 96px; /* Must match guideState.rowHeight */
-        }
-        .guide-channel-info {
-            width: var(--channel-width);
-            flex-shrink: 0;
-        }
-        .guide-programs-container {
-            flex-grow: 1;
-            overflow: hidden; /* Important for horizontal scrolling */
-        }
-
     </style>
 </head>
 <body class="h-screen">
@@ -198,6 +188,9 @@
             <div class="flex items-center gap-4">
                  <span id="user-display" class="text-sm text-gray-400 hidden sm:block"></span>
                 <button id="logout-btn" class="text-sm bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-md transition-colors">Logout</button>
+                <button id="sidebar-toggle" class="lg:hidden p-2 rounded-md hover:bg-gray-700">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                </button>
             </div>
         </header>
 
@@ -211,7 +204,7 @@
         <main class="flex-grow flex flex-col overflow-hidden">
             <!-- TV Guide Page -->
             <div id="page-guide" class="flex flex-grow flex-col overflow-hidden">
-                 <div id="guide-controls-bar" class="flex flex-wrap items-center justify-between gap-4 p-2 sm:p-4 border-b border-gray-700 flex-shrink-0 bg-gray-800 z-20">
+                 <div id="guide-controls-bar" class="flex flex-wrap items-center justify-between gap-4 p-2 sm:p-4 border-b border-gray-700 flex-shrink-0">
                     <div class="flex items-center gap-2">
                         <button id="prev-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&lt;</button>
                         <button id="now-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">Now</button>
@@ -224,10 +217,7 @@
                         <div id="search-results-container" class="hidden absolute top-full right-0 w-full sm:w-96 max-h-80 overflow-y-auto bg-gray-800 border border-gray-600 rounded-md mt-1 z-50 custom-scrollbar shadow-lg"></div>
                     </div>
                 </div>
-                
-                <!-- *** VIRTUALIZATION: This is the new simplified guide structure *** -->
-                <div id="guide-container" class="flex-grow flex flex-col bg-gray-900 overflow-hidden relative">
-                    <!-- Placeholder for loading/no data messages -->
+                <div id="guide-container" class="flex-grow flex bg-gray-900 overflow-hidden relative">
                     <div id="guide-placeholder" class="absolute inset-0 flex items-center justify-center z-40">
                         <div id="initial-loading-indicator" class="text-center text-gray-400">
                             <div class="loader mx-auto"></div>
@@ -239,28 +229,26 @@
                             <p class="mt-1 text-sm">Go to the Settings tab to add and activate your M3U and EPG sources.</p>
                         </div>
                     </div>
-
-                    <!-- Guide Header (Filters and Timebar) -->
-                    <div id="guide-header-container" class="hidden flex-shrink-0 flex bg-gray-800/80 z-20 backdrop-blur-sm">
-                        <div id="channel-header" class="flex-shrink-0 p-2 border-b border-r border-gray-700/80 flex flex-col gap-2" style="width: var(--channel-width);">
-                            <select id="group-filter" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select>
-                            <select id="source-filter" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select>
+                    <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-40 hidden lg:hidden"></div>
+                    <div id="channel-panel-container" class="absolute lg:relative inset-y-0 left-0 w-64 sm:w-80 bg-gray-800/80 lg:bg-gray-800 backdrop-blur-sm lg:backdrop-blur-none z-50 lg:z-20 transform -translate-x-full lg:transform-none lg:translate-x-0 min-w-[250px] max-w-[80vw] lg:max-w-[30vw] flex-shrink-0 flex flex-col hidden lg:flex">
+                        <div class="p-2 border-b border-gray-700/80 flex-shrink-0 flex flex-col gap-2">
+                             <select id="group-filter" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select>
+                             <select id="source-filter" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select>
                         </div>
-                        <div id="resizer"></div>
-                        <div id="timeline-header-scroll" class="flex-grow overflow-x-hidden border-b border-gray-700/80">
-                            <div id="time-bar" class="h-[88px] relative"></div>
-                        </div>
+                        <div id="channel-list" class="overflow-y-auto custom-scrollbar flex-grow"></div>
                     </div>
-
-                    <!-- Virtualized Guide Content -->
-                    <div id="virtual-guide-scroll-container" class="flex-grow overflow-auto custom-scrollbar relative hidden">
-                        <!-- Sizer div sets the total scrollable height -->
-                        <div id="virtual-guide-sizer" class="relative w-full"></div>
-                        <!-- Content div holds the visible rows, absolutely positioned -->
-                        <div id="virtual-guide-content" class="absolute top-0 left-0 right-0"></div>
+                    <div id="resizer" class="hidden lg:block z-30"></div>
+                    <div id="logo-column" class="flex flex-col lg:hidden w-20 flex-shrink-0 bg-gray-900 border-r border-gray-700/50">
+                        <div class="h-24 flex-shrink-0 border-b border-gray-700/80"></div>
+                        <div id="logo-list" class="overflow-y-auto custom-scrollbar flex-grow"></div>
+                    </div>
+                    <div id="timeline-container" class="flex-grow flex flex-col overflow-hidden">
+                        <div id="time-bar" class="h-24 bg-gray-800/80 flex-shrink-0 relative z-10 overflow-x-hidden"></div>
+                        <div id="guide-timeline" class="overflow-auto custom-scrollbar relative flex-grow">
+                            <div id="now-line" class="absolute top-0 bottom-0 bg-red-500 w-0.5 z-20 hidden"></div>
+                        </div>
                     </div>
                 </div>
-                <!-- *** END OF VIRTUALIZATION STRUCTURE *** -->
             </div>
 
             <!-- Settings Page -->
