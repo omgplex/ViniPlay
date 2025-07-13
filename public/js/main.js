@@ -5,7 +5,7 @@
  * Initializes the app by setting up authentication, event listeners, and loading initial data.
  */
 
-import { appState, guideState, UIElements } from './modules/state.js';
+import { appState, guideState, UIElements, initUIElements } from './modules/state.js';
 import { apiFetch } from './modules/api.js';
 import { checkAuthStatus, setupAuthEventListeners } from './modules/auth.js';
 import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './modules/guide.js';
@@ -162,6 +162,9 @@ function setupCoreEventListeners() {
 
 // --- App Start ---
 document.addEventListener('DOMContentLoaded', () => {
+    // This is the crucial fix: Initialize the UI elements cache AFTER the DOM is loaded.
+    initUIElements();
+
     // Setup listeners for the initial auth forms first
     setupAuthEventListeners();
     // Then check the auth status to decide what to show
