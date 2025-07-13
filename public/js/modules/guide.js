@@ -6,7 +6,7 @@
  * This version includes performance optimizations:
  * - Virtual Scrolling (Windowing): Renders only the visible rows in the guide.
  * - Optimized DOM updates: Reduces DOM manipulation for smoother rendering.
- * - `requestAnimationFrame` for scrolling: Ensures perfect synchronization and no lag.
+ * - Centralized scroll handling for perfect synchronization.
  */
 
 import { appState, guideState, UIElements } from './state.js';
@@ -528,20 +528,51 @@ export function setupGuideEventListeners() {
     });
 
     // --- Optimized Scroll Syncing ---
-    UIElements.guideTimeline.addEventListener('scroll', () => {
+    // The guide timeline is the single source of truth for scrolling.
+    // This function handles its scroll events and syncs the other columns.
+    const handleTimelineScroll = () => {
+        // Use requestAnimationFrame to prevent layout thrashing and ensure smooth rendering.
         if (scrollRequest) {
             window.cancelAnimationFrame(scrollRequest);
         }
         scrollRequest = window.requestAnimationFrame(() => {
             const { scrollTop, scrollLeft } = UIElements.guideTimeline;
+
+            // Programmatically set the scrollTop for the channel and logo lists.
+            // Since their overflow is hidden, this just moves their content without showing a scrollbar.
             UIElements.channelList.scrollTop = scrollTop;
             UIElements.logoList.scrollTop = scrollTop;
+
+            // Sync the horizontal position of the top time bar.
             UIElements.timeBar.scrollLeft = scrollLeft;
+            
+            // Re-render the virtualized rows based on the new scroll position.
             renderVisibleItems(scrollTop);
-            updateNowLine(false); // Add this call to reposition the line after re-rendering
-            scrollRequest = null;
+            
+            // Ensure the "now" line is correctly positioned after a scroll.
+            updateNowLine(false);
+            
+            scrollRequest = null; // Clear the request ID.
         });
-    }, { passive: true });
+    };
+
+    // Listen for scroll events on the main timeline.
+    UIElements.guideTimeline.addEventListener('scroll', handleTimelineScroll, { passive: true });
+
+    // To allow scrolling when the mouse is over the channel or logo columns,
+    // we capture the 'wheel' event on them and redirect it to the main timeline.
+    const redirectWheelScroll = (e) => {
+        // Prevent the default action (which would be nothing, as their overflow is hidden).
+        e.preventDefault();
+        
+        // Apply the wheel's delta to the guide timeline's scroll position.
+        UIElements.guideTimeline.scrollTop += e.deltaY;
+        UIElements.guideTimeline.scrollLeft += e.deltaX;
+    };
+
+    // Attach the wheel event listeners. { passive: false } is needed to allow preventDefault().
+    UIElements.channelList.addEventListener('wheel', redirectWheelScroll, { passive: false });
+    UIElements.logoList.addEventListener('wheel', redirectWheelScroll, { passive: false });
 
 
     // --- Panel Resizer ---
