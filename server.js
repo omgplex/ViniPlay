@@ -254,13 +254,6 @@ async function processAndMergeSources() {
     const timezoneOffset = settings.timezoneOffset || 0;
     const activeEpgSources = settings.epgSources.filter(s => s.isActive);
 
-    // OPTIMIZATION: Define a time window to filter out very old programs
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    // Only keep programs that ended after midnight yesterday.
-    const epgStartTime = new Date(today.getTime() - (24 * 60 * 60 * 1000)); 
-
-
     for (const source of activeEpgSources) {
         console.log(`[EPG] Processing: ${source.name}`);
         try {
@@ -290,13 +283,6 @@ async function processAndMergeSources() {
                 const originalChannelId = prog._attributes?.channel;
                 if (!originalChannelId) continue;
                 
-                const progStop = parseEpgTime(prog._attributes.stop, timezoneOffset);
-
-                // OPTIMIZATION: Skip programs that are too old to reduce payload size.
-                if (progStop < epgStartTime) {
-                    continue;
-                }
-                
                 const m3uSourceProviders = settings.m3uSources.filter(m3u => m3u.isActive);
 
                 for(const m3uSource of m3uSourceProviders) {
@@ -311,7 +297,7 @@ async function processAndMergeSources() {
                     
                     mergedProgramData[uniqueChannelId].push({
                         start: parseEpgTime(prog._attributes.start, timezoneOffset).toISOString(),
-                        stop: progStop.toISOString(),
+                        stop: parseEpgTime(prog._attributes.stop, timezoneOffset).toISOString(),
                         title: titleNode.trim(),
                         desc: descNode.trim()
                     });
