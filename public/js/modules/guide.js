@@ -5,8 +5,8 @@
  *
  * This version includes performance optimizations:
  * - Virtual Scrolling (Windowing): Renders only the visible rows in the guide.
- * - Optimized DOM updates: Reduces DOM manipulation for smoother rendering.
- * - Centralized scroll handling for perfect synchronization.
+ * - Optimized DOM updates using CSS transforms for perfect, lag-free sync.
+ * - Unified scroll handling for mouse, trackpad, and touch.
  */
 
 import { appState, guideState, UIElements } from './state.js';
@@ -134,11 +134,9 @@ const setupGuideForRender = (channelsToRender, resetScroll = false) => {
     const totalHeight = channelsToRender.length * ROW_HEIGHT;
     const totalWidth = guideState.guideDurationHours * guideState.hourWidthPixels;
 
-    // Set the height and width of the content wrappers to create the scrollbars.
-    UIElements.channelListContent.style.height = `${totalHeight}px`;
-    UIElements.logoListContent.style.height = `${totalHeight}px`;
-    UIElements.guideTimelineContent.style.height = `${totalHeight}px`;
-    UIElements.guideTimelineContent.style.width = `${totalWidth}px`;
+    // Set the height/width of the *wrapper* to create the scrollbars
+    UIElements.guideTimelineContentWrapper.style.height = `${totalHeight}px`;
+    UIElements.guideTimelineContentWrapper.style.width = `${totalWidth}px`;
     
     // Perform the initial render of visible items
     if (resetScroll) {
@@ -162,9 +160,9 @@ const renderVisibleItems = (scrollTop) => {
         Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + VIRTUAL_ROW_BUFFER
     );
 
-    let channelsHTML = [];
-    let logosHTML = [];
-    let programsHTML = [];
+    let channelsHTML = '';
+    let logosHTML = '';
+    let programsHTML = '';
     
     const guideStart = new Date(guideState.currentDate);
     guideStart.setHours(0, 0, 0, 0);
@@ -191,7 +189,7 @@ const renderVisibleItems = (scrollTop) => {
         const chnoBadgeHTML = channel.chno ? `<span class="chno-badge">${channel.chno}</span>` : '';
 
         // 1. Channel List Item HTML
-        channelsHTML.push(`
+        channelsHTML += `
             <div class="guide-row" style="top: ${topPosition}px;">
                 <div class="h-full flex items-center justify-between p-2 border-b border-gray-700/50 flex-shrink-0">
                     <div class="flex items-center overflow-hidden cursor-pointer flex-grow min-w-0" data-url="${channel.url}" data-name="${channelName}" data-id="${channel.id}">
@@ -203,15 +201,15 @@ const renderVisibleItems = (scrollTop) => {
                     </div>
                     <svg data-channel-id="${channel.id}" class="w-6 h-6 text-gray-500 hover:text-yellow-400 favorite-star cursor-pointer flex-shrink-0 ml-2 ${channel.isFavorite ? 'favorited' : ''}" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8-2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>
                 </div>
-            </div>`);
+            </div>`;
 
         // 2. Logo List Item HTML
-        logosHTML.push(`
+        logosHTML += `
             <div class="guide-row" style="top: ${topPosition}px;">
                 <div class="h-full flex items-center justify-center p-1 border-b border-gray-700/50 flex-shrink-0 cursor-pointer" data-url="${channel.url}" data-name="${channelName}" data-id="${channel.id}">
                     <img src="${channel.logo}" onerror="this.onerror=null; this.src='https.placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-14 h-14 object-contain pointer-events-none">
                 </div>
-            </div>`);
+            </div>`;
 
         // 3. Program Timeline Row HTML
         let programItemsHTML = '';
@@ -234,9 +232,9 @@ const renderVisibleItems = (scrollTop) => {
     }
 
     // Set innerHTML once for each container to minimize DOM reflow
-    UIElements.channelListContent.innerHTML = channelsHTML.join('');
-    UIElements.logoListContent.innerHTML = logosHTML.join('');
-    UIElements.guideTimelineContent.innerHTML = `<div id="now-line" class="absolute top-0 w-0.5 bg-red-500 z-20 hidden"></div>` + programsHTML.join('');
+    UIElements.channelListContent.innerHTML = channelsHTML;
+    UIElements.logoListContent.innerHTML = logosHTML;
+    UIElements.guideTimelineContent.innerHTML = `<div id="now-line" class="absolute top-0 w-0.5 bg-red-500 z-20 hidden"></div>` + programsHTML;
 };
 
 
@@ -269,7 +267,7 @@ const updateNowLine = (shouldScroll = false) => {
     const guideStart = new Date(guideState.currentDate);
     guideStart.setHours(0, 0, 0, 0);
     
-    nowLineEl.style.height = `${UIElements.guideTimelineContent.style.height}`;
+    nowLineEl.style.height = `${UIElements.guideTimelineContentWrapper.style.height}`;
     const now = new Date();
     const guideEnd = new Date(guideStart.getTime() + guideState.guideDurationHours * 3600 * 1000);
 
@@ -528,52 +526,84 @@ export function setupGuideEventListeners() {
     });
 
     // --- Optimized Scroll Syncing ---
-    // The guide timeline is the single source of truth for scrolling.
-    // This function handles its scroll events and syncs the other columns.
     const handleTimelineScroll = () => {
-        // Use requestAnimationFrame to prevent layout thrashing and ensure smooth rendering.
         if (scrollRequest) {
             window.cancelAnimationFrame(scrollRequest);
         }
         scrollRequest = window.requestAnimationFrame(() => {
             const { scrollTop, scrollLeft } = UIElements.guideTimeline;
-
-            // Programmatically set the scrollTop for the channel and logo lists.
-            // Since their overflow is hidden, this just moves their content without showing a scrollbar.
-            UIElements.channelList.scrollTop = scrollTop;
-            UIElements.logoList.scrollTop = scrollTop;
+            
+            // This is the key change: use CSS transforms for performance.
+            // This moves the content visually without triggering a separate, laggy scroll event.
+            const transformValue = `translateY(-${scrollTop}px)`;
+            UIElements.channelListContent.style.transform = transformValue;
+            UIElements.logoListContent.style.transform = transformValue;
+            UIElements.guideTimelineContent.style.transform = transformValue;
 
             // Sync the horizontal position of the top time bar.
             UIElements.timeBar.scrollLeft = scrollLeft;
             
-            // Re-render the virtualized rows based on the new scroll position.
+            // The virtual rows are already positioned absolutely within the content div,
+            // so we don't need to re-render them here. The transform moves the whole block.
+            // We just need to check if we need to load new rows at the edges.
             renderVisibleItems(scrollTop);
-            
-            // Ensure the "now" line is correctly positioned after a scroll.
+
             updateNowLine(false);
             
-            scrollRequest = null; // Clear the request ID.
+            scrollRequest = null;
         });
     };
 
-    // Listen for scroll events on the main timeline.
     UIElements.guideTimeline.addEventListener('scroll', handleTimelineScroll, { passive: true });
 
-    // To allow scrolling when the mouse is over the channel or logo columns,
-    // we capture the 'wheel' event on them and redirect it to the main timeline.
-    const redirectWheelScroll = (e) => {
-        // Prevent the default action (which would be nothing, as their overflow is hidden).
-        e.preventDefault();
-        
-        // Apply the wheel's delta to the guide timeline's scroll position.
-        UIElements.guideTimeline.scrollTop += e.deltaY;
-        UIElements.guideTimeline.scrollLeft += e.deltaX;
+    // --- Unified Scroll Input (Mouse Wheel & Touch) ---
+    let isDragging = false;
+    let startY = 0;
+    let startScrollTop = 0;
+
+    const handleDragStart = (e) => {
+        isDragging = true;
+        startY = e.touches ? e.touches[0].pageY : e.pageY;
+        startScrollTop = UIElements.guideTimeline.scrollTop;
+        // Add a class to the body to prevent text selection while dragging
+        document.body.style.cursor = 'grabbing';
+        document.body.style.userSelect = 'none';
     };
 
-    // Attach the wheel event listeners. { passive: false } is needed to allow preventDefault().
-    UIElements.channelList.addEventListener('wheel', redirectWheelScroll, { passive: false });
-    UIElements.logoList.addEventListener('wheel', redirectWheelScroll, { passive: false });
+    const handleDragMove = (e) => {
+        if (!isDragging) return;
+        e.preventDefault();
+        const y = e.touches ? e.touches[0].pageY : e.pageY;
+        const walk = (y - startY) * 1.5; // Multiply for a faster scroll feel
+        UIElements.guideTimeline.scrollTop = startScrollTop - walk;
+    };
 
+    const handleDragEnd = () => {
+        isDragging = false;
+        document.body.style.cursor = 'default';
+        document.body.style.userSelect = 'auto';
+    };
+
+    const handleWheel = (e) => {
+        e.preventDefault();
+        UIElements.guideTimeline.scrollTop += e.deltaY;
+    };
+    
+    // Attach events to all three columns to capture input anywhere
+    ['channel-list', 'logo-list', 'guide-timeline'].forEach(id => {
+        const el = UIElements[id];
+        if (el) {
+            el.addEventListener('wheel', handleWheel, { passive: false });
+            el.addEventListener('mousedown', handleDragStart, { passive: false });
+            el.addEventListener('touchstart', handleDragStart, { passive: false });
+        }
+    });
+
+    // Add mouse move/up listeners to the window to handle dragging outside the initial element
+    window.addEventListener('mousemove', handleDragMove);
+    window.addEventListener('touchmove', handleDragMove, { passive: false });
+    window.addEventListener('mouseup', handleDragEnd);
+    window.addEventListener('touchend', handleDragEnd);
 
     // --- Panel Resizer ---
     UIElements.resizer.addEventListener('mousedown', e => {
