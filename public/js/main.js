@@ -6,12 +6,12 @@
  */
 
 import { appState, guideState, UIElements } from './modules/state.js';
-import { apiFetch, saveUserSetting } from './modules/api.js';
+import { apiFetch } from './modules/api.js';
 import { checkAuthStatus, setupAuthEventListeners } from './modules/auth.js';
 import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './modules/guide.js';
 import { setupPlayerEventListeners } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
-import { makeModalResizable, navigate, switchTab, handleRouteChange, handleConfirm, showNotification } from './modules/ui.js';
+import { makeModalResizable, navigate, switchTab, handleRouteChange, handleConfirm } from './modules/ui.js';
 
 /**
  * Initializes the main application after successful authentication.
@@ -39,8 +39,8 @@ export async function initMainApp() {
         const config = await response.json();
         guideState.settings = config.settings || {};
         
-        // Restore dimensions of resizable modals and guide column
-        restoreUIDimensions();
+        // Restore dimensions of resizable modals
+        restoreModalDimensions();
         
         // Populate UI elements that depend on settings
         populateTimezoneSelector();
@@ -111,25 +111,18 @@ async function loadDataFromDB(key) {
 
 
 /**
- * Restores the dimensions of resizable modals and the guide column from saved settings.
+ * Restores the dimensions of resizable modals from saved settings.
  */
-function restoreUIDimensions() {
-    // Restore player modal size
+function restoreModalDimensions() {
     if (guideState.settings.playerDimensions) {
         const { width, height } = guideState.settings.playerDimensions;
         if (width) UIElements.videoModalContainer.style.width = `${width}px`;
         if (height) UIElements.videoModalContainer.style.height = `${height}px`;
     }
-    // Restore details modal size
     if (guideState.settings.programDetailsDimensions) {
         const { width, height } = guideState.settings.programDetailsDimensions;
         if (width) UIElements.programDetailsContainer.style.width = `${width}px`;
         if (height) UIElements.programDetailsContainer.style.height = `${height}px`;
-    }
-    // Restore guide column width
-    if (guideState.settings.guideColumnWidth) {
-        guideState.channelColumnWidth = guideState.settings.guideColumnWidth;
-        document.documentElement.style.setProperty('--channel-width', `${guideState.channelColumnWidth}px`);
     }
 }
 
@@ -144,10 +137,22 @@ function setupCoreEventListeners() {
     // Browser back/forward navigation
     window.addEventListener('popstate', handleRouteChange);
 
+    // Sidebar toggles
+    UIElements.sidebarToggle.addEventListener('click', () => {
+        import('./modules/ui.js').then(({ toggleSidebar }) => toggleSidebar(true));
+    });
+    UIElements.sidebarOverlay.addEventListener('click', () => {
+        import('./modules/ui.js').then(({ toggleSidebar }) => toggleSidebar(false));
+    });
+
     // Modal controls
-    UIElements.confirmCancelBtn.addEventListener('click', () => closeModal(UIElements.confirmModal));
+    UIElements.confirmCancelBtn.addEventListener('click', () => {
+        import('./modules/ui.js').then(({ closeModal }) => closeModal(UIElements.confirmModal));
+    });
     UIElements.confirmOkBtn.addEventListener('click', handleConfirm);
-    UIElements.detailsCloseBtn.addEventListener('click', () => closeModal(UIElements.programDetailsModal));
+    UIElements.detailsCloseBtn.addEventListener('click', () => {
+        import('./modules/ui.js').then(({ closeModal }) => closeModal(UIElements.programDetailsModal));
+    });
 
     // Resizable modals
     makeModalResizable(UIElements.videoResizeHandle, UIElements.videoModalContainer, 400, 300, 'playerDimensions');
