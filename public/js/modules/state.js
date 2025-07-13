@@ -28,6 +28,11 @@ export const guideState = {
     channelGroups: new Set(),
     channelSources: new Set(), // For the source filter
     visibleChannels: [],
+    
+    // --- VIRTUALIZATION SETTINGS ---
+    rowHeight: 96, // The height of a single channel row in pixels. Must match CSS.
+    renderBuffer: 5, // Number of rows to render above and below the viewport.
+    channelColumnWidth: 320, // Default width, will be updated from user settings.
 };
 
 // A cache for frequently accessed DOM elements
