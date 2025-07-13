@@ -30,18 +30,11 @@ export const guideState = {
     visibleChannels: [],
 };
 
-// A cache for frequently accessed DOM elements.
-// This object will be populated by initUIElements() after the DOM is ready.
-export const UIElements = {};
-
-/**
- * Populates the UIElements cache after the DOM is ready.
- * This should be called once on application startup.
- */
-export function initUIElements() {
-    const elementIds = [...document.querySelectorAll('[id]')];
-    elementIds.forEach(el => {
-        const camelCaseId = el.id.replace(/-(\w)/g, (match, letter) => letter.toUpperCase());
-        UIElements[camelCaseId] = el;
-    });
-}
+// A cache for frequently accessed DOM elements
+export const UIElements = Object.fromEntries(
+    [...document.querySelectorAll('[id]')].map(el => [
+        // Convert kebab-case id to camelCase for easier access in JS
+        el.id.replace(/-(\w)/g, (match, letter) => letter.toUpperCase()),
+        el
+    ])
+);
