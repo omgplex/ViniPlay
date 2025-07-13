@@ -132,11 +132,13 @@ const setupGuideForRender = (channelsToRender, resetScroll = false) => {
     renderTimeBar();
 
     const totalHeight = channelsToRender.length * ROW_HEIGHT;
-    // Set the height of the content wrappers to the total height of all items
-    // This creates the scrollbar.
+    const totalWidth = guideState.guideDurationHours * guideState.hourWidthPixels;
+
+    // Set the height and width of the content wrappers to create the scrollbars.
     UIElements.channelListContent.style.height = `${totalHeight}px`;
     UIElements.logoListContent.style.height = `${totalHeight}px`;
     UIElements.guideTimelineContent.style.height = `${totalHeight}px`;
+    UIElements.guideTimelineContent.style.width = `${totalWidth}px`; // <-- Bug Fix: Set the width for horizontal scrolling
     
     // Perform the initial render of visible items
     if (resetScroll) {
