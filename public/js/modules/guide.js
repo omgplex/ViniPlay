@@ -142,7 +142,8 @@ const setupGuideForRender = (channelsToRender, resetScroll = false) => {
     if (resetScroll) {
         UIElements.guideTimeline.scrollTop = 0;
     }
-    renderVisibleItems(UIElements.guideTimeline.scrollTop);
+    // Manually trigger the scroll handler to render the initial view
+    handleTimelineScroll();
     updateNowLine(resetScroll);
 };
 
@@ -156,7 +157,7 @@ const renderVisibleItems = (scrollTop) => {
     // Calculate the start and end indices of the rows to render
     const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - VIRTUAL_ROW_BUFFER);
     const endIndex = Math.min(
-        guideState.visibleChannels.length - 1,
+        guideState.visibleChannels.length,
         Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + VIRTUAL_ROW_BUFFER
     );
 
@@ -173,7 +174,7 @@ const renderVisibleItems = (scrollTop) => {
     const sourceColorMap = new Map();
     let colorIndex = 0;
 
-    for (let i = startIndex; i <= endIndex; i++) {
+    for (let i = startIndex; i < endIndex; i++) {
         const channel = guideState.visibleChannels[i];
         if (!channel) continue;
 
@@ -228,7 +229,7 @@ const renderVisibleItems = (scrollTop) => {
             
             programItemsHTML += `<div class="programme-item absolute top-1 bottom-1 bg-gray-800 rounded-md p-2 overflow-hidden flex flex-col justify-center z-5 ${isLive ? 'live' : ''} ${progStop < now ? 'past' : ''}" style="left:${left}px; width:${Math.max(0, width - 2)}px" data-channel-url="${channel.url}" data-channel-id="${channel.id}" data-channel-name="${channelName}" data-prog-title="${prog.title}" data-prog-desc="${prog.desc}" data-prog-start="${progStart.toISOString()}" data-prog-stop="${progStop.toISOString()}"><div class="programme-progress" style="width:${progressWidth}%"></div><p class="prog-title text-white font-semibold truncate relative z-10">${prog.title}</p><p class="prog-time text-gray-400 truncate relative z-10">${progStart.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p></div>`;
         });
-        programsHTML.push(`<div class="guide-row" style="top: ${topPosition}px;"><div class="h-full border-b border-gray-700/50 relative">${programItemsHTML}</div></div>`);
+        programsHTML += `<div class="guide-row" style="top: ${topPosition}px;"><div class="h-full border-b border-gray-700/50 relative">${programItemsHTML}</div></div>`;
     }
 
     // Set innerHTML once for each container to minimize DOM reflow
@@ -428,6 +429,32 @@ const throttle = (func, limit) => {
     };
 };
 
+const handleTimelineScroll = () => {
+    if (scrollRequest) {
+        window.cancelAnimationFrame(scrollRequest);
+    }
+    scrollRequest = window.requestAnimationFrame(() => {
+        const { scrollTop, scrollLeft } = UIElements.guideTimeline;
+        
+        // This is the key change: use CSS transforms for performance.
+        // This moves the content visually without triggering a separate, laggy scroll event.
+        const transformValue = `translateY(-${scrollTop}px)`;
+        UIElements.channelListContent.style.transform = transformValue;
+        UIElements.logoListContent.style.transform = transformValue;
+        UIElements.guideTimelineContent.style.transform = transformValue;
+
+        // Sync the horizontal position of the top time bar.
+        UIElements.timeBar.scrollLeft = scrollLeft;
+        
+        // Re-render the virtualized items to load new rows at the edges.
+        renderVisibleItems(scrollTop);
+
+        updateNowLine(false);
+        
+        scrollRequest = null;
+    });
+};
+
 // --- Event Listeners ---
 
 /**
@@ -526,34 +553,6 @@ export function setupGuideEventListeners() {
     });
 
     // --- Optimized Scroll Syncing ---
-    const handleTimelineScroll = () => {
-        if (scrollRequest) {
-            window.cancelAnimationFrame(scrollRequest);
-        }
-        scrollRequest = window.requestAnimationFrame(() => {
-            const { scrollTop, scrollLeft } = UIElements.guideTimeline;
-            
-            // This is the key change: use CSS transforms for performance.
-            // This moves the content visually without triggering a separate, laggy scroll event.
-            const transformValue = `translateY(-${scrollTop}px)`;
-            UIElements.channelListContent.style.transform = transformValue;
-            UIElements.logoListContent.style.transform = transformValue;
-            UIElements.guideTimelineContent.style.transform = transformValue;
-
-            // Sync the horizontal position of the top time bar.
-            UIElements.timeBar.scrollLeft = scrollLeft;
-            
-            // The virtual rows are already positioned absolutely within the content div,
-            // so we don't need to re-render them here. The transform moves the whole block.
-            // We just need to check if we need to load new rows at the edges.
-            renderVisibleItems(scrollTop);
-
-            updateNowLine(false);
-            
-            scrollRequest = null;
-        });
-    };
-
     UIElements.guideTimeline.addEventListener('scroll', handleTimelineScroll, { passive: true });
 
     // --- Unified Scroll Input (Mouse Wheel & Touch) ---
@@ -587,6 +586,7 @@ export function setupGuideEventListeners() {
     const handleWheel = (e) => {
         e.preventDefault();
         UIElements.guideTimeline.scrollTop += e.deltaY;
+        UIElements.guideTimeline.scrollLeft += e.deltaX;
     };
     
     // Attach events to all three columns to capture input anywhere
