@@ -441,8 +441,7 @@ export function setupGuideEventListeners() {
     const onGuideClick = (e) => {
         const favoriteStar = e.target.closest('.favorite-star');
         const channelItem = e.target.closest('[data-url]');
-        const progItem = e.target.closest('.programme-item');
-
+        
         if (favoriteStar) {
             e.stopPropagation();
             const channelId = favoriteStar.dataset.channelId;
@@ -452,8 +451,19 @@ export function setupGuideEventListeners() {
             guideState.settings.favorites = guideState.channels.filter(c => c.isFavorite).map(c => c.id);
             saveUserSetting('favorites', guideState.settings.favorites);
             renderVisibleRows(); // Re-render to update the star
-            return;
+            return; // Prevent playing the channel
         }
+        
+        if (channelItem) {
+            playChannel(channelItem.dataset.url, channelItem.dataset.name, channelItem.dataset.id);
+            if (window.innerWidth < 1024) {
+                import('./ui.js').then(({ toggleSidebar }) => toggleSidebar(false));
+            }
+        }
+    };
+    
+    const onTimelineClick = (e) => {
+        const progItem = e.target.closest('.programme-item');
         if (progItem) {
              UIElements.detailsTitle.textContent = progItem.dataset.progTitle;
              const progStart = new Date(progItem.dataset.progStart);
@@ -465,14 +475,13 @@ export function setupGuideEventListeners() {
                  closeModal(UIElements.programDetailsModal);
              };
              openModal(UIElements.programDetailsModal);
-        } else if (channelItem) {
-            playChannel(channelItem.dataset.url, channelItem.dataset.name, channelItem.dataset.id);
-            if (window.innerWidth < 1024) {
-                import('./ui.js').then(({ toggleSidebar }) => toggleSidebar(false));
-            }
         }
-    }
-    UIElements.guideContainer.addEventListener('click', onGuideClick);
+    };
+    
+    // Attach more specific listeners
+    UIElements.channelList.addEventListener('click', onGuideClick);
+    UIElements.logoList.addEventListener('click', onGuideClick);
+    UIElements.guideTimeline.addEventListener('click', onTimelineClick);
     
     UIElements.searchResultsContainer.addEventListener('click', e => {
         // ... (search result click logic can be added here)
