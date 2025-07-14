@@ -124,7 +124,7 @@ function restoreModalDimensions() {
         if (width) UIElements.programDetailsContainer.style.width = `${width}px`;
         if (height) UIElements.programDetailsContainer.style.height = `${height}px`;
     }
-}
+} 
 
 /**
  * Sets up core application event listeners (navigation, modals, etc.).
