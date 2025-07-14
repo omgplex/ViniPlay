@@ -15,7 +15,6 @@ export const appState = {
     fuseChannels: null, // Fuse.js instance for channels
     fusePrograms: null, // Fuse.js instance for programs
     currentSourceTypeForEditor: 'url',
-    isScrolling: false, // Flag to manage scroll-related updates
 };
 
 // State specific to the TV Guide
@@ -29,11 +28,6 @@ export const guideState = {
     channelGroups: new Set(),
     channelSources: new Set(), // For the source filter
     visibleChannels: [],
-    // Virtual scrolling state
-    rowHeight: 96, // Corresponds to h-24 in TailwindCSS
-    renderBuffer: 5, // Number of rows to render above/below viewport
-    lastScrollTop: 0,
-    lastScrollLeft: 0,
 };
 
 // A cache for frequently accessed DOM elements
