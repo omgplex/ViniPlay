@@ -130,27 +130,6 @@
             opacity: 0;
             transform: translateY(20px);
         }
-
-        /* Virtual Scrolling Styles */
-        .virtual-scroll-container {
-            overflow-y: auto;
-            position: relative;
-            -webkit-overflow-scrolling: touch;
-        }
-        .virtual-scroll-sizer {
-            position: relative;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-        }
-        .virtual-scroll-content {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            contain: content;
-        }
     </style>
 </head>
 <body class="h-screen">
@@ -256,26 +235,17 @@
                              <select id="group-filter" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select>
                              <select id="source-filter" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select>
                         </div>
-                        <div id="channel-list" class="custom-scrollbar flex-grow virtual-scroll-container">
-                            <div class="virtual-scroll-sizer"></div>
-                            <div class="virtual-scroll-content"></div>
-                        </div>
+                        <div id="channel-list" class="overflow-y-auto custom-scrollbar flex-grow"></div>
                     </div>
                     <div id="resizer" class="hidden lg:block z-30"></div>
                     <div id="logo-column" class="flex flex-col lg:hidden w-20 flex-shrink-0 bg-gray-900 border-r border-gray-700/50">
                         <div class="h-24 flex-shrink-0 border-b border-gray-700/80"></div>
-                        <div id="logo-list" class="custom-scrollbar flex-grow virtual-scroll-container">
-                            <div class="virtual-scroll-sizer"></div>
-                            <div class="virtual-scroll-content"></div>
-                        </div>
+                        <div id="logo-list" class="overflow-y-auto custom-scrollbar flex-grow"></div>
                     </div>
                     <div id="timeline-container" class="flex-grow flex flex-col overflow-hidden">
                         <div id="time-bar" class="h-24 bg-gray-800/80 flex-shrink-0 relative z-10 overflow-x-hidden"></div>
-                        <div id="guide-timeline" class="custom-scrollbar relative flex-grow virtual-scroll-container">
-                            <!-- FIX: Re-added now-line here and increased z-index -->
+                        <div id="guide-timeline" class="overflow-auto custom-scrollbar relative flex-grow">
                             <div id="now-line" class="absolute top-0 bottom-0 bg-red-500 w-0.5 z-30 hidden"></div>
-                            <div class="virtual-scroll-sizer"></div>
-                            <div class="virtual-scroll-content"></div>
                         </div>
                     </div>
                 </div>
