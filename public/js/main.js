@@ -8,10 +8,10 @@
 import { appState, guideState, UIElements } from './modules/state.js';
 import { apiFetch } from './modules/api.js';
 import { checkAuthStatus, setupAuthEventListeners } from './modules/auth.js';
-import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './modules/guide.js';
+import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners, handleSearchAndFilter } from './modules/guide.js';
 import { setupPlayerEventListeners } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
-import { makeModalResizable, navigate, switchTab, handleRouteChange, handleConfirm } from './modules/ui.js';
+import { makeModalResizable, navigate, switchTab, handleRouteChange, handleConfirm, showNotification } from './modules/ui.js';
 
 /**
  * Initializes the main application after successful authentication.
@@ -39,14 +39,10 @@ export async function initMainApp() {
         const config = await response.json();
         guideState.settings = config.settings || {};
         
-        // Restore dimensions of resizable modals
         restoreModalDimensions();
-        
-        // Populate UI elements that depend on settings
         populateTimezoneSelector();
         updateUIFromSettings();
 
-        // Show loading indicator while fetching data
         UIElements.initialLoadingIndicator.classList.remove('hidden');
         UIElements.guidePlaceholder.classList.remove('hidden');
 
@@ -54,20 +50,28 @@ export async function initMainApp() {
         const cachedChannels = await loadDataFromDB('channels');
         const cachedPrograms = await loadDataFromDB('programs');
 
+        let dataLoaded = false;
         if (cachedChannels?.length > 0 && cachedPrograms) {
+            console.log("Loading guide data from cache.");
             guideState.channels = cachedChannels;
             guideState.programs = cachedPrograms;
             finalizeGuideLoad(true);
-        } else if (config.m3uContent) {
-            // Fallback to network data if cache is empty
+            dataLoaded = true;
+        } 
+        
+        if (config.m3uContent) {
+            console.log("Loading guide data from network.");
             handleGuideLoad(config.m3uContent, config.epgContent);
-        } else {
+            dataLoaded = true;
+        } 
+        
+        if (!dataLoaded) {
             // If no data from cache or network, show the "no data" message
             UIElements.initialLoadingIndicator.classList.add('hidden');
             UIElements.noDataMessage.classList.remove('hidden');
+             handleSearchAndFilter(true); // This will show the empty state correctly
         }
         
-        // Handle the initial route once the app is ready
         handleRouteChange();
 
     } catch (e) {
@@ -162,8 +166,6 @@ function setupCoreEventListeners() {
 
 // --- App Start ---
 document.addEventListener('DOMContentLoaded', () => {
-    // Setup listeners for the initial auth forms first
     setupAuthEventListeners();
-    // Then check the auth status to decide what to show
     checkAuthStatus();
 });
