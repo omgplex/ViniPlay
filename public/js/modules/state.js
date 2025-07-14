@@ -37,18 +37,10 @@ export const guideState = {
 };
 
 // A cache for frequently accessed DOM elements
-// This uses a Proxy to dynamically find elements, reducing initial overhead.
-export const UIElements = new Proxy({}, {
-    get: (target, prop) => {
-        if (prop in target) {
-            return target[prop];
-        }
-        // Convert camelCase prop to kebab-case id
-        const id = prop.replace(/([A-Z])/g, '-$1').toLowerCase();
-        const element = document.getElementById(id);
-        if (element) {
-            target[prop] = element; // Cache it for future access
-        }
-        return element;
-    }
-});
+export const UIElements = Object.fromEntries(
+    [...document.querySelectorAll('[id]')].map(el => [
+        // Convert kebab-case id to camelCase for easier access in JS
+        el.id.replace(/-(\w)/g, (match, letter) => letter.toUpperCase()),
+        el
+    ])
+);
