@@ -15,6 +15,7 @@ export const appState = {
     fuseChannels: null, // Fuse.js instance for channels
     fusePrograms: null, // Fuse.js instance for programs
     currentSourceTypeForEditor: 'url',
+    isScrolling: false, // Flag to manage scroll-related updates
 };
 
 // State specific to the TV Guide
@@ -28,13 +29,26 @@ export const guideState = {
     channelGroups: new Set(),
     channelSources: new Set(), // For the source filter
     visibleChannels: [],
+    // Virtual scrolling state
+    rowHeight: 96, // Corresponds to h-24 in TailwindCSS
+    renderBuffer: 5, // Number of rows to render above/below viewport
+    lastScrollTop: 0,
+    lastScrollLeft: 0,
 };
 
 // A cache for frequently accessed DOM elements
-export const UIElements = Object.fromEntries(
-    [...document.querySelectorAll('[id]')].map(el => [
-        // Convert kebab-case id to camelCase for easier access in JS
-        el.id.replace(/-(\w)/g, (match, letter) => letter.toUpperCase()),
-        el
-    ])
-);
+// This uses a Proxy to dynamically find elements, reducing initial overhead.
+export const UIElements = new Proxy({}, {
+    get: (target, prop) => {
+        if (prop in target) {
+            return target[prop];
+        }
+        // Convert camelCase prop to kebab-case id
+        const id = prop.replace(/([A-Z])/g, '-$1').toLowerCase();
+        const element = document.getElementById(id);
+        if (element) {
+            target[prop] = element; // Cache it for future access
+        }
+        return element;
+    }
+});
