@@ -13,20 +13,6 @@ import { setupPlayerEventListeners } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
 import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal } from './modules/ui.js';
 
-// A utility function to limit the execution of a function to once every specified time limit.
-const throttle = (func, limit) => {
-    let inThrottle;
-    return function() {
-        const args = arguments;
-        const context = this;
-        if (!inThrottle) {
-            func.apply(context, args);
-            inThrottle = true;
-            setTimeout(() => inThrottle = false, limit);
-        }
-    };
-};
-
 /**
  * Initializes the main application after successful authentication.
  */
@@ -81,9 +67,6 @@ export async function initMainApp() {
             UIElements.noDataMessage.classList.remove('hidden');
         }
         
-        // Set initial margin for main content to account for the fixed top bar
-        setMainMargin();
-
         // Handle the initial route once the app is ready
         handleRouteChange();
 
@@ -144,17 +127,7 @@ function restoreModalDimensions() {
 }
 
 /**
- * Dynamically sets the margin-top of the main content area to clear the fixed top bar.
- */
-const setMainMargin = () => {
-    const topBarWrapper = UIElements.topBarWrapper;
-    if (topBarWrapper) {
-        document.documentElement.style.setProperty('--dynamic-top-margin', `${topBarWrapper.offsetHeight}px`);
-    }
-};
-
-/**
- * Sets up core application event listeners (navigation, modals, scroll hiding, etc.).
+ * Sets up core application event listeners (navigation, modals, etc.).
  */
 function setupCoreEventListeners() {
     // Main navigation
@@ -176,71 +149,7 @@ function setupCoreEventListeners() {
     // Resizable modals
     makeModalResizable(UIElements.videoResizeHandle, UIElements.videoModalContainer, 400, 300, 'playerDimensions');
     makeModalResizable(UIElements.detailsResizeHandle, UIElements.programDetailsContainer, 320, 250, 'programDetailsDimensions');
-
-    // Scroll handling for header visibility
-    let lastScrollTop = 0;
-    const topBarWrapper = UIElements.topBarWrapper;
-
-    // Recalculate main margin on window resize, as topBarWrapper height might change
-    window.addEventListener('resize', setMainMargin);
-
-    UIElements.guideContainer.addEventListener('scroll', throttle(() => {
-        const scrollTop = UIElements.guideContainer.scrollTop;
-        const currentTopBarHeight = topBarWrapper.offsetHeight; // Get current height dynamically
-        
-        // Only hide/show the top bar if on the TV Guide page
-        if (window.location.pathname.startsWith('/tvguide') || window.location.pathname === '/') {
-            if (scrollTop > lastScrollTop && scrollTop > 0) { // Scrolling down and not at very top
-                topBarWrapper.classList.add('top-bar-hidden');
-                topBarWrapper.classList.remove('top-bar-visible');
-            } else if (scrollTop < lastScrollTop || scrollTop === 0) { // Scrolling up or at top
-                topBarWrapper.classList.remove('top-bar-hidden');
-                topBarWrapper.classList.add('top-bar-visible');
-            }
-        } else {
-            // If not on guide page, always keep top bar visible
-            topBarWrapper.classList.remove('top-bar-hidden');
-            topBarWrapper.classList.add('top-bar-visible');
-        }
-        lastScrollTop = scrollTop;
-    }, 100)); // Throttle to prevent performance issues
 }
-
-/**
- * Handles client-side routing by showing/hiding pages based on the URL path.
- * This function is also responsible for ensuring the top bar visibility and main content margin
- * are correct upon route changes.
- */
-export const handleRouteChange = () => {
-    const path = window.location.pathname;
-    const isGuide = path.startsWith('/tvguide') || path === '/';
-
-    // Toggle active state for desktop and mobile navigation buttons
-    ['tabGuide', 'bottomNavGuide'].forEach(id => UIElements[id]?.classList.toggle('active', isGuide));
-    ['tabSettings', 'bottomNavSettings'].forEach(id => UIElements[id]?.classList.toggle('active', !isGuide));
-
-    // Show/hide the relevant page content
-    UIElements.pageGuide.classList.toggle('hidden', !isGuide);
-    UIElements.pageGuide.classList.toggle('flex', isGuide);
-    UIElements.pageSettings.classList.toggle('hidden', isGuide);
-    UIElements.pageSettings.classList.toggle('flex', !isGuide);
-    
-    // Always ensure top bar is visible on route change (it might have been hidden by scroll on guide)
-    const topBarWrapper = UIElements.topBarWrapper;
-    topBarWrapper.classList.remove('top-bar-hidden');
-    topBarWrapper.classList.add('top-bar-visible');
-    
-    // Recalculate main margin after the top bar's visibility and dimensions settle for the new route
-    setTimeout(setMainMargin, 50); // Small delay to allow layout to settle
-
-    // If navigating to the settings page, refresh relevant data
-    if (!isGuide) {
-        updateUIFromSettings();
-        if (appState.currentUser?.isAdmin) {
-            refreshUserList();
-        }
-    }
-};
 
 
 // --- App Start ---
