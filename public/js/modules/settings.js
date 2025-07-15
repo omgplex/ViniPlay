@@ -115,6 +115,11 @@ export const updateUIFromSettings = () => {
     const selectedUA = (settings.userAgents || []).find(ua => ua.id === UIElements.userAgentSelect.value);
     UIElements.editUserAgentBtn.disabled = !selectedUA;
     UIElements.deleteUserAgentBtn.disabled = !selectedUA || selectedUA.isDefault;
+
+    // --- MODIFIED: Ensure user list is always populated for admins when this page is viewed.
+    if (appState.currentUser?.isAdmin) {
+        refreshUserList();
+    }
 };
 
 
@@ -125,19 +130,24 @@ export const updateUIFromSettings = () => {
  */
 export const refreshUserList = async () => {
     if (!appState.currentUser?.isAdmin) return;
-    const res = await apiFetch('/api/users');
-    if (!res) return;
-    const users = await res.json();
-    UIElements.userList.innerHTML = users.map(user => `
-        <tr data-user-id="${user.id}">
-            <td class="px-4 py-3 whitespace-nowrap text-sm text-white">${user.username}</td>
-            <td class="px-4 py-3 whitespace-nowrap text-sm">${user.isAdmin ? '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-200 text-green-800">Admin</span>' : '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800">User</span>'}</td>
-            <td class="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
-                <button class="text-blue-400 hover:text-blue-600 edit-user-btn">Edit</button>
-                <button class="text-red-400 hover:text-red-600 ml-4 delete-user-btn" ${appState.currentUser.username === user.username ? 'disabled' : ''}>Delete</button>
-            </td>
-        </tr>
-    `).join('');
+    try {
+        const res = await apiFetch('/api/users');
+        if (!res) return;
+        const users = await res.json();
+        UIElements.userList.innerHTML = users.map(user => `
+            <tr data-user-id="${user.id}">
+                <td class="px-4 py-3 whitespace-nowrap text-sm text-white">${user.username}</td>
+                <td class="px-4 py-3 whitespace-nowrap text-sm">${user.isAdmin ? '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-200 text-green-800">Admin</span>' : '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800">User</span>'}</td>
+                <td class="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
+                    <button class="text-blue-400 hover:text-blue-600 edit-user-btn">Edit</button>
+                    <button class="text-red-400 hover:text-red-600 ml-4 delete-user-btn" ${appState.currentUser.username === user.username ? 'disabled' : ''}>Delete</button>
+                </td>
+            </tr>
+        `).join('');
+    } catch (error) {
+        console.error("Failed to refresh user list:", error);
+        UIElements.userList.innerHTML = `<tr><td colspan="3" class="text-center text-red-400 py-4">Failed to load users.</td></tr>`;
+    }
 };
 
 /**
