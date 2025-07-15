@@ -188,9 +188,6 @@
             <div class="flex items-center gap-4">
                  <span id="user-display" class="text-sm text-gray-400 hidden sm:block"></span>
                 <button id="logout-btn" class="text-sm bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-md transition-colors">Logout</button>
-                <button id="sidebar-toggle" class="lg:hidden p-2 rounded-md hover:bg-gray-700">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
-                </button>
             </div>
         </header>
 
@@ -217,7 +214,7 @@
                         <div id="search-results-container" class="hidden absolute top-full right-0 w-full sm:w-96 max-h-80 overflow-y-auto bg-gray-800 border border-gray-600 rounded-md mt-1 z-50 custom-scrollbar shadow-lg"></div>
                     </div>
                 </div>
-                <div id="guide-container" class="flex-grow flex bg-gray-900 overflow-hidden relative">
+                <div id="guide-container" class="flex-grow flex flex-col bg-gray-900 overflow-hidden relative">
                     <div id="guide-placeholder" class="absolute inset-0 flex items-center justify-center z-40">
                         <div id="initial-loading-indicator" class="text-center text-gray-400">
                             <div class="loader mx-auto"></div>
@@ -229,24 +226,15 @@
                             <p class="mt-1 text-sm">Go to the Settings tab to add and activate your M3U and EPG sources.</p>
                         </div>
                     </div>
-                    <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-40 hidden lg:hidden"></div>
-                    <div id="channel-panel-container" class="absolute lg:relative inset-y-0 left-0 w-64 sm:w-80 bg-gray-800/80 lg:bg-gray-800 backdrop-blur-sm lg:backdrop-blur-none z-50 lg:z-20 transform -translate-x-full lg:transform-none lg:translate-x-0 min-w-[250px] max-w-[80vw] lg:max-w-[30vw] flex-shrink-0 flex flex-col hidden lg:flex">
-                        <div class="p-2 border-b border-gray-700/80 flex-shrink-0 flex flex-col gap-2">
-                             <select id="group-filter" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select>
-                             <select id="source-filter" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select>
+                    <div id="guide-header" class="flex-shrink-0 bg-gray-800 z-20 flex">
+                        <div id="guide-header-channels" class="p-2 border-b border-r border-gray-700/80 flex-shrink-0 flex flex-col gap-2 items-center justify-center">
+                            <select id="group-filter" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select>
+                            <select id="source-filter" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select>
                         </div>
-                        <div id="channel-list" class="overflow-y-auto custom-scrollbar flex-grow"></div>
+                        <div id="time-bar" class="flex-grow relative overflow-x-hidden"></div>
                     </div>
-                    <div id="resizer" class="hidden lg:block z-30"></div>
-                    <div id="logo-column" class="flex flex-col lg:hidden w-20 flex-shrink-0 bg-gray-900 border-r border-gray-700/50">
-                        <div class="h-24 flex-shrink-0 border-b border-gray-700/80"></div>
-                        <div id="logo-list" class="overflow-y-auto custom-scrollbar flex-grow"></div>
-                    </div>
-                    <div id="timeline-container" class="flex-grow flex flex-col overflow-hidden">
-                        <div id="time-bar" class="h-24 bg-gray-800/80 flex-shrink-0 relative z-10 overflow-x-hidden"></div>
-                        <div id="guide-timeline" class="overflow-auto custom-scrollbar relative flex-grow">
-                            <div id="now-line" class="absolute top-0 bottom-0 bg-red-500 w-0.5 z-20 hidden"></div>
-                        </div>
+                    <div id="guide-grid" class="flex-grow overflow-auto custom-scrollbar relative">
+                        <div id="now-line" class="absolute top-0 bottom-0 bg-red-500 w-0.5 z-20 hidden"></div>
                     </div>
                 </div>
             </div>
