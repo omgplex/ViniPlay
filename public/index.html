@@ -19,7 +19,7 @@
         .bottom-nav-btn.active { color: #3b82f6; }
         .programme-item { border-left: 3px solid #3b82f6; transition: all 0.2s; }
         .programme-item:hover { background-color: #374151; cursor: pointer; }
-        html, body { height: 100%; overflow: hidden; } /* Ensure no overall page scroll */
+        html, body { height: 100%; overflow: hidden; }
         .favorite-star { transition: all 0.2s; }
         .favorite-star.favorited { color: #facc15; transform: scale(1.2); }
         .programme-progress { position: absolute; top: 0; left: 0; bottom: 0; background-color: rgba(59, 130, 246, 0.3); border-radius: 2px 0 0 2px; pointer-events: none; transition: width 0.3s linear; }
@@ -83,6 +83,14 @@
             text-transform: uppercase;
         }
 
+        .source-badge {
+            font-size: 0.6rem;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 10px;
+            flex-shrink: 0;
+            text-transform: uppercase;
+        }
         .chno-badge {
             font-size: 0.65rem;
             font-weight: 600;
@@ -94,153 +102,36 @@
         }
 
         /* --- NEW: Guide Grid Styles --- */
-        /* Ensure app container takes full viewport height and allows main to adjust for fixed header */
-        #app-container {
-            height: 100vh;
-            box-sizing: border-box; /* Include padding in height */
-        }
-
-        /* Wrapper for main header, tabs, and guide controls. Will be fixed and slide up/down. */
-        #top-bar-wrapper {
-            position: fixed; /* Fixed position relative to viewport */
-            top: 0;
-            left: 0;
-            right: 0;
-            z-index: 50; /* Ensure it's on top of everything */
-            background-color: #1f2937; /* Gray-800 */
-            transition: transform 0.3s ease-out; /* For smooth slide up/down */
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        }
-        /* Classes for showing/hiding the top bar */
-        .top-bar-hidden {
-            transform: translateY(-100%);
-        }
-        .top-bar-visible {
-            transform: translateY(0);
-        }
-
-        /* Main content area, adjusted by the top bar's height */
-        main {
-            margin-top: var(--dynamic-top-margin, 0px); /* JS will update this margin */
-            transition: margin-top 0.3s ease-out; /* Smooth adjustment */
-        }
-        
-        /* The main guide content area, handles its own scrolling */
-        #page-guide {
-            height: 100%; /* Take remaining height in flex-col */
-            box-sizing: border-box;
-        }
-
-        /* The actual guide grid with sticky time and channel info */
         #guide-grid {
             display: grid;
-            grid-template-columns: min-content 1fr; /* Sticky channel info, scrollable timeline */
-            position: relative; /* For now-line positioning within guide-container */
-            min-height: 100%; /* Ensures grid content extends to allow vertical scroll */
+            grid-template-columns: min-content 1fr; /* First column for sticky channel, second for scrollable timeline */
+            overflow-x: auto;
+            position: relative;
         }
-
-        /* Top-left corner filler for the grid */
-        .guide-corner-filler {
-            background-color: #1a2233; /* Same as channel-info and time-bar-header */
-            border-right: 1px solid #374151; /* Match channel-info border */
-            border-bottom: 1px solid #374151; /* Match time-bar-header border */
-            box-sizing: border-box;
-            z-index: 40; /* Higher than time-bar-header and channel-info */
-            position: sticky; /* Make it sticky too, at top-left corner */
-            top: 0;
-            left: 0;
-            height: 64px; /* Matches time bar height */
+        .channel-info, .time-bar-cell, .timeline-row {
+            border-bottom: 1px solid #374151; /* gray-700/50 */
         }
-
-        /* Sticky header for channel information (left column) */
         .channel-info {
             position: sticky;
             left: 0;
-            z-index: 20; /* Above program items and red line */
-            background-color: #1a2233; /* Darker background */
-            border-right: 1px solid #374151; /* Separator */
-            height: 96px; /* Consistent row height for desktop */
-            box-sizing: border-box; /* Include padding/border in height */
-            border-bottom: 1px solid #374151; /* Border between channels */
+            z-index: 20;
+            background-color: #1a2233; /* Darker than gray-800 */
         }
-
-        /* Sticky header for time bar (top row) */
-        .time-bar-header {
-            position: sticky;
-            top: 0;
-            z-index: 30; /* Higher than channel info */
-            background-color: #1a2233; /* Same as channel info for visual consistency */
-            display: flex; /* For horizontal arrangement of time cells */
-            width: 100%; /* Fills the grid column */
-            height: 64px; /* Fixed height for time bar cells */
-            border-bottom: 1px solid #374151; /* Separator */
-            overflow: hidden; /* Important for horizontal time text */
-            box-sizing: border-box;
+        .time-bar-cell, .timeline-row {
+            position: relative;
         }
-
-        /* Individual hour cells within the time bar */
-        .time-bar-hour-cell {
-            flex-shrink: 0; /* Prevent shrinking */
-            display: flex;
-            align-items: center;
-            justify-content: flex-start;
-            padding-left: 8px; /* px-2 */
-            font-size: 0.75rem; /* text-xs */
-            color: #9ca3af; /* gray-400 */
-            border-right: 1px solid #374151; /* Separator */
-            box-sizing: border-box;
-        }
-
-        /* Timeline rows containing programs */
-        .timeline-row {
-            position: relative; /* For absolute positioning of program items */
-            min-height: 96px; /* Consistent row height for desktop */
-            border-bottom: 1px solid #374151; /* Border between channels */
-            display: block; /* Ensures it acts as a block for absolute positioning */
-            box-sizing: border-box;
-        }
-
-        .programme-item {
-            z-index: 5; /* Lower than sticky elements and now line */
-        }
-        .programme-item.live::after {
-            z-index: 6; /* Still above programme-item but below channel-info */
-        }
-        /* Now line will span the full height of the scrollable guide-container */
-        #now-line {
-            z-index: 25;
-            top: 0; /* Always 0 relative to guide-container's top */
-            height: 100%; /* Spans full height of guide-container */
-            transition: left 0.3s ease-out; /* Smooth movement for horizontal position */
-        }
-
-        /* Mobile responsive adjustments */
+        /* Mobile responsive for sticky channel info */
         @media (max-width: 767px) {
             #guide-grid {
                 grid-template-columns: 64px 1fr; /* Fixed width for logo on mobile */
             }
-            .channel-info {
-                height: 64px; /* Adjust height for mobile */
-            }
-            .channel-details {
-                display: none; /* Hide channel name, chno, source on mobile */
-            }
-            .favorite-star {
-                display: none; /* Hide favorite icon on mobile */
-            }
-            .time-bar-header {
-                height: 64px; /* Adjust time bar header height for mobile */
-            }
-            .timeline-row {
-                min-height: 64px; /* Adjust timeline row height for mobile */
-            }
-            .guide-corner-filler {
-                height: 64px; /* Match time bar height on mobile */
-            }
+            .channel-details { display: none; } /* Hide channel name, chno, source on mobile */
+            /* --- MODIFIED: Hide favorite icon on mobile --- */
+            .favorite-star { display: none; }
         }
     </style>
 </head>
-<body class="h-screen flex flex-col">
+<body class="h-screen">
 
     <!-- Auth Container: Covers the entire screen initially -->
     <div id="auth-container" class="fixed inset-0 bg-gray-900 z-[100] flex items-center justify-center p-4">
@@ -287,54 +178,48 @@
 
     <!-- Main App Container -->
     <div id="app-container" class="hidden flex flex-col h-screen">
-        <!-- Unified Top Bar Wrapper: Position fixed, controls hide/show -->
-        <div id="top-bar-wrapper" class="w-full bg-gray-800 z-50 transition-transform duration-300 ease-out">
-            <!-- Header -->
-            <header id="main-header" class="text-white p-4 shadow-md flex-shrink-0 flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                    <img src="https://i.imgur.com/rwa8SjI.png" alt="VINI PLAY Logo" class="h-8 w-8">
-                    <h1 class="text-xl sm:text-2xl font-bold">VINI PLAY</h1>
-                </div>
-                <div class="flex items-center gap-4">
-                     <span id="user-display" class="text-sm text-gray-400 hidden sm:block"></span>
-                    <button id="logout-btn" class="text-sm bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-md transition-colors">Logout</button>
-                </div>
-            </header>
-
-            <!-- Desktop Tabs -->
-            <div id="desktop-tabs" class="hidden lg:flex border-b border-gray-700 bg-gray-800 flex-shrink-0">
-                <button id="tab-guide" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700 active">TV Guide</button>
-                <button id="tab-settings" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700">Settings</button>
+        <!-- Header -->
+        <header id="main-header" class="bg-gray-800 text-white p-4 shadow-md z-30 flex-shrink-0 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <img src="https://i.imgur.com/rwa8SjI.png" alt="VINI PLAY Logo" class="h-8 w-8">
+                <h1 class="text-xl sm:text-2xl font-bold">VINI PLAY</h1>
             </div>
-
-            <!-- Guide Controls Bar -->
-            <div id="guide-controls-bar" class="flex flex-wrap items-center justify-between gap-4 p-2 sm:p-4 border-b border-gray-700 flex-shrink-0">
-                <!-- Left controls: Navigation -->
-                <div class="flex items-center gap-2">
-                    <button id="prev-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&lt;</button>
-                    <button id="now-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">Now</button>
-                    <button id="next-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&gt;</button>
-                </div>
-                
-                <div id="guide-date-display" class="text-base sm:text-lg font-semibold text-center flex-grow order-first w-full sm:order-none sm:w-auto"></div>
-                
-                <!-- Right controls: Filters and Search -->
-                <div class="relative w-full sm:w-auto flex flex-wrap items-center justify-end gap-2">
-                    <select id="group-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select>
-                    <select id="source-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select>
-                    <input type="search" id="search-input" placeholder="Search..." class="flex-grow sm:flex-grow-0 sm:w-48 bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500">
-                    <button id="today-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors flex-shrink-0">Reset</button>
-                    <div id="search-results-container" class="hidden absolute top-full right-0 w-full sm:w-96 max-h-80 overflow-y-auto bg-gray-800 border border-gray-600 rounded-md mt-1 z-50 custom-scrollbar shadow-lg"></div>
-                </div>
+            <div class="flex items-center gap-4">
+                 <span id="user-display" class="text-sm text-gray-400 hidden sm:block"></span>
+                <button id="logout-btn" class="text-sm bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-md transition-colors">Logout</button>
             </div>
+        </header>
+
+        <!-- Desktop Tabs -->
+        <div id="desktop-tabs" class="hidden lg:flex border-b border-gray-700 bg-gray-800 flex-shrink-0 z-20">
+            <button id="tab-guide" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700 active">TV Guide</button>
+            <button id="tab-settings" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700">Settings</button>
         </div>
 
-        <!-- Main Content (takes remaining height after fixed top bar) -->
-        <main class="flex-grow flex flex-col overflow-hidden relative">
+        <!-- Main Content -->
+        <main class="flex-grow flex flex-col overflow-hidden">
             <!-- TV Guide Page -->
             <div id="page-guide" class="flex flex-grow flex-col overflow-hidden">
-                <!-- Guide Container - The main scrollable area (vertical and horizontal) -->
-                <div id="guide-container" class="flex-grow bg-gray-900 custom-scrollbar overflow-auto relative">
+                 <div id="guide-controls-bar" class="flex flex-wrap items-center justify-between gap-4 p-2 sm:p-4 border-b border-gray-700 flex-shrink-0">
+                    <!-- Left controls: Navigation -->
+                    <div class="flex items-center gap-2">
+                        <button id="prev-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&lt;</button>
+                        <button id="now-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">Now</button>
+                        <button id="next-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&gt;</button>
+                    </div>
+                    
+                    <div id="guide-date-display" class="text-base sm:text-lg font-semibold text-center flex-grow order-first w-full sm:order-none sm:w-auto"></div>
+                    
+                    <!-- Right controls: Filters and Search -->
+                    <div class="relative w-full sm:w-auto flex flex-wrap items-center justify-end gap-2">
+                        <select id="group-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select>
+                        <select id="source-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select>
+                        <input type="search" id="search-input" placeholder="Search..." class="flex-grow sm:flex-grow-0 sm:w-48 bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500">
+                        <button id="today-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors flex-shrink-0">Reset</button>
+                        <div id="search-results-container" class="hidden absolute top-full right-0 w-full sm:w-96 max-h-80 overflow-y-auto bg-gray-800 border border-gray-600 rounded-md mt-1 z-50 custom-scrollbar shadow-lg"></div>
+                    </div>
+                </div>
+                <div id="guide-container" class="flex-grow bg-gray-900 overflow-hidden relative custom-scrollbar">
                     <div id="guide-placeholder" class="absolute inset-0 flex items-center justify-center z-40">
                         <div id="initial-loading-indicator" class="text-center text-gray-400">
                             <div class="loader mx-auto"></div>
@@ -346,10 +231,8 @@
                             <p class="mt-1 text-sm">Go to the Settings tab to add and activate your M3U and EPG sources.</p>
                         </div>
                     </div>
-                    <!-- This is where the unified grid will be rendered by guide.js -->
+                    <!-- NEW: This is where the unified grid will be rendered by guide.js -->
                     <div id="guide-grid" class="h-full w-full"></div>
-                    <!-- Now line should be a direct child of guide-container and span its height -->
-                    <div id="now-line" class="absolute bg-red-500 w-0.5 z-30 pointer-events-none hidden"></div>
                 </div>
             </div>
 
