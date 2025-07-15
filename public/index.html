@@ -70,153 +70,69 @@
         #show-header-btn { transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out; }
         #show-header-btn.hidden { opacity: 0; transform: translateY(20px); }
 
-        /* --- CORRECTED: Unified Guide Grid Styles --- */
+        /* --- FINAL: Unified Guide Grid Styles --- */
         #guide-grid-container {
             display: grid;
-            /* Column 1 for channel info, Column 2 for program grid */
-            /* Mobile: 80px for logo/fav. Desktop: 250px for full info */
+             /* Mobile: 80px wide. Desktop: 280px wide */
             grid-template-columns: 80px 1fr;
         }
-        @media (min-width: 640px) { /* sm breakpoint */
-            #guide-grid-container {
-                grid-template-columns: 250px 1fr;
+        @media (min-width: 768px) { /* md breakpoint */
+             #guide-grid-container {
+                grid-template-columns: 280px 1fr;
             }
         }
         .channel-info-cell {
             position: sticky;
             left: 0;
-            z-index: 20; /* HIGH: Stays on top of programs */
-            background-color: #111827; /* Match body to hide content scrolling behind */
+            z-index: 20;
+            background-color: #111827;
         }
         .program-row-container {
             position: relative;
-            z-index: 10; /* LOW: Stays behind channel info */
+            z-index: 10;
         }
         #now-line {
-            z-index: 15; /* MEDIUM: Sits between programs and channel info */
+            position: absolute; /* Relative to the guide-timeline */
+            z-index: 15;
         }
     </style>
 </head>
 <body class="h-screen">
 
-    <!-- Auth Container: Covers the entire screen initially -->
+    <!-- Auth Container -->
     <div id="auth-container" class="fixed inset-0 bg-gray-900 z-[100] flex items-center justify-center p-4">
         <div class="w-full max-w-sm mx-auto">
              <img src="https://i.imgur.com/rwa8SjI.png" alt="VINI PLAY Logo" class="h-16 w-16 mx-auto mb-4">
-            <!-- Login Form -->
-            <form id="login-form" class="hidden bg-gray-800 p-8 rounded-xl shadow-lg space-y-6">
-                <h2 class="text-2xl font-bold text-center text-white">Welcome Back</h2>
-                <div id="login-error" class="hidden bg-red-900/50 border border-red-700/50 text-red-300 px-4 py-2 rounded-md text-sm"></div>
-                <div>
-                    <label for="login-username" class="text-sm font-medium text-gray-400 block mb-2">Username</label>
-                    <input type="text" id="login-username" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" required>
-                </div>
-                <div>
-                    <label for="login-password" class="text-sm font-medium text-gray-400 block mb-2">Password</label>
-                    <input type="password" id="login-password" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" required>
-                </div>
-                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition-colors">Login</button>
-            </form>
-
-            <!-- Admin Setup Form -->
-            <form id="setup-form" class="hidden bg-gray-800 p-8 rounded-xl shadow-lg space-y-6">
-                <h2 class="text-2xl font-bold text-center text-white">Create Admin Account</h2>
-                <p class="text-sm text-center text-gray-400">This is a one-time setup to secure your ViniPlay instance.</p>
-                <div id="setup-error" class="hidden bg-red-900/50 border border-red-700/50 text-red-300 px-4 py-2 rounded-md text-sm"></div>
-                <div>
-                    <label for="setup-username" class="text-sm font-medium text-gray-400 block mb-2">Admin Username</label>
-                    <input type="text" id="setup-username" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" required>
-                </div>
-                <div>
-                    <label for="setup-password" class="text-sm font-medium text-gray-400 block mb-2">Password</label>
-                    <input type="password" id="setup-password" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" required>
-                </div>
-                <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition-colors">Create Admin & Login</button>
-            </form>
-            
-            <!-- Loading Spinner -->
-             <div id="auth-loader" class="text-center">
-                 <div class="loader mx-auto"></div>
-                 <p class="mt-4 text-gray-400">Checking authentication...</p>
-             </div>
+            <form id="login-form" class="hidden bg-gray-800 p-8 rounded-xl shadow-lg space-y-6"><h2 class="text-2xl font-bold text-center text-white">Welcome Back</h2><div id="login-error" class="hidden bg-red-900/50 border border-red-700/50 text-red-300 px-4 py-2 rounded-md text-sm"></div><div><label for="login-username" class="text-sm font-medium text-gray-400 block mb-2">Username</label><input type="text" id="login-username" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" required></div><div><label for="login-password" class="text-sm font-medium text-gray-400 block mb-2">Password</label><input type="password" id="login-password" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" required></div><button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition-colors">Login</button></form>
+            <form id="setup-form" class="hidden bg-gray-800 p-8 rounded-xl shadow-lg space-y-6"><h2 class="text-2xl font-bold text-center text-white">Create Admin Account</h2><p class="text-sm text-center text-gray-400">This is a one-time setup to secure your ViniPlay instance.</p><div id="setup-error" class="hidden bg-red-900/50 border border-red-700/50 text-red-300 px-4 py-2 rounded-md text-sm"></div><div><label for="setup-username" class="text-sm font-medium text-gray-400 block mb-2">Admin Username</label><input type="text" id="setup-username" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" required></div><div><label for="setup-password" class="text-sm font-medium text-gray-400 block mb-2">Password</label><input type="password" id="setup-password" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" required></div><button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition-colors">Create Admin & Login</button></form>
+             <div id="auth-loader" class="text-center"><div class="loader mx-auto"></div><p class="mt-4 text-gray-400">Checking authentication...</p></div>
         </div>
     </div>
 
     <!-- Main App Container -->
     <div id="app-container" class="hidden flex flex-col h-screen">
         <!-- Header -->
-        <header id="main-header" class="bg-gray-800 text-white p-4 shadow-md z-30 flex-shrink-0 flex items-center justify-between">
-            <div class="flex items-center gap-3">
-                <img src="https://i.imgur.com/rwa8SjI.png" alt="VINI PLAY Logo" class="h-8 w-8">
-                <h1 class="text-xl sm:text-2xl font-bold">VINI PLAY</h1>
-            </div>
-            <div class="flex items-center gap-4">
-                 <span id="user-display" class="text-sm text-gray-400 hidden sm:block"></span>
-                <button id="logout-btn" class="text-sm bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-md transition-colors">Logout</button>
-                <!-- This toggle now controls the filter sidebar -->
-                <button id="sidebar-toggle" class="lg:hidden p-2 rounded-md hover:bg-gray-700">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
-                </button>
-            </div>
-        </header>
+        <header id="main-header" class="bg-gray-800 text-white p-4 shadow-md z-30 flex-shrink-0 flex items-center justify-between"><div class="flex items-center gap-3"><img src="https://i.imgur.com/rwa8SjI.png" alt="VINI PLAY Logo" class="h-8 w-8"><h1 class="text-xl sm:text-2xl font-bold">VINI PLAY</h1></div><div class="flex items-center gap-4"><span id="user-display" class="text-sm text-gray-400 hidden sm:block"></span><button id="logout-btn" class="text-sm bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-md transition-colors">Logout</button><button id="sidebar-toggle" class="lg:hidden p-2 rounded-md hover:bg-gray-700"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg></button></div></header>
 
         <!-- Desktop Tabs -->
-        <div id="desktop-tabs" class="hidden lg:flex border-b border-gray-700 bg-gray-800 flex-shrink-0 z-20">
-            <button id="tab-guide" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700 active">TV Guide</button>
-            <button id="tab-settings" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700">Settings</button>
-        </div>
+        <div id="desktop-tabs" class="hidden lg:flex border-b border-gray-700 bg-gray-800 flex-shrink-0 z-20"><button id="tab-guide" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700 active">TV Guide</button><button id="tab-settings" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700">Settings</button></div>
 
         <!-- Main Content -->
         <main class="flex-grow flex flex-col overflow-hidden">
             <!-- TV Guide Page -->
             <div id="page-guide" class="flex flex-grow flex-col overflow-hidden">
-                <div id="guide-controls-bar" class="flex flex-wrap items-center justify-between gap-4 p-2 sm:p-4 border-b border-gray-700 flex-shrink-0">
-                    <div class="flex items-center gap-2">
-                        <button id="prev-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&lt;</button>
-                        <button id="now-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">Now</button>
-                        <button id="next-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&gt;</button>
-                    </div>
-                    <div id="guide-date-display" class="text-base sm:text-lg font-semibold text-center flex-grow"></div>
-                    <div class="relative w-full sm:w-auto flex items-center gap-2">
-                        <input type="search" id="search-input" placeholder="Search channels & programs..." class="w-full sm:w-64 bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500">
-                        <button id="today-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors flex-shrink-0">Reset view</button>
-                        <div id="search-results-container" class="hidden absolute top-full right-0 w-full sm:w-96 max-h-80 overflow-y-auto bg-gray-800 border border-gray-600 rounded-md mt-1 z-50 custom-scrollbar shadow-lg"></div>
-                    </div>
-                </div>
+                <div id="guide-controls-bar" class="flex flex-wrap items-center justify-between gap-4 p-2 sm:p-4 border-b border-gray-700 flex-shrink-0"><div class="flex items-center gap-2"><button id="prev-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&lt;</button><button id="now-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">Now</button><button id="next-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&gt;</button></div><div id="guide-date-display" class="text-base sm:text-lg font-semibold text-center flex-grow"></div><div class="relative w-full sm:w-auto flex items-center gap-2"><input type="search" id="search-input" placeholder="Search channels & programs..." class="w-full sm:w-64 bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"><button id="today-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors flex-shrink-0">Reset view</button><div id="search-results-container" class="hidden absolute top-full right-0 w-full sm:w-96 max-h-80 overflow-y-auto bg-gray-800 border border-gray-600 rounded-md mt-1 z-50 custom-scrollbar shadow-lg"></div></div></div>
                 
-                <!-- SIMPLIFIED Guide Container -->
                 <div id="guide-container" class="flex-grow flex bg-gray-900 overflow-hidden relative">
-                    <!-- Placeholder for loading/no data states -->
-                    <div id="guide-placeholder" class="absolute inset-0 flex items-center justify-center z-40">
-                        <div id="initial-loading-indicator" class="text-center text-gray-400">
-                            <div class="loader mx-auto"></div>
-                            <p class="mt-4">Loading application...</p>
-                        </div>
-                        <div id="no-data-message" class="hidden text-center text-gray-500 p-4">
-                            <svg class="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                            <h3 class="mt-2 text-sm font-medium">No Data Loaded</h3>
-                            <p class="mt-1 text-sm">Go to the Settings tab to add and activate your M3U and EPG sources.</p>
-                        </div>
-                    </div>
+                    <div id="guide-placeholder" class="absolute inset-0 flex items-center justify-center z-40"><div id="initial-loading-indicator" class="text-center text-gray-400"><div class="loader mx-auto"></div><p class="mt-4">Loading application...</p></div><div id="no-data-message" class="hidden text-center text-gray-500 p-4"><svg class="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg><h3 class="mt-2 text-sm font-medium">No Data Loaded</h3><p class="mt-1 text-sm">Go to the Settings tab to add and activate your M3U and EPG sources.</p></div></div>
                     
-                    <!-- This is the filter sidebar, separate from the guide content -->
                     <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-40 hidden lg:hidden"></div>
-                    <div id="channel-panel-container" class="absolute lg:relative inset-y-0 left-0 w-64 sm:w-72 bg-gray-800/80 lg:bg-gray-800 backdrop-blur-sm lg:backdrop-blur-none z-50 lg:z-30 transform -translate-x-full lg:transform-none lg:translate-x-0 flex-shrink-0 flex flex-col">
-                        <div class="p-2 border-b border-gray-700/80 flex-shrink-0 flex flex-col gap-2">
-                             <h3 class="font-bold text-center text-gray-300 p-2">Filters</h3>
-                             <select id="group-filter" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select>
-                             <select id="source-filter" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select>
-                        </div>
-                        <div class="p-2 text-xs text-center text-gray-500">
-                            The guide will update based on your filter selection.
-                        </div>
-                    </div>
+                    <div id="channel-panel-container" class="absolute lg:relative inset-y-0 left-0 w-64 sm:w-72 bg-gray-800/80 lg:bg-gray-800 backdrop-blur-sm lg:backdrop-blur-none z-50 lg:z-30 transform -translate-x-full lg:transform-none lg:translate-x-0 flex-shrink-0 flex flex-col"><div class="p-2 border-b border-gray-700/80 flex-shrink-0 flex flex-col gap-2"><h3 class="font-bold text-center text-gray-300 p-2">Filters</h3><select id="group-filter" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select><select id="source-filter" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select></div><div class="p-2 text-xs text-center text-gray-500">The guide will update based on your filter selection.</div></div>
 
-                    <!-- Main Guide & Timeline Area -->
                     <div id="timeline-container" class="flex-grow flex flex-col overflow-hidden">
                         <div id="time-bar" class="h-10 bg-gray-800/80 flex-shrink-0 relative z-10 overflow-x-hidden border-b border-l border-gray-700"></div>
                         <div id="guide-timeline" class="overflow-auto custom-scrollbar relative flex-grow">
-                            <!-- The entire guide grid will be rendered here by guide.js -->
+                            <!-- JS will render the #guide-grid-container and #now-line here -->
                         </div>
                     </div>
                 </div>
@@ -225,125 +141,29 @@
             <!-- Settings Page (unchanged) -->
             <div id="page-settings" class="hidden flex-grow flex-col items-center p-4 overflow-y-auto custom-scrollbar">
                 <div class="w-full max-w-6xl mx-auto space-y-8 pb-16">
-                    <!-- User Management Section (Admin Only) -->
-                    <div id="user-management-section" class="hidden bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
-                        <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">User Management</h2>
-                        <div class="flex justify-end mb-4">
-                            <button id="add-user-btn" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-md">Add New User</button>
-                        </div>
-                        <div class="overflow-x-auto">
-                            <table class="min-w-full">
-                                <thead class="bg-gray-700/50">
-                                    <tr>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Username</th>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Role</th>
-                                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="user-list" class="bg-gray-800 divide-y divide-gray-700">
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <!-- Guide Data Section -->
-                    <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
-                        <div class="flex justify-between items-center mb-4 border-b border-gray-700 pb-2">
-                            <h2 class="text-xl font-bold text-white">Guide Data Sources</h2>
-                             <button id="process-sources-btn" class="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white font-bold py-2 px-4 rounded-md transition-colors flex items-center justify-center gap-2">
-                                <span id="process-sources-btn-content">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 inline-block -mt-1 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 110 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd" /></svg>
-                                    <span>Process Sources & View Guide</span>
-                                </span>
-                            </button>
-                        </div>
-                        <div class="mb-8">
-                            <div class="flex justify-between items-center mb-3">
-                                <h3 class="text-lg font-semibold text-gray-300">M3U Accounts</h3>
-                                <button id="add-m3u-btn" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-1 px-3 rounded-md flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110 2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>Add M3U</button>
-                            </div>
-                            <div class="overflow-x-auto bg-gray-900/50 rounded-lg"><table class="min-w-full sources-table"><thead><tr><th>Name</th><th>Type</th><th>URL / File Path</th><th>Status</th><th>Last Updated</th><th>Active</th><th class="text-right">Actions</th></tr></thead><tbody id="m3u-sources-tbody"></tbody></table></div>
-                        </div>
-                        <div>
-                             <div class="flex justify-between items-center mb-3">
-                                <h3 class="text-lg font-semibold text-gray-300">EPG Accounts</h3>
-                                <button id="add-epg-btn" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-1 px-3 rounded-md flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110 2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>Add EPG</button>
-                            </div>
-                            <div class="overflow-x-auto bg-gray-900/50 rounded-lg"><table class="min-w-full sources-table"><thead><tr><th>Name</th><th>Type</th><th>URL / File Path</th><th>Status</th><th>Last Updated</th><th>Active</th><th class="text-right">Actions</th></tr></thead><tbody id="epg-sources-tbody"></tbody></table></div>
-                        </div>
-                    </div>
-                    <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
-                        <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Player Settings</h2>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8">
-                            <div>
-                                <label for="user-agent-select" class="block text-sm font-medium text-gray-400 mb-2">Active User Agent</label>
-                                <select id="user-agent-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500 mb-2"></select>
-                                <div class="flex gap-2"><button id="add-user-agent-btn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-md">New</button><button id="edit-user-agent-btn" class="flex-1 bg-gray-600 hover:bg-gray-500 text-white text-sm font-bold py-2 px-4 rounded-md">Edit</button><button id="delete-user-agent-btn" class="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-bold py-2 px-4 rounded-md">Delete</button></div>
-                            </div>
-                            <div>
-                                <label for="stream-profile-select" class="block text-sm font-medium text-gray-400 mb-2">Active Stream Profile</label>
-                                <select id="stream-profile-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500 mb-2"></select>
-                                <div class="flex gap-2"><button id="add-stream-profile-btn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-md">New</button><button id="edit-stream-profile-btn" class="flex-1 bg-gray-600 hover:bg-gray-500 text-white text-sm font-bold py-2 px-4 rounded-md">Edit</button><button id="delete-stream-profile-btn" class="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-bold py-2 px-4 rounded-md">Delete</button></div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
-                        <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">App Settings</h2>
-                        <div class="space-y-4">
-                            <div><label for="auto-refresh-select" class="block text-sm font-medium text-gray-400 mb-1">Auto Refresh EPG URL Data</label><select id="auto-refresh-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500"><option value="0">Disabled</option><option value="1">Every 1 Hour</option><option value="4">Every 4 Hours</option><option value="12">Every 12 Hours</option><option value="24">Every 24 Hours</option></select></div>
-                            <div><label for="timezone-offset-select" class="block text-sm font-medium text-gray-400 mb-1">EPG Timezone Correction</label><p class="text-xs text-gray-500 mb-2">Use this if EPG times are wrong. The server will re-parse the EPG data.</p><select id="timezone-offset-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500"></select></div>
-                            <div><label for="search-scope-select" class="block text-sm font-medium text-gray-400 mb-1">Guide Search Scope</label><p class="text-xs text-gray-500 mb-2">Control what the search bar in the TV Guide looks for.</p><select id="search-scope-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500"><option value="channels_programs">Channels & Programs (Default)</option><option value="channels_only">Channels Only</option></select></div>
-                        </div>
-                    </div>
-                    <div class="bg-red-900/50 border border-red-700/50 p-4 sm:p-6 rounded-xl shadow-lg">
-                        <h2 class="text-xl font-bold text-red-300 mb-4 border-b border-red-700/50 pb-2">Danger Zone</h2>
-                        <p class="text-sm text-gray-400 mb-4">This permanently deletes all saved application data from the server and your browser cache.</p>
-                        <button id="clear-data-btn" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center gap-2"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg><span>Clear All Data & Reset</span></button>
-                    </div>
+                    <div id="user-management-section" class="hidden bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg"><h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">User Management</h2><div class="flex justify-end mb-4"><button id="add-user-btn" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-md">Add New User</button></div><div class="overflow-x-auto"><table class="min-w-full"><thead class="bg-gray-700/50"><tr><th class="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Username</th><th class="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Role</th><th class="px-4 py-2 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th></tr></thead><tbody id="user-list" class="bg-gray-800 divide-y divide-gray-700"></tbody></table></div></div>
+                    <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg"><div class="flex justify-between items-center mb-4 border-b border-gray-700 pb-2"><h2 class="text-xl font-bold text-white">Guide Data Sources</h2><button id="process-sources-btn" class="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white font-bold py-2 px-4 rounded-md transition-colors flex items-center justify-center gap-2"><span id="process-sources-btn-content"><svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 inline-block -mt-1 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 110 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"></path></svg><span>Process Sources & View Guide</span></span></button></div><div class="mb-8"><div class="flex justify-between items-center mb-3"><h3 class="text-lg font-semibold text-gray-300">M3U Accounts</h3><button id="add-m3u-btn" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-1 px-3 rounded-md flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110 2h5V4a1 1 0 011-1z" clip-rule="evenodd"></path></svg>Add M3U</button></div><div class="overflow-x-auto bg-gray-900/50 rounded-lg"><table class="min-w-full sources-table"><thead><tr><th>Name</th><th>Type</th><th>URL / File Path</th><th>Status</th><th>Last Updated</th><th>Active</th><th class="text-right">Actions</th></tr></thead><tbody id="m3u-sources-tbody"></tbody></table></div></div><div><div class="flex justify-between items-center mb-3"><h3 class="text-lg font-semibold text-gray-300">EPG Accounts</h3><button id="add-epg-btn" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-1 px-3 rounded-md flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110 2h5V4a1 1 0 011-1z" clip-rule="evenodd"></path></svg>Add EPG</button></div><div class="overflow-x-auto bg-gray-900/50 rounded-lg"><table class="min-w-full sources-table"><thead><tr><th>Name</th><th>Type</th><th>URL / File Path</th><th>Status</th><th>Last Updated</th><th>Active</th><th class="text-right">Actions</th></tr></thead><tbody id="epg-sources-tbody"></tbody></table></div></div></div>
+                    <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg"><h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Player Settings</h2><div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8"><div><label for="user-agent-select" class="block text-sm font-medium text-gray-400 mb-2">Active User Agent</label><select id="user-agent-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500 mb-2"></select><div class="flex gap-2"><button id="add-user-agent-btn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-md">New</button><button id="edit-user-agent-btn" class="flex-1 bg-gray-600 hover:bg-gray-500 text-white text-sm font-bold py-2 px-4 rounded-md">Edit</button><button id="delete-user-agent-btn" class="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-bold py-2 px-4 rounded-md">Delete</button></div></div><div><label for="stream-profile-select" class="block text-sm font-medium text-gray-400 mb-2">Active Stream Profile</label><select id="stream-profile-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500 mb-2"></select><div class="flex gap-2"><button id="add-stream-profile-btn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-md">New</button><button id="edit-stream-profile-btn" class="flex-1 bg-gray-600 hover:bg-gray-500 text-white text-sm font-bold py-2 px-4 rounded-md">Edit</button><button id="delete-stream-profile-btn" class="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-bold py-2 px-4 rounded-md">Delete</button></div></div></div></div>
+                    <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg"><h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">App Settings</h2><div class="space-y-4"><div><label for="auto-refresh-select" class="block text-sm font-medium text-gray-400 mb-1">Auto Refresh EPG URL Data</label><select id="auto-refresh-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500"><option value="0">Disabled</option><option value="1">Every 1 Hour</option><option value="4">Every 4 Hours</option><option value="12">Every 12 Hours</option><option value="24">Every 24 Hours</option></select></div><div><label for="timezone-offset-select" class="block text-sm font-medium text-gray-400 mb-1">EPG Timezone Correction</label><p class="text-xs text-gray-500 mb-2">Use this if EPG times are wrong. The server will re-parse the EPG data.</p><select id="timezone-offset-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500"></select></div><div><label for="search-scope-select" class="block text-sm font-medium text-gray-400 mb-1">Guide Search Scope</label><p class="text-xs text-gray-500 mb-2">Control what the search bar in the TV Guide looks for.</p><select id="search-scope-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500"><option value="channels_programs">Channels & Programs (Default)</option><option value="channels_only">Channels Only</option></select></div></div></div>
+                    <div class="bg-red-900/50 border border-red-700/50 p-4 sm:p-6 rounded-xl shadow-lg"><h2 class="text-xl font-bold text-red-300 mb-4 border-b border-red-700/50 pb-2">Danger Zone</h2><p class="text-sm text-gray-400 mb-4">This permanently deletes all saved application data from the server and your browser cache.</p><button id="clear-data-btn" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center gap-2"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg><span>Clear All Data & Reset</span></button></div>
                 </div>
             </div>
         </main>
         
         <!-- Bottom Navigation -->
-        <nav class="lg:hidden bg-gray-800 border-t border-gray-700 flex justify-around flex-shrink-0 z-20">
-            <button id="bottom-nav-guide" class="bottom-nav-btn flex-1 p-3 text-gray-400 active"><svg class="mx-auto h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg><span class="text-xs">Guide</span></button>
-            <button id="bottom-nav-settings" class="bottom-nav-btn flex-1 p-3 text-gray-400"><svg class="mx-auto h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924-1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066 2.573c-.94-1.543.826 3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg><span class="text-xs">Settings</span></button>
-        </nav>
+        <nav class="lg:hidden bg-gray-800 border-t border-gray-700 flex justify-around flex-shrink-0 z-20"><button id="bottom-nav-guide" class="bottom-nav-btn flex-1 p-3 text-gray-400 active"><svg class="mx-auto h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg><span class="text-xs">Guide</span></button><button id="bottom-nav-settings" class="bottom-nav-btn flex-1 p-3 text-gray-400"><svg class="mx-auto h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924-1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066 2.573c-.94-1.543.826 3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg><span class="text-xs">Settings</span></button></nav>
     </div>
     
     <!-- Floating "Show Header" Button -->
     <button id="show-header-btn" class="hidden fixed bottom-6 right-6 lg:bottom-8 lg:right-8 bg-blue-600 hover:bg-blue-700 text-white rounded-full p-3 shadow-lg z-40"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" /></svg></button>
     <!-- Modals -->
-    <div id="video-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-        <div id="video-modal-container" class="bg-gray-900 rounded-lg shadow-xl max-h-[90vh] flex flex-col" style="width: 896px; height: 504px;">
-            <div class="flex justify-between items-center p-3 border-b border-gray-700 flex-shrink-0"><h3 id="video-title" class="text-lg font-semibold text-white truncate"></h3><div class="flex items-center gap-2"><button id="pip-btn" class="text-gray-400 hover:text-white p-2 rounded-md hover:bg-gray-700" title="Picture-in-Picture"><svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M12.5 5.5h-5a1 1 0 00-1 1v2.5a.5.5 0 001 0v-2a.5.5 0 01.5-.5h4a.5.5 0 01.5.5v4a.5.5 0 01-.5.5h-2a.5.5 0 000 1h2.5a1 1 0 001-1v-5a1 1 0 00-1-1z"></path><path d="M3.5 3A1.5 1.5 0 002 4.5v11A1.5 1.5 0 003.5 17h13a1.5 1.5 0 001.5-1.5v-11A1.5 1.5 0 0016.5 3h-13zm0 1h13a.5.5 0 01.5.5v11a.5.5 0 01-.5.5h-13a.5.5 0 01-.5-.5v-11a.5.5 0 01.5-.5z"></path></svg></button><button id="close-modal" class="text-gray-400 hover:text-white text-3xl leading-none font-bold">&times;</button></div></div>
-            <div class="flex-grow p-1 bg-black"><video id="videoElement" controls autoplay class="w-full h-full"></video></div>
-            <div id="video-resize-handle" class="resize-handle"></div>
-        </div>
-    </div>
-    <div id="program-details-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-        <div id="program-details-container" class="bg-gray-800 rounded-lg shadow-xl p-6 flex flex-col" style="width: 512px; height: auto;">
-            <div class="flex-shrink-0"><h3 id="details-title" class="text-xl font-bold text-white mb-2"></h3><p id="details-time" class="text-sm text-gray-400 mb-4"></p></div>
-            <p id="details-desc" class="text-base text-gray-300 flex-grow custom-scrollbar"></p>
-            <div class="flex justify-between items-center gap-4 mt-6 flex-shrink-0"><button id="details-play-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Play Channel</button><button id="details-close-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Close</button></div>
-            <div id="details-resize-handle" class="resize-handle"></div>
-        </div>
-    </div>
+    <div id="video-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"><div id="video-modal-container" class="bg-gray-900 rounded-lg shadow-xl max-h-[90vh] flex flex-col" style="width: 896px; height: 504px;"><div class="flex justify-between items-center p-3 border-b border-gray-700 flex-shrink-0"><h3 id="video-title" class="text-lg font-semibold text-white truncate"></h3><div class="flex items-center gap-2"><button id="pip-btn" class="text-gray-400 hover:text-white p-2 rounded-md hover:bg-gray-700" title="Picture-in-Picture"><svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M12.5 5.5h-5a1 1 0 00-1 1v2.5a.5.5 0 001 0v-2a.5.5 0 01.5-.5h4a.5.5 0 01.5.5v4a.5.5 0 01-.5.5h-2a.5.5 0 000 1h2.5a1 1 0 001-1v-5a1 1 0 00-1-1z"></path><path d="M3.5 3A1.5 1.5 0 002 4.5v11A1.5 1.5 0 003.5 17h13a1.5 1.5 0 001.5-1.5v-11A1.5 1.5 0 0016.5 3h-13zm0 1h13a.5.5 0 01.5.5v11a.5.5 0 01-.5.5h-13a.5.5 0 01-.5-.5v-11a.5.5 0 01.5-.5z"></path></svg></button><button id="close-modal" class="text-gray-400 hover:text-white text-3xl leading-none font-bold">&times;</button></div></div><div class="flex-grow p-1 bg-black"><video id="videoElement" controls autoplay class="w-full h-full"></video></div><div id="video-resize-handle" class="resize-handle"></div></div></div>
+    <div id="program-details-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"><div id="program-details-container" class="bg-gray-800 rounded-lg shadow-xl p-6 flex flex-col" style="width: 512px; height: auto;"><div class="flex-shrink-0"><h3 id="details-title" class="text-xl font-bold text-white mb-2"></h3><p id="details-time" class="text-sm text-gray-400 mb-4"></p></div><p id="details-desc" class="text-base text-gray-300 flex-grow custom-scrollbar"></p><div class="flex justify-between items-center gap-4 mt-6 flex-shrink-0"><button id="details-play-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Play Channel</button><button id="details-close-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Close</button></div><div id="details-resize-handle" class="resize-handle"></div></div></div>
     <div id="notification-modal" class="hidden fixed top-5 right-5 bg-red-500 text-white py-2 px-4 rounded-lg shadow-lg z-[100]"><p id="notification-message"></p></div>
-    <div id="confirm-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-        <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6"><h3 id="confirm-title" class="text-lg font-bold text-white mb-2"></h3><p id="confirm-message" class="text-gray-400 mb-6"></p><div class="flex justify-end gap-4"><button id="confirm-cancel-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Cancel</button><button id="confirm-ok-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md">Confirm</button></div></div>
-    </div>
-    <div id="source-editor-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-        <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-lg">
-            <form id="source-editor-form"><div class="p-6"><h3 id="source-editor-title" class="text-xl font-bold text-white mb-4"></h3><input type="hidden" id="source-editor-id"><input type="hidden" id="source-editor-type"><div class="space-y-4"><div><label for="source-editor-name" class="block text-sm font-medium text-gray-400">Name</label><input type="text" id="source-editor-name" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" required></div><div class="flex items-center"><input id="source-editor-isActive" type="checkbox" class="h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"><label for="source-editor-isActive" class="ml-2 block text-sm text-gray-300">Active</label></div><div><label class="block text-sm font-medium text-gray-400 mb-2">Source Type</label><div class="flex border border-gray-600 rounded-md overflow-hidden"><button type="button" id="source-editor-type-btn-url" class="flex-1 py-2 text-sm text-gray-300 hover:bg-gray-700/80">URL</button><button type="button" id="source-editor-type-btn-file" class="flex-1 py-2 text-sm text-gray-300 hover:bg-gray-700/80">File</button></div></div><div id="source-editor-url-container"><label for="source-editor-url" class="block text-sm font-medium text-gray-400">URL</label><input type="url" id="source-editor-url" placeholder="http://example.com/playlist.m3u" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500"></div><div id="source-editor-file-container" class="hidden"><label for="source-editor-file" class="block text-sm font-medium text-gray-400">File</label><input type="file" id="source-editor-file" class="mt-1 block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-500 file:text-white hover:file:bg-blue-600 cursor-pointer"><p id="source-editor-file-info" class="text-xs text-gray-500 mt-1"></p></div></div></div><div class="bg-gray-700/50 px-6 py-4 flex justify-end gap-4 rounded-b-lg"><button type="button" id="source-editor-cancel-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Cancel</button><button type="submit" id="source-editor-save-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Save</button></div></form>
-        </div>
-    </div>
-    <div id="editor-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-        <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-lg p-6"><h3 id="editor-title" class="text-xl font-bold text-white mb-4"></h3><form id="editor-form" class="space-y-4"><input type="hidden" id="editor-id"><input type="hidden" id="editor-type"><div><label for="editor-name" class="block text-sm font-medium text-gray-400">Name</label><input type="text" id="editor-name" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" required></div><div id="editor-value-container"><label for="editor-value" id="editor-value-label" class="block text-sm font-medium text-gray-400"></label><textarea id="editor-value" rows="4" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500 custom-scrollbar" required></textarea><p class="text-xs text-gray-500 mt-1">For ffmpeg commands, use {userAgent} and {streamUrl} as placeholders.</p></div><div class="flex justify-end gap-4 pt-4"><button type="button" id="editor-cancel-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Cancel</button><button type="submit" id="editor-save-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Save</button></div></form></div>
-    </div>
-    <div id="user-editor-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-        <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6"><h3 id="user-editor-title" class="text-xl font-bold text-white mb-4">Edit User</h3><form id="user-editor-form" class="space-y-4"><input type="hidden" id="user-editor-id"><div id="user-editor-error" class="hidden bg-red-900/50 border border-red-700/50 text-red-300 px-4 py-2 rounded-md text-sm"></div><div><label for="user-editor-username" class="block text-sm font-medium text-gray-400">Username</label><input type="text" id="user-editor-username" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white" required></div><div><label for="user-editor-password" class="block text-sm font-medium text-gray-400">New Password (optional)</label><input type="password" id="user-editor-password" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white"></div><div class="flex items-center"><input id="user-editor-isAdmin" type="checkbox" class="h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"><label for="user-editor-isAdmin" class="ml-2 block text-sm text-gray-300">Is Administrator</label></div><div class="flex justify-end gap-4 pt-4"><button type="button" id="user-editor-cancel-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Cancel</button><button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Save</button></div></form></div>
-    </div>
+    <div id="confirm-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"><div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6"><h3 id="confirm-title" class="text-lg font-bold text-white mb-2"></h3><p id="confirm-message" class="text-gray-400 mb-6"></p><div class="flex justify-end gap-4"><button id="confirm-cancel-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Cancel</button><button id="confirm-ok-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md">Confirm</button></div></div></div>
+    <div id="source-editor-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"><div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-lg"><form id="source-editor-form"><div class="p-6"><h3 id="source-editor-title" class="text-xl font-bold text-white mb-4"></h3><input type="hidden" id="source-editor-id"><input type="hidden" id="source-editor-type"><div class="space-y-4"><div><label for="source-editor-name" class="block text-sm font-medium text-gray-400">Name</label><input type="text" id="source-editor-name" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" required></div><div class="flex items-center"><input id="source-editor-isActive" type="checkbox" class="h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"><label for="source-editor-isActive" class="ml-2 block text-sm text-gray-300">Active</label></div><div><label class="block text-sm font-medium text-gray-400 mb-2">Source Type</label><div class="flex border border-gray-600 rounded-md overflow-hidden"><button type="button" id="source-editor-type-btn-url" class="flex-1 py-2 text-sm text-gray-300 hover:bg-gray-700/80">URL</button><button type="button" id="source-editor-type-btn-file" class="flex-1 py-2 text-sm text-gray-300 hover:bg-gray-700/80">File</button></div></div><div id="source-editor-url-container"><label for="source-editor-url" class="block text-sm font-medium text-gray-400">URL</label><input type="url" id="source-editor-url" placeholder="http://example.com/playlist.m3u" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500"></div><div id="source-editor-file-container" class="hidden"><label for="source-editor-file" class="block text-sm font-medium text-gray-400">File</label><input type="file" id="source-editor-file" class="mt-1 block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-500 file:text-white hover:file:bg-blue-600 cursor-pointer"><p id="source-editor-file-info" class="text-xs text-gray-500 mt-1"></p></div></div></div><div class="bg-gray-700/50 px-6 py-4 flex justify-end gap-4 rounded-b-lg"><button type="button" id="source-editor-cancel-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Cancel</button><button type="submit" id="source-editor-save-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Save</button></div></form></div></div>
+    <div id="editor-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"><div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-lg p-6"><h3 id="editor-title" class="text-xl font-bold text-white mb-4"></h3><form id="editor-form" class="space-y-4"><input type="hidden" id="editor-id"><input type="hidden" id="editor-type"><div><label for="editor-name" class="block text-sm font-medium text-gray-400">Name</label><input type="text" id="editor-name" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" required></div><div id="editor-value-container"><label for="editor-value" id="editor-value-label" class="block text-sm font-medium text-gray-400"></label><textarea id="editor-value" rows="4" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500 custom-scrollbar" required></textarea><p class="text-xs text-gray-500 mt-1">For ffmpeg commands, use {userAgent} and {streamUrl} as placeholders.</p></div><div class="flex justify-end gap-4 pt-4"><button type="button" id="editor-cancel-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Cancel</button><button type="submit" id="editor-save-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Save</button></div></form></div></div>
+    <div id="user-editor-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"><div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6"><h3 id="user-editor-title" class="text-xl font-bold text-white mb-4">Edit User</h3><form id="user-editor-form" class="space-y-4"><input type="hidden" id="user-editor-id"><div id="user-editor-error" class="hidden bg-red-900/50 border border-red-700/50 text-red-300 px-4 py-2 rounded-md text-sm"></div><div><label for="user-editor-username" class="block text-sm font-medium text-gray-400">Username</label><input type="text" id="user-editor-username" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white" required></div><div><label for="user-editor-password" class="block text-sm font-medium text-gray-400">New Password (optional)</label><input type="password" id="user-editor-password" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white"></div><div class="flex items-center"><input id="user-editor-isAdmin" type="checkbox" class="h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"><label for="user-editor-isAdmin" class="ml-2 block text-sm text-gray-300">Is Administrator</label></div><div class="flex justify-end gap-4 pt-4"><button type="button" id="user-editor-cancel-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Cancel</button><button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Save</button></div></form></div></div>
     <script type="module" src="/js/main.js"></script>
 </body>
 </html>
