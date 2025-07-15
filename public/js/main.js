@@ -130,7 +130,7 @@ function restoreModalDimensions() {
  * Sets up core application event listeners (navigation, modals, etc.).
  */
 function setupCoreEventListeners() {
-    // Main navigation
+    // Main navigation (Desktop tabs and Bottom navigation)
     ['tabGuide', 'bottomNavGuide'].forEach(id => UIElements[id]?.addEventListener('click', () => switchTab('guide')));
     ['tabSettings', 'bottomNavSettings'].forEach(id => UIElements[id]?.addEventListener('click', () => switchTab('settings')));
     
