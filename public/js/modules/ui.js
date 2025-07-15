@@ -145,10 +145,11 @@ export const handleRouteChange = () => {
     UIElements.pageSettings.classList.toggle('hidden', isGuide);
     UIElements.pageSettings.classList.toggle('flex', !isGuide);
     
-    // Manage header visibility based on the active tab (simplified for new unified header)
+    // Manage header visibility based on the active tab
+    const appContainer = document.getElementById('app-container');
     if (isGuide) {
-        // When navigating to guide, ensure page-guide's padding is reset
-        // The scroll handler in guide.js will manage padding based on main header collapse.
+        // When navigating to guide, reset padding top for page-guide.
+        // The scroll listener in guide.js will manage collapsing/expanding headers.
         UIElements.pageGuide.style.paddingTop = `0px`; 
         // Reset guide scroll to top when coming back to it
         if (UIElements.guideContainer) {
@@ -156,7 +157,6 @@ export const handleRouteChange = () => {
         }
     } else {
         // If navigating to settings, ensure main header is fully visible (by removing collapsed class)
-        const appContainer = document.getElementById('app-container');
         if (appContainer) {
             appContainer.classList.remove('header-collapsed');
         }
