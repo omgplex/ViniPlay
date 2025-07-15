@@ -121,10 +121,11 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
         return;
     }
 
-    const currentScrollLeft = UIElements.guideContainer.scrollLeft; // Change to guideContainer
-    const currentScrollTop = UIElements.guideContainer.scrollTop; // Change to guideContainer
+    // Capture current scroll positions before re-rendering
+    const currentScrollLeft = UIElements.guideContainer.scrollLeft;
+    const currentScrollTop = UIElements.guideContainer.scrollTop;
 
-    // Update date display in the minimal header
+    // Update date display in the unified header
     UIElements.guideDateDisplay.textContent = guideState.currentDate.toLocaleDateString([], { weekday: 'short', month: 'long', day: 'numeric' });
     
     const guideStart = new Date(guideState.currentDate);
@@ -232,7 +233,7 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
         if (resetScroll) {
             UIElements.guideContainer.scrollTop = 0; // Scroll guide container
         }
-        UIElements.guideContainer.scrollLeft = currentScrollLeft; // Scroll guide container
+        UIElements.guideContainer.scrollLeft = currentScrollLeft; // Restore horizontal scroll
         updateNowLine(guideStart, resetScroll);
     }, 50); // Small delay to allow DOM to render
 };
@@ -249,11 +250,14 @@ const updateNowLine = (guideStart, shouldScroll) => {
     const now = new Date();
     const guideEnd = new Date(guideStart.getTime() + guideState.guideDurationHours * 3600 * 1000);
 
+    // Get the actual width of the channel info column (sticky-corner / channel-info)
+    // This is needed because the now-line starts after this column.
+    const channelInfoColWidth = UIElements.guideGrid.querySelector('.sticky-corner')?.offsetWidth || 0;
+
     if (now >= guideStart && now <= guideEnd) {
         // Calculate left position relative to the start of the *scrollable* area
-        const channelInfoColWidth = UIElements.guideGrid.querySelector('.channel-info')?.offsetWidth || 0;
         const leftOffsetInScrollableArea = ((now - guideStart) / 3600000) * guideState.hourWidthPixels;
-        nowLineEl.style.left = `${channelInfoColWidth + leftOffsetInScrollableArea}px`;
+        nowLineEl.style.left = `${channelInfoColWidth + leftOffsetInScrollableArea}px`; // Add channelInfoColWidth
         nowLineEl.classList.remove('hidden');
         if (shouldScroll) {
             // Scroll the guide container horizontally
@@ -449,7 +453,7 @@ export function setupGuideEventListeners() {
         guideState.currentDate.setDate(guideState.currentDate.getDate() - 1);
         finalizeGuideLoad();
     });
-    UIElements.todayBtn.addEventListener('click', () => {
+    UIElements.resetFilterBtn.addEventListener('click', () => { // Renamed from today-btn
         guideState.currentDate = new Date();
         renderGuide(guideState.visibleChannels, true);
     });
@@ -579,29 +583,28 @@ export function setupGuideEventListeners() {
 
     // --- NEW: Scroll event for header visibility ---
     let lastScrollTop = 0;
-    const scrollableElement = UIElements.guideContainer; // The main scrollable area
+    const scrollableElement = UIElements.guideContainer; // The main scrollable area for the guide grid
     const appContainer = document.getElementById('app-container');
+    const unifiedGuideHeader = UIElements.unifiedGuideHeader; // The new unified header
 
     const handleScrollHeader = throttle(() => {
         const scrollTop = scrollableElement.scrollTop;
         const scrollDirection = scrollTop > lastScrollTop ? 'down' : 'up';
         
-        // Calculate the combined height of the elements that will hide
-        let fullHeaderHeight = 0;
-        if (UIElements.mainHeader) fullHeaderHeight += UIElements.mainHeader.offsetHeight;
+        // Calculate the combined height of the main headers that *will* hide
+        let collapsibleHeaderHeight = 0;
+        if (UIElements.mainHeader) collapsibleHeaderHeight += UIElements.mainHeader.offsetHeight;
         if (UIElements.desktopTabs && !UIElements.desktopTabs.classList.contains('hidden')) {
-            fullHeaderHeight += UIElements.desktopTabs.offsetHeight;
+            collapsibleHeaderHeight += UIElements.desktopTabs.offsetHeight;
         }
-        if (UIElements.guideControlsBar) fullHeaderHeight += UIElements.guideControlsBar.offsetHeight;
-
-        const threshold = fullHeaderHeight * 0.5; // Hide after scrolling half the height of the full header
+        
+        const threshold = collapsibleHeaderHeight * 0.5; // Hide after scrolling half the height
 
         if (scrollDirection === 'down' && scrollTop > threshold) {
             if (!appContainer.classList.contains('header-collapsed')) {
                 appContainer.classList.add('header-collapsed');
-                // Set padding-top for page-guide to account for new static header height
-                const minimalHeaderHeight = UIElements.minimalGuideHeader.offsetHeight;
-                UIElements.pageGuide.style.paddingTop = `${minimalHeaderHeight}px`;
+                // Set padding-top for page-guide to account for the unifiedGuideHeader's height
+                UIElements.pageGuide.style.paddingTop = `${unifiedGuideHeader.offsetHeight}px`;
             }
         } else if (scrollDirection === 'up' && scrollTop <= threshold) { // Also show if near top
             if (appContainer.classList.contains('header-collapsed')) {
@@ -615,8 +618,11 @@ export function setupGuideEventListeners() {
 
     scrollableElement.addEventListener('scroll', handleScrollHeader);
 
-    // Initial setting for minimal header, assuming full header is visible initially
-    if (UIElements.minimalGuideHeader) {
-        UIElements.minimalGuideHeader.classList.add('expanded');
+    // Initial setting for page-guide padding, based on whether header is initially collapsed or not.
+    // This will be dynamic based on scroll, but ensure it's correct on load.
+    if (appContainer.classList.contains('header-collapsed')) {
+        UIElements.pageGuide.style.paddingTop = `${unifiedGuideHeader.offsetHeight}px`;
+    } else {
+        UIElements.pageGuide.style.paddingTop = `0px`;
     }
 }
