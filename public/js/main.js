@@ -11,7 +11,7 @@ import { checkAuthStatus, setupAuthEventListeners } from './modules/auth.js';
 import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './modules/guide.js';
 import { setupPlayerEventListeners } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
-import { makeModalResizable, navigate, switchTab, handleRouteChange, handleConfirm } from './modules/ui.js';
+import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal } from './modules/ui.js';
 
 /**
  * Initializes the main application after successful authentication.
@@ -74,7 +74,7 @@ export async function initMainApp() {
         showNotification("Initialization failed: " + e.message, true);
         UIElements.initialLoadingIndicator.classList.add('hidden');
         UIElements.noDataMessage.classList.remove('hidden');
-        navigate('/settings'); // Redirect to settings on failure
+        switchTab('settings'); // Redirect to settings on failure
     }
 }
 
@@ -124,34 +124,26 @@ function restoreModalDimensions() {
         if (width) UIElements.programDetailsContainer.style.width = `${width}px`;
         if (height) UIElements.programDetailsContainer.style.height = `${height}px`;
     }
-} 
+}
 
 /**
  * Sets up core application event listeners (navigation, modals, etc.).
  */
 function setupCoreEventListeners() {
     // Main navigation
-    ['tabGuide', 'bottomNavGuide'].forEach(id => UIElements[id].addEventListener('click', () => switchTab('guide')));
-    ['tabSettings', 'bottomNavSettings'].forEach(id => UIElements[id].addEventListener('click', () => switchTab('settings')));
+    ['tabGuide', 'bottomNavGuide'].forEach(id => UIElements[id]?.addEventListener('click', () => switchTab('guide')));
+    ['tabSettings', 'bottomNavSettings'].forEach(id => UIElements[id]?.addEventListener('click', () => switchTab('settings')));
     
     // Browser back/forward navigation
     window.addEventListener('popstate', handleRouteChange);
 
-    // Sidebar toggles
-    UIElements.sidebarToggle.addEventListener('click', () => {
-        import('./modules/ui.js').then(({ toggleSidebar }) => toggleSidebar(true));
-    });
-    UIElements.sidebarOverlay.addEventListener('click', () => {
-        import('./modules/ui.js').then(({ toggleSidebar }) => toggleSidebar(false));
-    });
-
     // Modal controls
     UIElements.confirmCancelBtn.addEventListener('click', () => {
-        import('./modules/ui.js').then(({ closeModal }) => closeModal(UIElements.confirmModal));
+       closeModal(UIElements.confirmModal);
     });
     UIElements.confirmOkBtn.addEventListener('click', handleConfirm);
     UIElements.detailsCloseBtn.addEventListener('click', () => {
-        import('./modules/ui.js').then(({ closeModal }) => closeModal(UIElements.programDetailsModal));
+        closeModal(UIElements.programDetailsModal);
     });
 
     // Resizable modals
