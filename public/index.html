@@ -136,6 +136,9 @@
                 <!-- GUIDE CONTAINER: No longer contains the filter sidebar -->
                 <div id="guide-container" class="flex-grow flex bg-gray-900 overflow-hidden relative">
                     <div id="guide-placeholder" class="absolute inset-0 flex items-center justify-center z-40"><div id="initial-loading-indicator" class="text-center text-gray-400"><div class="loader mx-auto"></div><p class="mt-4">Loading application...</p></div><div id="no-data-message" class="hidden text-center text-gray-500 p-4"><svg class="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg><h3 class="mt-2 text-sm font-medium">No Data Loaded</h3><p class="mt-1 text-sm">Go to the Settings tab to add and activate your M3U and EPG sources.</p></div></div>
+                    
+                    <!-- HIDDEN Placeholder to prevent JS errors -->
+                    <div id="channel-panel-container" style="display: none;"></div>
 
                     <!-- Main Guide & Timeline Area -->
                     <div id="timeline-container" class="flex-grow flex flex-col overflow-hidden">
@@ -167,4 +170,4 @@
     <div id="user-editor-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"><div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6"><h3 id="user-editor-title" class="text-xl font-bold text-white mb-4">Edit User</h3><form id="user-editor-form" class="space-y-4"><input type="hidden" id="user-editor-id"><div id="user-editor-error" class="hidden bg-red-900/50 border border-red-700/50 text-red-300 px-4 py-2 rounded-md text-sm"></div><div><label for="user-editor-username" class="block text-sm font-medium text-gray-400">Username</label><input type="text" id="user-editor-username" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white" required></div><div><label for="user-editor-password" class="block text-sm font-medium text-gray-400">New Password (optional)</label><input type="password" id="user-editor-password" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white"></div><div class="flex items-center"><input id="user-editor-isAdmin" type="checkbox" class="h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"><label for="user-editor-isAdmin" class="ml-2 block text-sm text-gray-300">Is Administrator</label></div><div class="flex justify-end gap-4 pt-4"><button type="button" id="user-editor-cancel-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Cancel</button><button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Save</button></div></form></div></div>
     <script type="module" src="/js/main.js"></script>
 </body>
-</html>
+</ht
