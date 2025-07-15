@@ -116,17 +116,14 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
     UIElements.noDataMessage.classList.toggle('hidden', !showNoData);
     UIElements.initialLoadingIndicator.classList.add('hidden');
 
-    const elementsToToggle = ['channelPanelContainer', 'resizer', 'logoColumn', 'timelineContainer'];
-    elementsToToggle.forEach(id => UIElements[id]?.classList.toggle('hidden', showNoData));
-    if (window.innerWidth >= 1024) { // lg breakpoint
-        UIElements.channelPanelContainer?.classList.toggle('lg:flex', !showNoData);
-        UIElements.resizer?.classList.toggle('lg:block', !showNoData);
-    }
+    UIElements.guideHeader.classList.toggle('hidden', showNoData);
+    UIElements.guideGrid.classList.toggle('hidden', showNoData);
+
 
     if (showNoData) return;
 
-    const currentScrollTop = UIElements.channelList.scrollTop;
-    ['channelList', 'logoList', 'guideTimeline', 'timeBar'].forEach(id => UIElements[id].innerHTML = '');
+    const currentScrollTop = UIElements.guideGrid.scrollTop;
+    ['guideGrid', 'timeBar'].forEach(id => UIElements[id].innerHTML = '');
 
     UIElements.guideDateDisplay.textContent = guideState.currentDate.toLocaleDateString([], { weekday: 'short', month: 'long', day: 'numeric' });
 
@@ -142,12 +139,15 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
         timeBarContent.innerHTML += `<div class="absolute top-0 bottom-0 flex items-center justify-start px-2 text-xs text-gray-400 border-r border-gray-700/50" style="left: ${i * guideState.hourWidthPixels}px; width: ${guideState.hourWidthPixels}px;">${time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>`;
     }
     UIElements.timeBar.appendChild(timeBarContent);
+    UIElements.guideHeaderChannels.style.height = `${UIElements.timeBar.offsetHeight}px`;
 
     // Render channels and programs
-    let channelRowsHTML = '';
+    let guideContentHTML = '';
     const sourceColors = ['bg-blue-600', 'bg-green-600', 'bg-pink-600', 'bg-yellow-500', 'bg-indigo-600', 'bg-red-600'];
     const sourceColorMap = new Map();
     let colorIndex = 0;
+
+    const fragment = document.createDocumentFragment();
 
     channelsToRender.forEach(channel => {
         const channelName = channel.displayName || channel.name;
@@ -156,29 +156,38 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
             sourceColorMap.set(channel.source, sourceColors[colorIndex % sourceColors.length]);
             colorIndex++;
         }
+        
+        const rowEl = document.createElement('div');
+        rowEl.className = 'flex border-b border-gray-700/50 h-24';
+
+        // Channel Info Cell (Left side)
+        const channelCell = document.createElement('div');
+        channelCell.className = 'w-64 md:w-80 flex-shrink-0 bg-gray-800/80 backdrop-blur-sm border-r border-gray-700/50 p-2 flex items-center justify-between sticky left-0 z-10';
+        
         const sourceBadgeColor = sourceColorMap.get(channel.source);
-        const sourceBadgeHTML = guideState.channelSources.size > 1 ? `<span class="source-badge ${sourceBadgeColor} text-white">${channel.source}</span>` : '';
+        const sourceBadgeHTML = guideState.channelSources.size > 1 ? `<span class="source-badge ${sourceBadgeColor} text-white !ml-0">${channel.source}</span>` : '';
         const chnoBadgeHTML = channel.chno ? `<span class="chno-badge">${channel.chno}</span>` : '';
 
-        // Channel list on the left
-        UIElements.channelList.innerHTML += `<div class="h-24 flex items-center justify-between p-2 border-b border-gray-700/50 flex-shrink-0">
+        channelCell.innerHTML = `
             <div class="flex items-center overflow-hidden cursor-pointer flex-grow min-w-0" data-url="${channel.url}" data-name="${channelName}" data-id="${channel.id}">
-                <img src="${channel.logo}" onerror="this.onerror=null; this.src='https.placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-3 flex-shrink-0 rounded-md bg-gray-700">
+                <img src="${channel.logo}" onerror="this.onerror=null; this.src='https.placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-3 flex-shrink-0 rounded-md bg-gray-700 hidden sm:block">
                 <div class="flex-grow min-w-0">
                     <span class="font-semibold text-sm truncate block">${channelName}</span>
-                    <div class="flex items-center gap-2 mt-1">
+                     <div class="flex items-center gap-2 mt-1">
                         ${chnoBadgeHTML}
                         ${sourceBadgeHTML}
                     </div>
                 </div>
             </div>
             <svg data-channel-id="${channel.id}" class="w-6 h-6 text-gray-500 hover:text-yellow-400 favorite-star cursor-pointer flex-shrink-0 ml-2 ${channel.isFavorite ? 'favorited' : ''}" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8-2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>
-        </div>`;
+        `;
+        rowEl.appendChild(channelCell);
         
-        // Logo-only column for smaller screens
-        UIElements.logoList.innerHTML += `<div class="h-24 flex items-center justify-center p-1 border-b border-gray-700/50 flex-shrink-0 cursor-pointer" data-url="${channel.url}" data-name="${channelName}" data-id="${channel.id}"><img src="${channel.logo}" onerror="this.onerror=null; this.src='https.placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-14 h-14 object-contain pointer-events-none"></div>`;
+        // Programs Cell (Right side)
+        const programsCell = document.createElement('div');
+        programsCell.className = 'relative flex-grow';
+        programsCell.style.width = `${guideState.guideDurationHours * guideState.hourWidthPixels}px`;
 
-        // Programs for the timeline
         let programsHTML = '';
         const now = new Date();
         const guideEnd = new Date(guideStart.getTime() + guideState.guideDurationHours * 3600 * 1000);
@@ -197,16 +206,18 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
 
             programsHTML += `<div class="programme-item absolute top-1 bottom-1 bg-gray-800 rounded-md p-2 overflow-hidden flex flex-col justify-center z-5 ${isLive ? 'live' : ''} ${progStop < now ? 'past' : ''}" style="left:${left}px; width:${Math.max(0, width - 2)}px" data-channel-url="${channel.url}" data-channel-id="${channel.id}" data-channel-name="${channelName}" data-prog-title="${prog.title}" data-prog-desc="${prog.desc}" data-prog-start="${progStart.toISOString()}" data-prog-stop="${progStop.toISOString()}"><div class="programme-progress" style="width:${progressWidth}%"></div><p class="prog-title text-white font-semibold truncate relative z-10">${prog.title}</p><p class="prog-time text-gray-400 truncate relative z-10">${progStart.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p></div>`;
         });
-        channelRowsHTML += `<div class="h-24 border-b border-gray-700/50 relative">${programsHTML}</div>`;
+        programsCell.innerHTML = programsHTML;
+        rowEl.appendChild(programsCell);
+
+        fragment.appendChild(rowEl);
     });
-    UIElements.guideTimeline.innerHTML = `<div id="now-line" class="absolute top-0 bottom-0 bg-red-500 w-0.5 z-20 hidden"></div>` + channelRowsHTML;
     
+    UIElements.guideGrid.appendChild(fragment);
+
     // Defer scroll position restoration and now-line update
     setTimeout(() => {
-        UIElements.channelList.scrollTop = resetScroll ? 0 : currentScrollTop;
-        UIElements.guideTimeline.scrollTop = UIElements.channelList.scrollTop;
-        UIElements.logoList.scrollTop = UIElements.channelList.scrollTop;
-        updateNowLine(guideStart, resetScroll, channelsToRender.length * 96);
+        UIElements.guideGrid.scrollTop = resetScroll ? 0 : currentScrollTop;
+        updateNowLine(guideStart, resetScroll);
     }, 0);
 };
 
@@ -214,12 +225,17 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
  * Updates the position of the "now" line and program states (live, past).
  * @param {Date} guideStart - The start time of the current guide view.
  * @param {boolean} shouldScroll - If true, scrolls the timeline to the now line.
- * @param {number} totalGuideHeight - The total pixel height of the guide grid.
  */
-const updateNowLine = (guideStart, shouldScroll, totalGuideHeight) => {
-    const nowLineEl = document.getElementById('now-line');
-    if (!nowLineEl) return;
-
+const updateNowLine = (guideStart, shouldScroll) => {
+    let nowLineEl = document.getElementById('now-line');
+    if (!nowLineEl) {
+        nowLineEl = document.createElement('div');
+        nowLineEl.id = 'now-line';
+        nowLineEl.className = 'absolute top-0 bottom-0 bg-red-500 w-0.5 z-20 hidden';
+        UIElements.guideGrid.prepend(nowLineEl);
+    }
+    
+    const totalGuideHeight = UIElements.guideGrid.scrollHeight;
     nowLineEl.style.height = `${totalGuideHeight}px`;
     const now = new Date();
     const guideEnd = new Date(guideStart.getTime() + guideState.guideDurationHours * 3600 * 1000);
@@ -229,7 +245,7 @@ const updateNowLine = (guideStart, shouldScroll, totalGuideHeight) => {
         nowLineEl.style.left = `${left}px`;
         nowLineEl.classList.remove('hidden');
         if (shouldScroll) {
-            UIElements.guideTimeline.scrollLeft = left - (UIElements.guideTimeline.clientWidth / 4);
+            UIElements.guideGrid.scrollLeft = left - (UIElements.guideGrid.clientWidth / 4);
         }
     } else {
         nowLineEl.classList.add('hidden');
@@ -250,7 +266,7 @@ const updateNowLine = (guideStart, shouldScroll, totalGuideHeight) => {
     });
 
     // Schedule the next update
-    setTimeout(() => updateNowLine(guideStart, false, totalGuideHeight), 60000);
+    setTimeout(() => updateNowLine(guideStart, false), 60000);
 };
 
 
@@ -285,7 +301,7 @@ const populateSourceFilter = () => {
     
     UIElements.sourceFilter.classList.remove('hidden');
     // Only show the source filter if there's more than one source
-    UIElements.sourceFilter.style.visibility = guideState.channelSources.size <= 1 ? 'hidden' : 'visible';
+    UIElements.sourceFilter.style.display = guideState.channelSources.size <= 1 ? 'none' : 'block';
 };
 
 /**
@@ -433,8 +449,8 @@ export function setupGuideEventListeners() {
             // If already on today, just scroll to the "now" line
             const guideStart = new Date(guideState.currentDate);
             guideStart.setHours(0, 0, 0, 0);
-            const scrollPos = ((now - guideStart) / 3600000) * guideState.hourWidthPixels - (UIElements.guideTimeline.clientWidth / 4);
-            UIElements.guideTimeline.scrollTo({ left: scrollPos, behavior: 'smooth' });
+            const scrollPos = ((now - guideStart) / 3600000) * guideState.hourWidthPixels - (UIElements.guideGrid.clientWidth / 4);
+            UIElements.guideGrid.scrollTo({ left: scrollPos, behavior: 'smooth' });
         }
     });
     UIElements.nextDayBtn.addEventListener('click', () => {
@@ -457,18 +473,7 @@ export function setupGuideEventListeners() {
     });
 
     // --- Interactions (Clicks) ---
-    const playFromEvent = (e) => {
-        const channelItem = e.target.closest('[data-url]');
-        if (channelItem) {
-            playChannel(channelItem.dataset.url, channelItem.dataset.name, channelItem.dataset.id);
-            // On mobile, hide the sidebar after selecting a channel
-            if (window.innerWidth < 1024) {
-                import('./ui.js').then(({ toggleSidebar }) => toggleSidebar(false));
-            }
-        }
-    };
-
-    UIElements.channelList.addEventListener('click', (e) => {
+    UIElements.guideGrid.addEventListener('click', (e) => {
         const favoriteStar = e.target.closest('.favorite-star');
         if (favoriteStar) {
             const channelId = favoriteStar.dataset.channelId;
@@ -489,26 +494,26 @@ export function setupGuideEventListeners() {
             }
             return; // Don't play the channel when clicking the star
         }
-        playFromEvent(e);
-    });
-
-    UIElements.logoList.addEventListener('click', playFromEvent);
-
-    UIElements.guideTimeline.addEventListener('click', (e) => {
-        const progItem = e.target.closest('.programme-item');
-        if (!progItem) return;
         
-        // Populate and show the program details modal
-        UIElements.detailsTitle.textContent = progItem.dataset.progTitle;
-        const progStart = new Date(progItem.dataset.progStart);
-        const progStop = new Date(progItem.dataset.progStop);
-        UIElements.detailsTime.textContent = `${progStart.toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})}`;
-        UIElements.detailsDesc.textContent = progItem.dataset.progDesc || "No description available.";
-        UIElements.detailsPlayBtn.onclick = () => {
-            playChannel(progItem.dataset.channelUrl, `${progItem.dataset.channelName}`, progItem.dataset.channelId);
-            closeModal(UIElements.programDetailsModal);
-        };
-        openModal(UIElements.programDetailsModal);
+        const channelItem = e.target.closest('[data-url]');
+        if (channelItem) {
+             const progItem = e.target.closest('.programme-item');
+             if(progItem) {
+                // Populate and show the program details modal
+                UIElements.detailsTitle.textContent = progItem.dataset.progTitle;
+                const progStart = new Date(progItem.dataset.progStart);
+                const progStop = new Date(progItem.dataset.progStop);
+                UIElements.detailsTime.textContent = `${progStart.toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})}`;
+                UIElements.detailsDesc.textContent = progItem.dataset.progDesc || "No description available.";
+                UIElements.detailsPlayBtn.onclick = () => {
+                    playChannel(progItem.dataset.channelUrl, `${progItem.dataset.channelName}`, progItem.dataset.channelId);
+                    closeModal(UIElements.programDetailsModal);
+                };
+                openModal(UIElements.programDetailsModal);
+             } else {
+                playChannel(channelItem.dataset.url, channelItem.dataset.name, channelItem.dataset.id);
+             }
+        }
     });
 
     // --- Search Results Click ---
@@ -527,43 +532,14 @@ export function setupGuideEventListeners() {
     });
 
     // --- Guide Scrolling Sync ---
-    let ignoreScroll = false;
-    const syncScroll = (source, targets) => {
-        if (!ignoreScroll) {
-            ignoreScroll = true;
-            targets.forEach(target => {
-                if (target) target.scrollTop = source.scrollTop;
-            });
-            ignoreScroll = false;
-        }
-    };
-    UIElements.guideTimeline.addEventListener('scroll', (e) => {
+    UIElements.guideGrid.addEventListener('scroll', (e) => {
         UIElements.timeBar.scrollLeft = e.target.scrollLeft;
-        syncScroll(e.target, [UIElements.channelList, UIElements.logoList]);
     });
-    UIElements.channelList.addEventListener('scroll', (e) => syncScroll(e.target, [UIElements.guideTimeline, UIElements.logoList]));
-    UIElements.logoList.addEventListener('scroll', (e) => syncScroll(e.target, [UIElements.guideTimeline, UIElements.channelList]));
 
-    // --- Panel Resizer ---
-    UIElements.resizer.addEventListener('mousedown', e => {
-        e.preventDefault();
-        const startX = e.clientX,
-            startWidth = UIElements.channelPanelContainer.offsetWidth;
-        const doResize = (e) => {
-            UIElements.channelPanelContainer.style.width = `${Math.max(250, startWidth + e.clientX - startX)}px`;
-        };
-        const stopResize = () => {
-            window.removeEventListener('mousemove', doResize);
-            window.removeEventListener('mouseup', stopResize);
-        };
-        window.addEventListener('mousemove', doResize);
-        window.addEventListener('mouseup', stopResize);
-    }, false);
-
-    // --- Collapsing Header and "Show" Button (v3 - The Good One) ---
+    // --- Collapsing Header and "Show" Button ---
     let lastScrollTop = 0;
     const handleHeaderAndButtonVisibility = () => {
-        const scrollTop = UIElements.guideTimeline.scrollTop;
+        const scrollTop = UIElements.guideGrid.scrollTop;
 
         // A small buffer to prevent jittering from minor scroll adjustments.
         if (Math.abs(scrollTop - lastScrollTop) <= 5) {
@@ -588,7 +564,7 @@ export function setupGuideEventListeners() {
     };
 
     // Listen to scroll events, but throttled to prevent lag.
-    UIElements.guideTimeline.addEventListener('scroll', throttle(handleHeaderAndButtonVisibility, 100), { passive: true });
+    UIElements.guideGrid.addEventListener('scroll', throttle(handleHeaderAndButtonVisibility, 100), { passive: true });
 
     // Handle click on the "Show Header" button with a direct action.
     UIElements.showHeaderBtn.addEventListener('click', () => {
@@ -597,6 +573,6 @@ export function setupGuideEventListeners() {
         UIElements.showHeaderBtn.classList.add('hidden');
         
         // Then, perform the smooth scroll to the top.
-        UIElements.guideTimeline.scrollTo({ top: 0, behavior: 'smooth' });
+        UIElements.guideGrid.scrollTo({ top: 0, behavior: 'smooth' });
     });
 }
