@@ -116,7 +116,7 @@ export const updateUIFromSettings = () => {
     UIElements.editUserAgentBtn.disabled = !selectedUA;
     UIElements.deleteUserAgentBtn.disabled = !selectedUA || selectedUA.isDefault;
 
-    // --- MODIFIED: Ensure user list is always populated for admins when this page is viewed.
+    // Ensure user list is always populated for admins when this page is viewed.
     if (appState.currentUser?.isAdmin) {
         refreshUserList();
     }
