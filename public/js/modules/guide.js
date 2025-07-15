@@ -136,21 +136,33 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
 
     const timelineWidth = guideState.guideDurationHours * guideState.hourWidthPixels;
     // Set CSS variable for grid-template-columns width
+    // Dynamically calculate the channel column width based on the visible channel-info element.
+    // This needs to happen after channel-info is potentially rendered or its size is known.
+    // For initial render, we'll use a sensible default or rely on CSS.
+    // We'll set a CSS custom property that the CSS can use.
+    const channelColWidth = window.innerWidth < 768 ? '64px' : '180px'; // Match CSS media query
+    UIElements.guideGrid.style.setProperty('--channel-col-width', channelColWidth);
     UIElements.guideGrid.style.setProperty('--timeline-width', `${timelineWidth}px`);
 
 
     // 1. Render Sticky Corner (top-left) and Time Bar Row
-    let timeBarCellsHTML = '';
+    // The NOW button and arrows are now inside sticky-corner
+    gridHTML += `
+        <div class="sticky-corner flex items-center justify-center p-2 sm:p-4">
+            <div class="flex items-center gap-2">
+                <button id="prev-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&lt;</button>
+                <button id="now-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">Now</button>
+                <button id="next-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&gt;</button>
+            </div>
+        </div>
+        <div class="time-bar-cell" style="width: ${timelineWidth}px;">`;
     for (let i = 0; i < guideState.guideDurationHours; i++) {
         const time = new Date(guideStart);
         time.setHours(guideStart.getHours() + i);
-        timeBarCellsHTML += `<div class="absolute top-0 bottom-0 flex items-center justify-start px-2 text-xs text-gray-400 border-r border-gray-700/50" style="left: ${i * guideState.hourWidthPixels}px; width: ${guideState.hourWidthPixels}px;">${time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>`;
+        gridHTML += `<div class="absolute top-0 bottom-0 flex items-center justify-start px-2 text-xs text-gray-400 border-r border-gray-700/50" style="left: ${i * guideState.hourWidthPixels}px; width: ${guideState.hourWidthPixels}px;">${time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>`;
     }
-    
-    gridHTML += `
-        <div class="sticky-corner"></div>
-        <div class="time-bar-cell" style="width: ${timelineWidth}px;">${timeBarCellsHTML}</div>
-    `;
+    gridHTML += `</div>`;
+
 
     // 2. Render Channel + Program Rows
     const sourceColors = ['bg-blue-600', 'bg-green-600', 'bg-pink-600', 'bg-yellow-500', 'bg-indigo-600', 'bg-red-600'];
@@ -213,6 +225,32 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
     });
     
     UIElements.guideGrid.innerHTML = gridHTML;
+
+    // After rendering, re-bind event listeners for the newly created buttons inside sticky-corner
+    // These elements need to be re-queried as they are part of innerHTML assignment
+    const prevDayBtn = UIElements.guideGrid.querySelector('#prev-day-btn');
+    const nowBtn = UIElements.guideGrid.querySelector('#now-btn');
+    const nextDayBtn = UIElements.guideGrid.querySelector('#next-day-btn');
+
+    if (prevDayBtn) prevDayBtn.addEventListener('click', () => {
+        guideState.currentDate.setDate(guideState.currentDate.getDate() - 1);
+        finalizeGuideLoad();
+    });
+    if (nowBtn) nowBtn.addEventListener('click', () => {
+        const now = new Date();
+        if (guideState.currentDate.toDateString() !== now.toDateString()) {
+            guideState.currentDate = now;
+            finalizeGuideLoad(true);
+        } else {
+            const guideStart = new Date(guideState.currentDate);
+            guideStart.setHours(0, 0, 0, 0);
+            updateNowLine(guideStart, true);
+        }
+    });
+    if (nextDayBtn) nextDayBtn.addEventListener('click', () => {
+        guideState.currentDate.setDate(guideState.currentDate.getDate() + 1);
+        finalizeGuideLoad();
+    });
     
     // Now line needs to be positioned after all elements are rendered
     let nowLineEl = document.getElementById('now-line');
@@ -448,35 +486,8 @@ const throttle = (func, limit) => {
  * Sets up all event listeners for the guide page.
  */
 export function setupGuideEventListeners() {
-    // --- Guide Navigation ---
-    UIElements.prevDayBtn.addEventListener('click', () => {
-        guideState.currentDate.setDate(guideState.currentDate.getDate() - 1);
-        finalizeGuideLoad();
-    });
-    UIElements.resetFilterBtn.addEventListener('click', () => { // Renamed from today-btn
-        guideState.currentDate = new Date();
-        renderGuide(guideState.visibleChannels, true);
-    });
-
-    // "Now" button logic is updated for consistency.
-    UIElements.nowBtn.addEventListener('click', () => {
-        const now = new Date();
-        // If guide is not on today's date, switch to it and let the re-render handle the scroll
-        if (guideState.currentDate.toDateString() !== now.toDateString()) {
-            guideState.currentDate = now;
-            finalizeGuideLoad(true); // 'true' will trigger the scroll in render pipeline
-        } else {
-            // If already on today, just trigger the scroll manually by calling updateNowLine
-            const guideStart = new Date(guideState.currentDate);
-            guideStart.setHours(0, 0, 0, 0);
-            updateNowLine(guideStart, true); // 'true' forces scroll
-        }
-    });
-
-    UIElements.nextDayBtn.addEventListener('click', () => {
-        guideState.currentDate.setDate(guideState.currentDate.getDate() + 1);
-        finalizeGuideLoad();
-    });
+    // --- Guide Navigation (Now located inside the guide rendering, so we attach directly there) ---
+    // These listeners will be re-attached whenever renderGuide is called.
 
     // --- Filtering and Searching ---
     UIElements.groupFilter.addEventListener('change', () => handleSearchAndFilter());
@@ -487,7 +498,7 @@ export function setupGuideEventListeners() {
     });
     // Hide search results when clicking outside
     document.addEventListener('click', e => {
-        if (!UIElements.searchInput.contains(e.target) && !UIElements.searchResultsContainer.contains(e.target)) {
+        if (!UIElements.searchInput.contains(e.target) && !UIElements.searchResultsContainer.contains(e.target) && !e.target.closest('.search-result-channel') && !e.target.closest('.search-result-program')) {
             UIElements.searchResultsContainer.classList.add('hidden');
         }
     });
@@ -620,9 +631,6 @@ export function setupGuideEventListeners() {
 
     // Initial setting for page-guide padding, based on whether header is initially collapsed or not.
     // This will be dynamic based on scroll, but ensure it's correct on load.
-    if (appContainer.classList.contains('header-collapsed')) {
-        UIElements.pageGuide.style.paddingTop = `${unifiedGuideHeader.offsetHeight}px`;
-    } else {
-        UIElements.pageGuide.style.paddingTop = `0px`;
-    }
+    // This should only be set once after the UI is ready, and then managed by the scroll listener.
+    // We remove the direct setting here as ui.js handles the initial state based on route.
 }
