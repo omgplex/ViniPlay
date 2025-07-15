@@ -121,9 +121,7 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
         return;
     }
 
-    // Capture current scroll positions if not resetting
-    const currentScrollLeft = UIElements.guideContainer.scrollLeft;
-    const currentScrollTop = UIElements.guideContainer.scrollTop;
+    const currentScrollLeft = UIElements.guideGrid.scrollLeft;
 
     UIElements.guideDateDisplay.textContent = guideState.currentDate.toLocaleDateString([], { weekday: 'short', month: 'long', day: 'numeric' });
     
@@ -133,21 +131,18 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
     // --- Build Grid HTML ---
     let gridHTML = '';
 
-    // 1. Render Time Bar Row (sticky top)
+    // 1. Render Time Bar Row
     let timeBarCellsHTML = '';
     for (let i = 0; i < guideState.guideDurationHours; i++) {
         const time = new Date(guideStart);
         time.setHours(guideStart.getHours() + i);
-        // Use time-bar-hour-cell for individual hour markers
-        timeBarCellsHTML += `<div class="time-bar-hour-cell" style="width: ${guideState.hourWidthPixels}px;">${time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>`;
+        timeBarCellsHTML += `<div class="absolute top-0 bottom-0 flex items-center justify-start px-2 text-xs text-gray-400 border-r border-gray-700/50" style="left: ${i * guideState.hourWidthPixels}px; width: ${guideState.hourWidthPixels}px;">${time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>`;
     }
     const timelineWidth = guideState.guideDurationHours * guideState.hourWidthPixels;
-
+    // Top-left empty cell + Time bar
     gridHTML += `
-        <!-- Top-left blank corner, sticky at top-left -->
-        <div class="guide-corner-filler" style="grid-row: 1; grid-column: 1;"></div>
-        <!-- Sticky Time Bar Header, sticky at top -->
-        <div class="time-bar-header" style="grid-row: 1; grid-column: 2; width: ${timelineWidth}px;">${timeBarCellsHTML}</div>
+        <div class="channel-info h-16" style="grid-row: 1; grid-column: 1;"></div>
+        <div class="time-bar-cell h-16" style="grid-row: 1; grid-column: 2; width: ${timelineWidth}px;">${timeBarCellsHTML}</div>
     `;
 
     // 2. Render Channel + Program Rows
@@ -168,11 +163,11 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
         const sourceBadgeHTML = guideState.channelSources.size > 1 ? `<span class="source-badge ${sourceBadgeColor} text-white">${channel.source}</span>` : '';
         const chnoBadgeHTML = channel.chno ? `<span class="chno-badge">${channel.chno}</span>` : '';
 
-        // Sticky Channel Info Cell (left column)
-        const channelInfoHtml = `
-            <div class="channel-info p-2 flex items-center justify-between cursor-pointer" style="grid-row: ${rowNum}; grid-column: 1;" data-url="${channel.url}" data-name="${channelName}" data-id="${channel.id}">
+        // Sticky Channel Info Cell
+        const channelInfoHTML = `
+            <div class="channel-info h-24 p-2 flex items-center justify-between cursor-pointer" style="grid-row: ${rowNum}; grid-column: 1;" data-url="${channel.url}" data-name="${channelName}" data-id="${channel.id}">
                 <div class="flex items-center overflow-hidden flex-grow min-w-0">
-                    <img src="${channel.logo}" onerror="this.onerror=null; this.src='https://placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-3 flex-shrink-0 rounded-md bg-gray-700">
+                    <img src="${channel.logo}" onerror="this.onerror=null; this.src='https.placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-3 flex-shrink-0 rounded-md bg-gray-700">
                     <div class="flex-grow min-w-0 channel-details">
                         <span class="font-semibold text-sm truncate block">${channelName}</span>
                         <div class="flex items-center gap-2 mt-1">
@@ -204,23 +199,23 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
 
             programsHTML += `<div class="programme-item absolute top-1 bottom-1 bg-gray-800 rounded-md p-2 overflow-hidden flex flex-col justify-center z-5 ${isLive ? 'live' : ''} ${progStop < now ? 'past' : ''}" style="left:${left}px; width:${Math.max(0, width - 2)}px" data-channel-url="${channel.url}" data-channel-id="${channel.id}" data-channel-name="${channelName}" data-prog-title="${prog.title}" data-prog-desc="${prog.desc}" data-prog-start="${progStart.toISOString()}" data-prog-stop="${progStop.toISOString()}"><div class="programme-progress" style="width:${progressWidth}%"></div><p class="prog-title text-white font-semibold truncate relative z-10">${prog.title}</p><p class="prog-time text-gray-400 truncate relative z-10">${progStart.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p></div>`;
         });
-        const timelineRowHTML = `<div class="timeline-row" style="grid-row: ${rowNum}; grid-column: 2; width: ${timelineWidth}px;">${programsHTML}</div>`;
+        const timelineRowHTML = `<div class="timeline-row h-24" style="grid-row: ${rowNum}; grid-column: 2; width: ${timelineWidth}px;">${programsHTML}</div>`;
 
-        gridHTML += channelInfoHtml + timelineRowHTML;
+        gridHTML += channelInfoHTML + timelineRowHTML;
     });
     
+    // Now line needs to be outside the grid cells to span all rows
+    const totalGuideHeight = 64 + (channelsToRender.length * 96); // 64 for header, 96 per channel
+    gridHTML += `<div id="now-line" class="absolute top-0 bg-red-500 w-0.5 z-30 pointer-events-none hidden" style="height: ${totalGuideHeight}px;"></div>`;
+
     UIElements.guideGrid.innerHTML = gridHTML;
     
     // Defer scroll position restoration and now-line update
     setTimeout(() => {
-        // Restore vertical scroll first if not resetting
-        if (!resetScroll) {
-            UIElements.guideContainer.scrollTop = currentScrollTop;
-        } else {
-            UIElements.guideContainer.scrollTop = 0; // Reset vertical scroll
+        if (resetScroll) {
+            UIElements.guideGrid.scrollTop = 0;
         }
-        // Restore horizontal scroll
-        UIElements.guideContainer.scrollLeft = currentScrollLeft;
+        UIElements.guideGrid.scrollLeft = currentScrollLeft;
         updateNowLine(guideStart, resetScroll);
     }, 0);
 };
@@ -237,18 +232,13 @@ const updateNowLine = (guideStart, shouldScroll) => {
     const now = new Date();
     const guideEnd = new Date(guideStart.getTime() + guideState.guideDurationHours * 3600 * 1000);
 
-    // Get the current width of the sticky channel info column for left offset
-    const channelInfoWidth = UIElements.guideGrid.querySelector('.channel-info')?.offsetWidth || 0;
-
     if (now >= guideStart && now <= guideEnd) {
         const left = ((now - guideStart) / 3600000) * guideState.hourWidthPixels;
-        nowLineEl.style.left = `${channelInfoWidth + left}px`;
-        // top and height are now managed by CSS for #now-line (top: 0, height: 100%) relative to guide-container
+        nowLineEl.style.left = `${UIElements.guideGrid.querySelector('.channel-info').offsetWidth + left}px`;
         nowLineEl.classList.remove('hidden');
-
         if (shouldScroll) {
-            UIElements.guideContainer.scrollTo({
-                left: left - (UIElements.guideContainer.clientWidth / 4), // Scroll to 1/4 from left
+            UIElements.guideGrid.scrollTo({
+                left: left - (UIElements.guideGrid.clientWidth / 4),
                 behavior: 'smooth'
             });
         }
@@ -536,9 +526,7 @@ export function setupGuideEventListeners() {
              const channelId = channelItem.dataset.channelId;
              const channelRow = UIElements.guideGrid.querySelector(`.channel-info[data-id="${channelId}"]`);
              if (channelRow) {
-                 // Adjust scroll to bring the channel into view vertically
                  channelRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                 // Highlight the channel briefly
                  channelRow.style.transition = 'background-color 0.5s';
                  channelRow.style.backgroundColor = '#3b82f6'; // Highlight
                  setTimeout(() => { channelRow.style.backgroundColor = ''; }, 2000);
@@ -555,16 +543,12 @@ export function setupGuideEventListeners() {
              }
 
             setTimeout(() => {
-                // Find the actual program element in the guide
                 const programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programItem.dataset.progStart}"]`);
                 if(programElement) {
-                    // Scroll horizontally to bring the program into view
-                    const scrollLeft = programElement.offsetLeft - (UIElements.guideContainer.clientWidth / 4);
-                    UIElements.guideContainer.scrollTo({ left: scrollLeft, behavior: 'smooth' });
-                    // Scroll vertically to bring the program's channel into view
-                    programElement.closest('.timeline-row')?.previousElementSibling?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    const scrollLeft = programElement.offsetLeft - (UIElements.guideGrid.clientWidth / 4);
+                    UIElements.guideGrid.scrollTo({ left: scrollLeft, behavior: 'smooth' });
+                    programElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
 
-                    // Highlight the program briefly
                     programElement.style.transition = 'outline 0.5s';
                     programElement.style.outline = '3px solid #facc15';
                     setTimeout(() => { programElement.style.outline = 'none'; }, 2500);
