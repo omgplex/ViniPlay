@@ -77,6 +77,7 @@ export const updateUIFromSettings = () => {
     const settings = guideState.settings;
 
     // Ensure settings have default values if not present
+    // The channelColumnWidth default is now set in state.js
     settings.timezoneOffset = settings.timezoneOffset ?? Math.round(-(new Date().getTimezoneOffset() / 60));
     settings.autoRefresh = settings.autoRefresh || 0;
     settings.searchScope = settings.searchScope || 'channels_programs';
@@ -267,7 +268,7 @@ export function setupSettingsEventListeners() {
                     handleGuideLoad('', '');
                 } else {
                     handleGuideLoad(config.m3uContent, config.epgContent);
-                    guideState.settings = config.settings || {};
+                    Object.assign(guideState.settings, config.settings || {}); // Merge settings
                     updateUIFromSettings();
                     navigate('/tvguide');
                     showNotification('Sources processed successfully!');
@@ -327,7 +328,7 @@ export function setupSettingsEventListeners() {
 
         if (res && res.ok) {
             const data = await res.json();
-            guideState.settings = data.settings;
+            Object.assign(guideState.settings, data.settings); // Merge settings
             updateUIFromSettings();
             closeModal(UIElements.sourceEditorModal);
             showNotification(`Source ${id ? 'updated' : 'added'} successfully.`);
@@ -353,7 +354,7 @@ export function setupSettingsEventListeners() {
                 const res = await apiFetch(`/api/sources/${sourceType}/${sourceId}`, { method: 'DELETE' });
                 if(res?.ok) { 
                     const data = await res.json();
-                    guideState.settings = data.settings;
+                    Object.assign(guideState.settings, data.settings); // Merge settings
                     updateUIFromSettings();
                     showNotification('Source deleted.'); 
                 } 
@@ -368,7 +369,7 @@ export function setupSettingsEventListeners() {
             });
             if (res?.ok) {
                 const data = await res.json();
-                guideState.settings = data.settings;
+                Object.assign(guideState.settings, data.settings); // Merge settings
                 updateUIFromSettings();
                 showNotification('Source updated.');
             } else {
@@ -397,7 +398,7 @@ export function setupSettingsEventListeners() {
             const newActiveId = (guideState.settings.activeUserAgentId === selectedId) ? (updatedList[0]?.id || null) : guideState.settings.activeUserAgentId;
             const settings = await saveGlobalSetting({ userAgents: updatedList, activeUserAgentId: newActiveId });
             if (settings) {
-                Object.assign(guideState.settings, settings);
+                Object.assign(guideState.settings, settings); // Merge settings
                 updateUIFromSettings();
                 showNotification('User Agent deleted.');
             }
@@ -415,7 +416,7 @@ export function setupSettingsEventListeners() {
             const newActiveId = (guideState.settings.activeStreamProfileId === selectedId) ? (updatedList[0]?.id || null) : guideState.settings.activeStreamProfileId;
             const settings = await saveGlobalSetting({ streamProfiles: updatedList, activeStreamProfileId: newActiveId });
             if (settings) {
-                Object.assign(guideState.settings, settings);
+                Object.assign(guideState.settings, settings); // Merge settings
                 updateUIFromSettings();
                 showNotification('Stream Profile saved.');
             }
@@ -443,7 +444,7 @@ export function setupSettingsEventListeners() {
 
         const settings = await saveGlobalSetting({ [keyToSave]: list });
         if (settings) {
-            Object.assign(guideState.settings, settings);
+            Object.assign(guideState.settings, settings); // Merge settings
             updateUIFromSettings();
             closeModal(UIElements.editorModal);
             showNotification(type === 'userAgent' ? 'User Agent saved.' : 'Stream Profile saved.');
