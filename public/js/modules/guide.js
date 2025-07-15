@@ -121,8 +121,10 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
         return;
     }
 
-    const currentScrollLeft = UIElements.guideGrid.scrollLeft;
+    const currentScrollLeft = UIElements.guideContainer.scrollLeft; // Change to guideContainer
+    const currentScrollTop = UIElements.guideContainer.scrollTop; // Change to guideContainer
 
+    // Update date display in the minimal header
     UIElements.guideDateDisplay.textContent = guideState.currentDate.toLocaleDateString([], { weekday: 'short', month: 'long', day: 'numeric' });
     
     const guideStart = new Date(guideState.currentDate);
@@ -131,18 +133,22 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
     // --- Build Grid HTML ---
     let gridHTML = '';
 
-    // 1. Render Time Bar Row
+    const timelineWidth = guideState.guideDurationHours * guideState.hourWidthPixels;
+    // Set CSS variable for grid-template-columns width
+    UIElements.guideGrid.style.setProperty('--timeline-width', `${timelineWidth}px`);
+
+
+    // 1. Render Sticky Corner (top-left) and Time Bar Row
     let timeBarCellsHTML = '';
     for (let i = 0; i < guideState.guideDurationHours; i++) {
         const time = new Date(guideStart);
         time.setHours(guideStart.getHours() + i);
         timeBarCellsHTML += `<div class="absolute top-0 bottom-0 flex items-center justify-start px-2 text-xs text-gray-400 border-r border-gray-700/50" style="left: ${i * guideState.hourWidthPixels}px; width: ${guideState.hourWidthPixels}px;">${time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>`;
     }
-    const timelineWidth = guideState.guideDurationHours * guideState.hourWidthPixels;
-    // Top-left empty cell + Time bar
+    
     gridHTML += `
-        <div class="channel-info h-16" style="grid-row: 1; grid-column: 1;"></div>
-        <div class="time-bar-cell h-16" style="grid-row: 1; grid-column: 2; width: ${timelineWidth}px;">${timeBarCellsHTML}</div>
+        <div class="sticky-corner"></div>
+        <div class="time-bar-cell" style="width: ${timelineWidth}px;">${timeBarCellsHTML}</div>
     `;
 
     // 2. Render Channel + Program Rows
@@ -151,7 +157,8 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
     let colorIndex = 0;
 
     channelsToRender.forEach((channel, index) => {
-        const rowNum = index + 2; // CSS grid rows start at 1, +1 for header row
+        // We use CSS grid's implicit row placement for .channel-info and .timeline-row
+        // So no explicit grid-row is needed in the HTML
         const channelName = channel.displayName || channel.name;
 
         // Assign a consistent color to each source for the badge
@@ -165,9 +172,9 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
 
         // Sticky Channel Info Cell
         const channelInfoHTML = `
-            <div class="channel-info h-24 p-2 flex items-center justify-between cursor-pointer" style="grid-row: ${rowNum}; grid-column: 1;" data-url="${channel.url}" data-name="${channelName}" data-id="${channel.id}">
+            <div class="channel-info p-2 flex items-center justify-between cursor-pointer" data-url="${channel.url}" data-name="${channelName}" data-id="${channel.id}">
                 <div class="flex items-center overflow-hidden flex-grow min-w-0">
-                    <img src="${channel.logo}" onerror="this.onerror=null; this.src='https.placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-3 flex-shrink-0 rounded-md bg-gray-700">
+                    <img src="${channel.logo}" onerror="this.onerror=null; this.src='https://placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-3 flex-shrink-0 rounded-md bg-gray-700">
                     <div class="flex-grow min-w-0 channel-details">
                         <span class="font-semibold text-sm truncate block">${channelName}</span>
                         <div class="flex items-center gap-2 mt-1">
@@ -199,25 +206,35 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
 
             programsHTML += `<div class="programme-item absolute top-1 bottom-1 bg-gray-800 rounded-md p-2 overflow-hidden flex flex-col justify-center z-5 ${isLive ? 'live' : ''} ${progStop < now ? 'past' : ''}" style="left:${left}px; width:${Math.max(0, width - 2)}px" data-channel-url="${channel.url}" data-channel-id="${channel.id}" data-channel-name="${channelName}" data-prog-title="${prog.title}" data-prog-desc="${prog.desc}" data-prog-start="${progStart.toISOString()}" data-prog-stop="${progStop.toISOString()}"><div class="programme-progress" style="width:${progressWidth}%"></div><p class="prog-title text-white font-semibold truncate relative z-10">${prog.title}</p><p class="prog-time text-gray-400 truncate relative z-10">${progStart.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p></div>`;
         });
-        const timelineRowHTML = `<div class="timeline-row h-24" style="grid-row: ${rowNum}; grid-column: 2; width: ${timelineWidth}px;">${programsHTML}</div>`;
+        const timelineRowHTML = `<div class="timeline-row" style="width: ${timelineWidth}px;">${programsHTML}</div>`;
 
         gridHTML += channelInfoHTML + timelineRowHTML;
     });
     
-    // Now line needs to be outside the grid cells to span all rows
-    const totalGuideHeight = 64 + (channelsToRender.length * 96); // 64 for header, 96 per channel
-    gridHTML += `<div id="now-line" class="absolute top-0 bg-red-500 w-0.5 z-30 pointer-events-none hidden" style="height: ${totalGuideHeight}px;"></div>`;
-
     UIElements.guideGrid.innerHTML = gridHTML;
+    
+    // Now line needs to be positioned after all elements are rendered
+    let nowLineEl = document.getElementById('now-line');
+    if (!nowLineEl) { // Create if it doesn't exist
+        const newLine = document.createElement('div');
+        newLine.id = 'now-line';
+        newLine.className = 'absolute top-0 bg-red-500 w-0.5 z-30 pointer-events-none hidden';
+        UIElements.guideGrid.appendChild(newLine);
+        nowLineEl = newLine; // Update the reference
+    }
     
     // Defer scroll position restoration and now-line update
     setTimeout(() => {
+        // Adjust the height of the now-line to span the entire grid content
+        const totalGuideHeight = UIElements.guideGrid.scrollHeight;
+        nowLineEl.style.height = `${totalGuideHeight}px`;
+
         if (resetScroll) {
-            UIElements.guideGrid.scrollTop = 0;
+            UIElements.guideContainer.scrollTop = 0; // Scroll guide container
         }
-        UIElements.guideGrid.scrollLeft = currentScrollLeft;
+        UIElements.guideContainer.scrollLeft = currentScrollLeft; // Scroll guide container
         updateNowLine(guideStart, resetScroll);
-    }, 0);
+    }, 50); // Small delay to allow DOM to render
 };
 
 /**
@@ -233,12 +250,15 @@ const updateNowLine = (guideStart, shouldScroll) => {
     const guideEnd = new Date(guideStart.getTime() + guideState.guideDurationHours * 3600 * 1000);
 
     if (now >= guideStart && now <= guideEnd) {
-        const left = ((now - guideStart) / 3600000) * guideState.hourWidthPixels;
-        nowLineEl.style.left = `${UIElements.guideGrid.querySelector('.channel-info').offsetWidth + left}px`;
+        // Calculate left position relative to the start of the *scrollable* area
+        const channelInfoColWidth = UIElements.guideGrid.querySelector('.channel-info')?.offsetWidth || 0;
+        const leftOffsetInScrollableArea = ((now - guideStart) / 3600000) * guideState.hourWidthPixels;
+        nowLineEl.style.left = `${channelInfoColWidth + leftOffsetInScrollableArea}px`;
         nowLineEl.classList.remove('hidden');
         if (shouldScroll) {
-            UIElements.guideGrid.scrollTo({
-                left: left - (UIElements.guideGrid.clientWidth / 4),
+            // Scroll the guide container horizontally
+            UIElements.guideContainer.scrollTo({
+                left: leftOffsetInScrollableArea - (UIElements.guideContainer.clientWidth / 4), // Scroll to center now line
                 behavior: 'smooth'
             });
         }
@@ -365,7 +385,7 @@ const renderSearchResults = (channelResults, programResults) => {
         html += '<div class="search-results-header">Channels</div>';
         html += channelResults.map(({ item }) => `
             <div class="search-result-channel flex items-center p-3 border-b border-gray-700/50 hover:bg-gray-700 cursor-pointer" data-channel-id="${item.id}">
-                <img src="${item.logo}" onerror="this.onerror=null; this.src='https.placehold.co/40x40/1f2937/d1d5db?text=?';" class="w-10 h-10 object-contain mr-3 rounded-md bg-gray-700 flex-shrink-0">
+                <img src="${item.logo}" onerror="this.onerror=null; this.src='https://placehold.co/40x40/1f2937/d1d5db?text=?';" class="w-10 h-10 object-contain mr-3 rounded-md bg-gray-700 flex-shrink-0">
                 <div class="overflow-hidden">
                     <p class="font-semibold text-white text-sm truncate">${item.chno ? `[${item.chno}] ` : ''}${item.displayName || item.name}</p>
                     <p class="text-gray-400 text-xs truncate">${item.group} &bull; ${item.source}</p>
@@ -379,7 +399,7 @@ const renderSearchResults = (channelResults, programResults) => {
         const timeFormat = { hour: '2-digit', minute: '2-digit' };
         html += programResults.map(({ item }) => `
              <div class="search-result-program flex items-center p-3 border-b border-gray-700/50 hover:bg-gray-700 cursor-pointer" data-channel-id="${item.channel.id}" data-prog-start="${item.start}">
-                <img src="${item.channel.logo}" onerror="this.onerror=null; this.src='https.placehold.co/40x40/1f2937/d1d5db?text=?';" class="w-10 h-10 object-contain mr-3 rounded-md bg-gray-700 flex-shrink-0">
+                <img src="${item.channel.logo}" onerror="this.onerror=null; this.src='https://placehold.co/40x40/1f2937/d1d5db?text=?';" class="w-10 h-10 object-contain mr-3 rounded-md bg-gray-700 flex-shrink-0">
                 <div class="overflow-hidden">
                     <p class="font-semibold text-white text-sm truncate" title="${item.title}">${item.title}</p>
                     <p class="text-gray-400 text-xs truncate">${item.channel.name} &bull; ${item.channel.source}</p>
@@ -434,7 +454,7 @@ export function setupGuideEventListeners() {
         renderGuide(guideState.visibleChannels, true);
     });
 
-    // --- MODIFIED: "Now" button logic is updated for consistency. ---
+    // "Now" button logic is updated for consistency.
     UIElements.nowBtn.addEventListener('click', () => {
         const now = new Date();
         // If guide is not on today's date, switch to it and let the re-render handle the scroll
@@ -545,8 +565,8 @@ export function setupGuideEventListeners() {
             setTimeout(() => {
                 const programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programItem.dataset.progStart}"]`);
                 if(programElement) {
-                    const scrollLeft = programElement.offsetLeft - (UIElements.guideGrid.clientWidth / 4);
-                    UIElements.guideGrid.scrollTo({ left: scrollLeft, behavior: 'smooth' });
+                    const scrollLeft = programElement.offsetLeft - (UIElements.guideContainer.clientWidth / 4); // Use guideContainer
+                    UIElements.guideContainer.scrollTo({ left: scrollLeft, behavior: 'smooth' }); // Use guideContainer
                     programElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
 
                     programElement.style.transition = 'outline 0.5s';
@@ -556,4 +576,47 @@ export function setupGuideEventListeners() {
             }, 200);
         }
     });
+
+    // --- NEW: Scroll event for header visibility ---
+    let lastScrollTop = 0;
+    const scrollableElement = UIElements.guideContainer; // The main scrollable area
+    const appContainer = document.getElementById('app-container');
+
+    const handleScrollHeader = throttle(() => {
+        const scrollTop = scrollableElement.scrollTop;
+        const scrollDirection = scrollTop > lastScrollTop ? 'down' : 'up';
+        
+        // Calculate the combined height of the elements that will hide
+        let fullHeaderHeight = 0;
+        if (UIElements.mainHeader) fullHeaderHeight += UIElements.mainHeader.offsetHeight;
+        if (UIElements.desktopTabs && !UIElements.desktopTabs.classList.contains('hidden')) {
+            fullHeaderHeight += UIElements.desktopTabs.offsetHeight;
+        }
+        if (UIElements.guideControlsBar) fullHeaderHeight += UIElements.guideControlsBar.offsetHeight;
+
+        const threshold = fullHeaderHeight * 0.5; // Hide after scrolling half the height of the full header
+
+        if (scrollDirection === 'down' && scrollTop > threshold) {
+            if (!appContainer.classList.contains('header-collapsed')) {
+                appContainer.classList.add('header-collapsed');
+                // Set padding-top for page-guide to account for new static header height
+                const minimalHeaderHeight = UIElements.minimalGuideHeader.offsetHeight;
+                UIElements.pageGuide.style.paddingTop = `${minimalHeaderHeight}px`;
+            }
+        } else if (scrollDirection === 'up' && scrollTop <= threshold) { // Also show if near top
+            if (appContainer.classList.contains('header-collapsed')) {
+                appContainer.classList.remove('header-collapsed');
+                // Reset padding-top
+                UIElements.pageGuide.style.paddingTop = `0px`;
+            }
+        }
+        lastScrollTop = scrollTop <= 0 ? 0 : scrollTop; // For Mobile or negative scrolling
+    }, 100);
+
+    scrollableElement.addEventListener('scroll', handleScrollHeader);
+
+    // Initial setting for minimal header, assuming full header is visible initially
+    if (UIElements.minimalGuideHeader) {
+        UIElements.minimalGuideHeader.classList.add('expanded');
+    }
 }
