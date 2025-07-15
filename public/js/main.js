@@ -11,7 +11,7 @@ import { checkAuthStatus, setupAuthEventListeners } from './modules/auth.js';
 import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './modules/guide.js';
 import { setupPlayerEventListeners } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
-import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal } from './modules/ui.js';
+import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable } from './modules/ui.js'; // Import makeColumnResizable
 
 /**
  * Initializes the main application after successful authentication.
@@ -37,10 +37,11 @@ export async function initMainApp() {
         if (!response || !response.ok) throw new Error('Could not connect to the server.');
         
         const config = await response.json();
-        guideState.settings = config.settings || {};
+        // Merge fetched settings into guideState.settings, preserving defaults
+        Object.assign(guideState.settings, config.settings || {});
         
-        // Restore dimensions of resizable modals
-        restoreModalDimensions();
+        // Restore dimensions of resizable modals and column
+        restoreDimensions();
         
         // Populate UI elements that depend on settings
         populateTimezoneSelector();
@@ -111,9 +112,10 @@ async function loadDataFromDB(key) {
 
 
 /**
- * Restores the dimensions of resizable modals from saved settings.
+ * Restores the dimensions of resizable modals and the channel column from saved settings.
  */
-function restoreModalDimensions() {
+function restoreDimensions() {
+    // Restore modal dimensions
     if (guideState.settings.playerDimensions) {
         const { width, height } = guideState.settings.playerDimensions;
         if (width) UIElements.videoModalContainer.style.width = `${width}px`;
@@ -123,6 +125,10 @@ function restoreModalDimensions() {
         const { width, height } = guideState.settings.programDetailsDimensions;
         if (width) UIElements.programDetailsContainer.style.width = `${width}px`;
         if (height) UIElements.programDetailsContainer.style.height = `${height}px`;
+    }
+    // Restore channel column width
+    if (guideState.settings.channelColumnWidth) {
+        UIElements.guideGrid.style.setProperty('--channel-col-width', `${guideState.settings.channelColumnWidth}px`);
     }
 }
 
@@ -149,6 +155,18 @@ function setupCoreEventListeners() {
     // Resizable modals
     makeModalResizable(UIElements.videoResizeHandle, UIElements.videoModalContainer, 400, 300, 'playerDimensions');
     makeModalResizable(UIElements.detailsResizeHandle, UIElements.programDetailsContainer, 320, 250, 'programDetailsDimensions');
+
+    // Resizable channel column
+    // Only enable if the handle and grid exist and it's not a mobile view where column is fixed
+    if (UIElements.channelColumnResizeHandle && UIElements.guideGrid && window.innerWidth >= 768) {
+        makeColumnResizable(
+            UIElements.channelColumnResizeHandle,
+            UIElements.guideGrid,
+            100, // Minimum width for the channel column
+            'channelColumnWidth', // Setting key
+            '--channel-col-width' // CSS custom property to update
+        );
+    }
 }
 
 
