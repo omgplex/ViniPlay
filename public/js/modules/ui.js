@@ -65,15 +65,6 @@ export function handleConfirm() {
 }
 
 /**
- * Toggles the visibility of the sidebar on mobile.
- * @param {boolean} show - True to show the sidebar, false to hide it.
- */
-export const toggleSidebar = (show) => {
-    UIElements.sidebarOverlay.classList.toggle('hidden', !show);
-    UIElements.channelPanelContainer.classList.toggle('-translate-x-full', !show);
-};
-
-/**
  * Sets the loading state of a button, showing a spinner.
  * @param {HTMLElement} buttonEl - The button element.
  * @param {boolean} isLoading - True to show loading state, false to restore.
@@ -153,9 +144,6 @@ export const handleRouteChange = () => {
     UIElements.pageGuide.classList.toggle('flex', isGuide);
     UIElements.pageSettings.classList.toggle('hidden', isGuide);
     UIElements.pageSettings.classList.toggle('flex', !isGuide);
-
-    // Toggle sidebar button visibility (only on guide page)
-    UIElements.sidebarToggle.classList.toggle('hidden', !isGuide);
     
     // If navigating to the settings page, refresh relevant data
     if (!isGuide) {
