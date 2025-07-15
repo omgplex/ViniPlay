@@ -45,6 +45,10 @@ export const UIElements = Object.fromEntries(
 // Add specific references that might not be picked up by generic ID mapping
 UIElements.mainHeader = document.getElementById('main-header');
 UIElements.desktopTabs = document.getElementById('desktop-tabs');
-UIElements.minimalGuideHeader = document.getElementById('minimal-guide-header');
-UIElements.guideControlsBar = document.getElementById('guide-controls-bar');
+// UIElements.minimalGuideHeader = document.getElementById('minimal-guide-header'); // Removed
+// UIElements.guideControlsBar = document.getElementById('guide-controls-bar'); // Removed
+UIElements.unifiedGuideHeader = document.getElementById('unified-guide-header'); // NEW unified header
+
+// Manually add resetFilterBtn if auto-mapping doesn't catch it
+UIElements.resetFilterBtn = document.getElementById('reset-filter-btn');
 
