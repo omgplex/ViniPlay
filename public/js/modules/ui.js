@@ -145,37 +145,23 @@ export const handleRouteChange = () => {
     UIElements.pageSettings.classList.toggle('hidden', isGuide);
     UIElements.pageSettings.classList.toggle('flex', !isGuide);
     
-    // Manage header visibility based on the active tab
+    // Manage header visibility based on the active tab (simplified for new unified header)
     if (isGuide) {
-        // Ensure minimal header is expanded when navigating to guide (initially)
-        if (UIElements.minimalGuideHeader) {
-            UIElements.minimalGuideHeader.classList.add('expanded');
-        }
-        // Reset scroll position and header state when entering guide
-        // This makes sure the header is fully visible when you come back to the guide tab
-        const appContainer = document.getElementById('app-container');
-        if (appContainer) {
-            appContainer.classList.remove('header-collapsed');
-        }
+        // When navigating to guide, ensure page-guide's padding is reset
+        // The scroll handler in guide.js will manage padding based on main header collapse.
+        UIElements.pageGuide.style.paddingTop = `0px`; 
+        // Reset guide scroll to top when coming back to it
         if (UIElements.guideContainer) {
-            UIElements.guideContainer.scrollTop = 0; // Reset scroll position on guide
+            UIElements.guideContainer.scrollTop = 0;
         }
-        if (UIElements.pageGuide) {
-            UIElements.pageGuide.style.paddingTop = `0px`; // Reset padding
-        }
-
     } else {
-        // If navigating to settings, ensure full header is visible and guide-specific minimal header is hidden/reset
+        // If navigating to settings, ensure main header is fully visible (by removing collapsed class)
         const appContainer = document.getElementById('app-container');
         if (appContainer) {
             appContainer.classList.remove('header-collapsed');
         }
-        if (UIElements.minimalGuideHeader) {
-            UIElements.minimalGuideHeader.classList.remove('expanded'); 
-        }
-        if (UIElements.pageGuide) {
-            UIElements.pageGuide.style.paddingTop = `0px`; // Ensure padding is reset when leaving guide page
-        }
+        // Ensure page-guide padding is reset when leaving guide page
+        UIElements.pageGuide.style.paddingTop = `0px`; 
 
         // If navigating to the settings page, refresh relevant data
         updateUIFromSettings();
