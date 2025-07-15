@@ -54,9 +54,6 @@ export function finalizeGuideLoad(isFirstLoad = false) {
     });
     populateGroupFilter();
     populateSourceFilter();
-    populateMobileGroupFilter(); // Populate mobile filters
-    populateMobileSourceFilter(); // Populate mobile filters
-
 
     // Initialize Fuse.js for fuzzy searching channels
     appState.fuseChannels = new Fuse(guideState.channels, {
@@ -138,7 +135,7 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
     let gridHTML = '';
 
     const timelineWidth = guideState.guideDurationHours * guideState.hourWidthPixels;
-    // Set CSS variable for grid-template-columns width (for responsive layouts)
+    // Set CSS variable for grid-template-columns width
     UIElements.guideGrid.style.setProperty('--timeline-width', `${timelineWidth}px`);
 
 
@@ -150,7 +147,6 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
         timeBarCellsHTML += `<div class="absolute top-0 bottom-0 flex items-center justify-start px-2 text-xs text-gray-400 border-r border-gray-700/50" style="left: ${i * guideState.hourWidthPixels}px; width: ${guideState.hourWidthPixels}px;">${time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>`;
     }
     
-    // The sticky-corner and time-bar-cell are now explicitly placed in the grid
     gridHTML += `
         <div class="sticky-corner"></div>
         <div class="time-bar-cell" style="width: ${timelineWidth}px;">${timeBarCellsHTML}</div>
@@ -162,7 +158,8 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
     let colorIndex = 0;
 
     channelsToRender.forEach((channel, index) => {
-        // Each channel and its programs form a row in the grid
+        // We use CSS grid's implicit row placement for .channel-info and .timeline-row
+        // So no explicit grid-row is needed in the HTML
         const channelName = channel.displayName || channel.name;
 
         // Assign a consistent color to each source for the badge
@@ -174,7 +171,7 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
         const sourceBadgeHTML = guideState.channelSources.size > 1 ? `<span class="source-badge ${sourceBadgeColor} text-white">${channel.source}</span>` : '';
         const chnoBadgeHTML = channel.chno ? `<span class="chno-badge">${channel.chno}</span>` : '';
 
-        // Sticky Channel Info Cell (grid-column: 1)
+        // Sticky Channel Info Cell
         const channelInfoHTML = `
             <div class="channel-info p-2 flex items-center justify-between cursor-pointer" data-url="${channel.url}" data-name="${channelName}" data-id="${channel.id}">
                 <div class="flex items-center overflow-hidden flex-grow min-w-0">
@@ -191,7 +188,7 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
             </div>
         `;
 
-        // Scrollable Timeline Row (grid-column: 2 / -1)
+        // Scrollable Timeline Row
         let programsHTML = '';
         const now = new Date();
         const guideEnd = new Date(guideStart.getTime() + guideState.guideDurationHours * 3600 * 1000);
@@ -327,52 +324,13 @@ const populateSourceFilter = () => {
 };
 
 /**
- * Populates the "group" filter dropdown for mobile.
- */
-const populateMobileGroupFilter = () => {
-    const currentVal = UIElements.groupFilterMobile.value;
-    UIElements.groupFilterMobile.innerHTML = `<option value="all">All Groups</option><option value="recents">Recents</option><option value="favorites">Favorites</option>`;
-    [...guideState.channelGroups].sort((a, b) => a.localeCompare(b)).forEach(group => {
-        const cleanGroup = group.replace(/"/g, '&quot;');
-        UIElements.groupFilterMobile.innerHTML += `<option value="${cleanGroup}">${group}</option>`;
-    });
-    // Restore previous selection if possible
-    UIElements.groupFilterMobile.value = currentVal && UIElements.groupFilterMobile.querySelector(`option[value="${currentVal.replace(/"/g, '&quot;')}"]`) ? currentVal : 'all';
-    UIElements.groupFilterMobile.classList.remove('hidden');
-};
-
-/**
- * Populates the "source" filter dropdown for mobile.
- */
-const populateMobileSourceFilter = () => {
-    const currentVal = UIElements.sourceFilterMobile.value;
-    UIElements.sourceFilterMobile.innerHTML = `<option value="all">All Sources</option>`;
-    [...guideState.channelSources].sort((a, b) => a.localeCompare(b)).forEach(source => {
-        const cleanSource = source.replace(/"/g, '&quot;');
-        UIElements.sourceFilterMobile.innerHTML += `<option value="${cleanSource}">${source}</option>`;
-    });
-    UIElements.sourceFilterMobile.value = currentVal && UIElements.sourceFilterMobile.querySelector(`option[value="${currentVal.replace(/"/g, '&quot;')}"]`) ? currentVal : 'all';
-    
-    UIElements.sourceFilterMobile.classList.remove('hidden');
-    // Only show the source filter if there's more than one source
-    UIElements.sourceFilterMobile.style.display = guideState.channelSources.size <= 1 ? 'none' : 'block';
-};
-
-/**
  * Filters channels based on dropdowns and rerenders the guide.
  * @param {boolean} isFirstLoad - Indicates if this is the initial load.
  */
 export function handleSearchAndFilter(isFirstLoad = false) {
-    // Determine which set of filters to use (desktop or mobile)
-    const isDesktopView = window.innerWidth >= 1024; // Tailwind's 'lg' breakpoint
-    const searchTermEl = isDesktopView ? UIElements.searchInput : UIElements.searchInputMobile;
-    const groupFilterEl = isDesktopView ? UIElements.groupFilter : UIElements.groupFilterMobile;
-    const sourceFilterEl = isDesktopView ? UIElements.sourceFilter : UIElements.sourceFilterMobile;
-    const searchResultsContainerEl = isDesktopView ? UIElements.searchResultsContainer : UIElements.searchResultsContainerMobile;
-
-    const searchTerm = searchTermEl.value.trim();
-    const selectedGroup = groupFilterEl.value;
-    const selectedSource = sourceFilterEl.value;
+    const searchTerm = UIElements.searchInput.value.trim();
+    const selectedGroup = UIElements.groupFilter.value;
+    const selectedSource = UIElements.sourceFilter.value;
     let channelsForGuide = guideState.channels;
 
     // Apply group filter
@@ -409,11 +367,11 @@ export function handleSearchAndFilter(isFirstLoad = false) {
         if (guideState.settings.searchScope === 'channels_programs') {
             programResults = appState.fusePrograms.search(searchTerm).slice(0, 20);
         }
-        renderSearchResults(channelResults, programResults, searchResultsContainerEl);
+        renderSearchResults(channelResults, programResults);
     } else {
         // Hide search results if search term is empty
-        searchResultsContainerEl.innerHTML = '';
-        searchResultsContainerEl.classList.add('hidden');
+        UIElements.searchResultsContainer.innerHTML = '';
+        UIElements.searchResultsContainer.classList.add('hidden');
     }
     
     renderGuide(channelsForGuide, isFirstLoad);
@@ -423,9 +381,8 @@ export function handleSearchAndFilter(isFirstLoad = false) {
  * Renders the search results dropdown.
  * @param {Array} channelResults - Results from Fuse.js channel search.
  * @param {Array} programResults - Results from Fuse.js program search.
- * @param {HTMLElement} targetContainer - The DOM element to render results into.
  */
-const renderSearchResults = (channelResults, programResults, targetContainer) => {
+const renderSearchResults = (channelResults, programResults) => {
     let html = '';
 
     if (channelResults.length > 0) {
@@ -457,11 +414,11 @@ const renderSearchResults = (channelResults, programResults, targetContainer) =>
     }
 
     if (html) {
-        targetContainer.innerHTML = html;
-        targetContainer.classList.remove('hidden');
+        UIElements.searchResultsContainer.innerHTML = html;
+        UIElements.searchResultsContainer.classList.remove('hidden');
     } else {
-        targetContainer.innerHTML = '<p class="text-center text-gray-500 p-4 text-sm">No results found.</p>';
-        targetContainer.classList.remove('hidden');
+        UIElements.searchResultsContainer.innerHTML = '<p class="text-center text-gray-500 p-4 text-sm">No results found.</p>';
+        UIElements.searchResultsContainer.classList.remove('hidden');
     }
 };
 
@@ -496,12 +453,12 @@ export function setupGuideEventListeners() {
         guideState.currentDate.setDate(guideState.currentDate.getDate() - 1);
         finalizeGuideLoad();
     });
-    UIElements.nextDayBtn.addEventListener('click', () => {
-        guideState.currentDate.setDate(guideState.currentDate.getDate() + 1);
-        finalizeGuideLoad();
+    UIElements.resetFilterBtn.addEventListener('click', () => { // Renamed from today-btn
+        guideState.currentDate = new Date();
+        renderGuide(guideState.visibleChannels, true);
     });
 
-    // "Now" button logic
+    // "Now" button logic is updated for consistency.
     UIElements.nowBtn.addEventListener('click', () => {
         const now = new Date();
         // If guide is not on today's date, switch to it and let the re-render handle the scroll
@@ -516,44 +473,24 @@ export function setupGuideEventListeners() {
         }
     });
 
-    // --- Filtering and Searching (Desktop) ---
+    UIElements.nextDayBtn.addEventListener('click', () => {
+        guideState.currentDate.setDate(guideState.currentDate.getDate() + 1);
+        finalizeGuideLoad();
+    });
+
+    // --- Filtering and Searching ---
     UIElements.groupFilter.addEventListener('change', () => handleSearchAndFilter());
     UIElements.sourceFilter.addEventListener('change', () => handleSearchAndFilter());
     UIElements.searchInput.addEventListener('input', () => {
         clearTimeout(appState.searchDebounceTimer);
         appState.searchDebounceTimer = setTimeout(() => handleSearchAndFilter(false), 250);
     });
-    UIElements.resetFilterBtn.addEventListener('click', () => {
-        UIElements.groupFilter.value = 'all';
-        UIElements.sourceFilter.value = 'all';
-        UIElements.searchInput.value = '';
-        handleSearchAndFilter();
-    });
-
-    // --- Filtering and Searching (Mobile) ---
-    UIElements.groupFilterMobile.addEventListener('change', () => handleSearchAndFilter());
-    UIElements.sourceFilterMobile.addEventListener('change', () => handleSearchAndFilter());
-    UIElements.searchInputMobile.addEventListener('input', () => {
-        clearTimeout(appState.searchDebounceTimer);
-        appState.searchDebounceTimer = setTimeout(() => handleSearchAndFilter(false), 250);
-    });
-    UIElements.resetFilterBtnMobile.addEventListener('click', () => {
-        UIElements.groupFilterMobile.value = 'all';
-        UIElements.sourceFilterMobile.value = 'all';
-        UIElements.searchInputMobile.value = '';
-        handleSearchAndFilter();
-    });
-
-    // Hide search results when clicking outside (for both desktop and mobile search containers)
+    // Hide search results when clicking outside
     document.addEventListener('click', e => {
         if (!UIElements.searchInput.contains(e.target) && !UIElements.searchResultsContainer.contains(e.target)) {
             UIElements.searchResultsContainer.classList.add('hidden');
         }
-        if (!UIElements.searchInputMobile.contains(e.target) && !UIElements.searchResultsContainerMobile.contains(e.target)) {
-            UIElements.searchResultsContainerMobile.classList.add('hidden');
-        }
     });
-
 
     // --- Interactions (Clicks on the new grid) ---
     UIElements.guideGrid.addEventListener('click', (e) => {
@@ -576,7 +513,7 @@ export function setupGuideEventListeners() {
             saveUserSetting('favorites', guideState.settings.favorites);
             
             // If currently viewing favorites, re-filter the list
-            if (UIElements.groupFilter.value === 'favorites' || UIElements.groupFilterMobile.value === 'favorites') {
+            if (UIElements.groupFilter.value === 'favorites') {
                 handleSearchAndFilter();
             }
             return;
@@ -602,15 +539,12 @@ export function setupGuideEventListeners() {
     });
 
     // --- Search Results Click ---
-    const handleSearchResultsClick = (e) => {
+    UIElements.searchResultsContainer.addEventListener('click', e => {
         const programItem = e.target.closest('.search-result-program');
         const channelItem = e.target.closest('.search-result-channel');
 
-        // Clear search input and hide results for both desktop and mobile
         UIElements.searchResultsContainer.classList.add('hidden');
         UIElements.searchInput.value = '';
-        UIElements.searchResultsContainerMobile.classList.add('hidden');
-        UIElements.searchInputMobile.value = '';
 
         if (channelItem) {
              const channelId = channelItem.dataset.channelId;
@@ -645,9 +579,7 @@ export function setupGuideEventListeners() {
                 }
             }, 200);
         }
-    };
-    UIElements.searchResultsContainer.addEventListener('click', handleSearchResultsClick);
-    UIElements.searchResultsContainerMobile.addEventListener('click', handleSearchResultsClick);
+    });
 
     // --- NEW: Scroll event for header visibility ---
     let lastScrollTop = 0;
@@ -662,13 +594,11 @@ export function setupGuideEventListeners() {
         // Calculate the combined height of the main headers that *will* hide
         let collapsibleHeaderHeight = 0;
         if (UIElements.mainHeader) collapsibleHeaderHeight += UIElements.mainHeader.offsetHeight;
-        // Only include desktopTabs if it's not hidden (i.e., not on mobile)
         if (UIElements.desktopTabs && !UIElements.desktopTabs.classList.contains('hidden')) {
             collapsibleHeaderHeight += UIElements.desktopTabs.offsetHeight;
         }
         
-        // Threshold is based on the height of the headers that will collapse
-        const threshold = collapsibleHeaderHeight * 0.5; 
+        const threshold = collapsibleHeaderHeight * 0.5; // Hide after scrolling half the height
 
         if (scrollDirection === 'down' && scrollTop > threshold) {
             if (!appContainer.classList.contains('header-collapsed')) {
@@ -690,17 +620,9 @@ export function setupGuideEventListeners() {
 
     // Initial setting for page-guide padding, based on whether header is initially collapsed or not.
     // This will be dynamic based on scroll, but ensure it's correct on load.
-    // We call this on initial load to set the correct padding based on screen size and header state.
-    const initialSetPadding = () => {
-        const appContainerIsCollapsed = appContainer.classList.contains('header-collapsed');
-        if (appContainerIsCollapsed) {
-            UIElements.pageGuide.style.paddingTop = `${unifiedGuideHeader.offsetHeight}px`;
-        } else {
-            UIElements.pageGuide.style.paddingTop = `0px`;
-        }
-    };
-
-    // Call it once on load and also on window resize to adjust for responsive changes
-    window.addEventListener('load', initialSetPadding);
-    window.addEventListener('resize', initialSetPadding);
+    if (appContainer.classList.contains('header-collapsed')) {
+        UIElements.pageGuide.style.paddingTop = `${unifiedGuideHeader.offsetHeight}px`;
+    } else {
+        UIElements.pageGuide.style.paddingTop = `0px`;
+    }
 }
