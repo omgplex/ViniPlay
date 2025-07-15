@@ -184,7 +184,7 @@
 
         /* --- NEW: Scroll-driven header animations --- */
         /* Default state of top headers */
-        #main-header, #desktop-tabs, #guide-controls-bar {
+        #main-header, #desktop-tabs {
             transition: transform 0.3s ease-out, opacity 0.3s ease-out, height 0.3s ease-out, padding 0.3s ease-out;
             transform: translateY(0);
             opacity: 1;
@@ -195,8 +195,7 @@
 
         /* Collapsed state for top headers (applied to app-container by JS) */
         #app-container.header-collapsed #main-header,
-        #app-container.header-collapsed #desktop-tabs,
-        #app-container.header-collapsed #guide-controls-bar {
+        #app-container.header-collapsed #desktop-tabs {
             transform: translateY(-100%);
             opacity: 0;
             height: 0;
@@ -205,30 +204,21 @@
             pointer-events: none;
         }
 
-        /* Minimal Guide Header (always sticky top) */
-        #minimal-guide-header {
+        /* Unified Guide Header (always sticky top within page-guide) */
+        #unified-guide-header {
             position: sticky;
             top: 0;
             z-index: 40; /* Above all other content and header parts */
             background-color: #111827; /* Match body bg */
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-bottom: 1px solid #374151; /* Separator */
             transition: all 0.3s ease-out;
             box-shadow: none; /* Default state */
+            flex-wrap: wrap; /* Allow wrapping on smaller screens */
+            justify-content: space-between; /* Space between date/nav and search/filters */
+            align-items: center;
         }
-
-        /* Expanded state of minimal header (when main header is visible) */
-        #minimal-guide-header.expanded {
-            padding: 1rem 1rem; /* More padding when main headers are visible */
-            font-size: 1.125rem; /* text-lg */
-        }
-
-        /* Collapsed state of minimal header (when main headers are hidden by scroll) */
-        #app-container.header-collapsed #minimal-guide-header {
-            padding: 0.5rem 1rem; /* Smaller padding when only this is visible */
-            font-size: 1.25rem; /* text-xl, slightly larger than default for prominence */
+        
+        /* Apply shadow when the main header is collapsed */
+        #app-container.header-collapsed #unified-guide-header {
             box-shadow: 0 2px 5px rgba(0,0,0,0.3); /* Subtle shadow when sticky and alone */
         }
 
@@ -307,24 +297,22 @@
         <main class="flex-grow flex flex-col overflow-hidden">
             <!-- TV Guide Page -->
             <div id="page-guide" class="flex flex-grow flex-col overflow-hidden">
-                 <!-- The minimal header containing only the date display (sticky when scrolled) -->
-                 <div id="minimal-guide-header" class="flex-shrink-0 bg-gray-800">
-                    <span id="guide-date-display" class="text-base sm:text-lg font-semibold text-center flex-grow"></span>
-                 </div>
-                <div id="guide-controls-bar" class="flex flex-wrap items-center justify-between gap-4 p-2 sm:p-4 border-b border-gray-700 flex-shrink-0">
-                    <!-- Left controls: Navigation -->
+                <!-- NEW: Unified Guide Header Bar -->
+                <div id="unified-guide-header" class="flex-shrink-0 bg-gray-800 p-2 sm:p-4 border-b border-gray-700 flex items-center justify-between z-30 sticky top-0">
+                    <!-- Left: Date, NOW, Arrows -->
                     <div class="flex items-center gap-2 date-nav-controls">
                         <button id="prev-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&lt;</button>
-                        <button id="now-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">Now</button>
+                        <span id="guide-date-display" class="text-base sm:text-lg font-semibold text-white"></span>
                         <button id="next-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&gt;</button>
+                        <button id="now-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors ml-2">Now</button>
                     </div>
                     
-                    <!-- Right controls: Filters and Search -->
+                    <!-- Right: Filters and Search -->
                     <div class="relative w-full sm:w-auto flex flex-wrap items-center justify-end gap-2 filter-search-controls">
-                        <select id="group-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select>
-                        <select id="source-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 hidden"></select>
+                        <select id="group-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"></select>
+                        <select id="source-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"></select>
                         <input type="search" id="search-input" placeholder="Search..." class="flex-grow sm:flex-grow-0 sm:w-48 bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500">
-                        <button id="today-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors flex-shrink-0">Reset</button>
+                        <button id="reset-filter-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors flex-shrink-0">Reset</button>
                         <div id="search-results-container" class="hidden absolute top-full right-0 w-full sm:w-96 max-h-80 overflow-y-auto bg-gray-800 border border-gray-600 rounded-md mt-1 z-50 custom-scrollbar shadow-lg"></div>
                     </div>
                 </div>
