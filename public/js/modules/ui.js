@@ -129,6 +129,59 @@ export const makeModalResizable = (handleEl, containerEl, minWidth, minHeight, s
 };
 
 /**
+ * Makes a column resizable horizontally by dragging a handle.
+ * @param {HTMLElement} handleEl - The handle element to drag.
+ * @param {HTMLElement} targetEl - The element whose width is being controlled (e.g., the grid container).
+ * @param {number} minWidth - The minimum width for the column.
+ * @param {string} settingKey - The key to save the width under in user settings.
+ * @param {string} cssVarName - The CSS custom property name to update (e.g., '--channel-col-width').
+ */
+export const makeColumnResizable = (handleEl, targetEl, minWidth, settingKey, cssVarName) => {
+    // Lazy import to avoid circular dependencies
+    import('./api.js').then(({ saveUserSetting }) => {
+        let resizeDebounceTimer;
+        let startWidth;
+        let startX;
+
+        // Ensure targetEl is not null
+        if (!targetEl) {
+            console.error('makeColumnResizable: targetEl is null. Cannot apply resize logic.');
+            return;
+        }
+
+        handleEl.addEventListener('mousedown', e => {
+            e.preventDefault();
+            startX = e.clientX;
+            // Get the current value of the CSS variable or default to minWidth if not set
+            startWidth = parseInt(getComputedStyle(targetEl).getPropertyValue(cssVarName)) || minWidth;
+            
+            const doResize = (e) => {
+                const newWidth = startWidth + (e.clientX - startX);
+                const finalWidth = Math.max(minWidth, newWidth);
+                targetEl.style.setProperty(cssVarName, `${finalWidth}px`);
+            };
+
+            const stopResize = () => {
+                window.removeEventListener('mousemove', doResize);
+                window.removeEventListener('mouseup', stopResize);
+                document.body.style.cursor = ''; // Reset cursor
+
+                clearTimeout(resizeDebounceTimer);
+                resizeDebounceTimer = setTimeout(() => {
+                    const currentWidth = parseInt(getComputedStyle(targetEl).getPropertyValue(cssVarName));
+                    saveUserSetting(settingKey, currentWidth);
+                }, 500); // Save after 500ms of no activity
+            };
+
+            document.body.style.cursor = 'ew-resize'; // East-West resize cursor for column
+            window.addEventListener('mousemove', doResize);
+            window.addEventListener('mouseup', stopResize);
+        }, false);
+    });
+};
+
+
+/**
  * Handles client-side routing by showing/hiding pages based on the URL path.
  */
 export const handleRouteChange = () => {
