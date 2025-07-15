@@ -101,7 +101,7 @@
             flex-shrink: 0;
         }
 
-        /* --- NEW: Guide Grid Styles for sticky headers --- */
+        /* Guide Grid Styles for sticky headers */
         #guide-container {
             flex-grow: 1; /* Make it fill available space */
             background-color: #111827; /* Match body background */
@@ -111,7 +111,8 @@
         }
         #guide-grid {
             display: grid;
-            grid-template-columns: min-content 1fr; /* Sticky channel info, then scrollable timeline */
+            /* First column for sticky channel info, second for scrollable timeline */
+            grid-template-columns: var(--channel-col-width, 180px) 1fr; 
             grid-auto-rows: min-content; /* Rows size to content, important for first row sticky */
             position: relative; /* For now-line absolute positioning */
             min-width: fit-content; /* Ensure grid stretches to contain wide timeline */
@@ -130,6 +131,7 @@
             border-bottom: 1px solid #374151;
             border-right: 1px solid #374151;
             box-sizing: border-box;
+            grid-column: 1; /* Ensure it stays in the first column */
         }
         
         .time-bar-cell {
@@ -142,6 +144,7 @@
             align-items: center;
             border-bottom: 1px solid #374151;
             box-sizing: border-box;
+            grid-column: 2 / -1; /* Span across the entire second grid column */
         }
         
         .channel-info {
@@ -152,11 +155,13 @@
             border-right: 1px solid #374151;
             box-sizing: border-box;
             height: 96px; /* Channel row height */
+            grid-column: 1; /* Ensure it stays in the first column */
         }
 
         .timeline-row {
             position: relative;
             height: 96px; /* Match channel-info height */
+            grid-column: 2 / -1; /* Span across the entire second grid column */
         }
         
         /* The now-line should be absolute within #guide-grid, covering the full height */
@@ -175,14 +180,14 @@
             #guide-grid {
                 grid-template-columns: 64px 1fr; /* Fixed width for logo on mobile */
             }
-            .channel-info {
+            .sticky-corner, .channel-info {
                 width: 64px; /* Fixed width for logo on mobile */
             }
             .channel-details { display: none; } /* Hide channel name, chno, source on mobile */
             .favorite-star { display: none; } /* Hide favorite icon on mobile */
         }
 
-        /* --- NEW: Scroll-driven header animations --- */
+        /* Scroll-driven header animations */
         /* Default state of top headers */
         #main-header, #desktop-tabs {
             transition: transform 0.3s ease-out, opacity 0.3s ease-out, height 0.3s ease-out, padding 0.3s ease-out;
@@ -291,6 +296,15 @@
         <div id="desktop-tabs" class="hidden lg:flex border-b border-gray-700 bg-gray-800 flex-shrink-0 z-20">
             <button id="tab-guide" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700 active">TV Guide</button>
             <button id="tab-settings" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700">Settings</button>
+            
+            <!-- Right: Filters and Search - Moved here -->
+            <div class="relative flex-grow flex items-center justify-end gap-2 p-2 filter-search-controls">
+                <select id="group-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"></select>
+                <select id="source-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"></select>
+                <input type="search" id="search-input" placeholder="Search..." class="flex-grow sm:flex-grow-0 sm:w-48 bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500">
+                <button id="reset-filter-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors flex-shrink-0">Reset</button>
+                <div id="search-results-container" class="hidden absolute top-full right-0 w-full sm:w-96 max-h-80 overflow-y-auto bg-gray-800 border border-gray-600 rounded-md mt-1 z-50 custom-scrollbar shadow-lg"></div>
+            </div>
         </div>
 
         <!-- Main Content -->
@@ -307,13 +321,13 @@
                         <button id="now-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors ml-2">Now</button>
                     </div>
                     
-                    <!-- Right: Filters and Search -->
-                    <div class="relative w-full sm:w-auto flex flex-wrap items-center justify-end gap-2 filter-search-controls">
-                        <select id="group-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"></select>
-                        <select id="source-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"></select>
-                        <input type="search" id="search-input" placeholder="Search..." class="flex-grow sm:flex-grow-0 sm:w-48 bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500">
-                        <button id="reset-filter-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors flex-shrink-0">Reset</button>
-                        <div id="search-results-container" class="hidden absolute top-full right-0 w-full sm:w-96 max-h-80 overflow-y-auto bg-gray-800 border border-gray-600 rounded-md mt-1 z-50 custom-scrollbar shadow-lg"></div>
+                    <!-- Mobile-only filters and search within this header -->
+                    <div class="relative w-full sm:hidden flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-gray-700 mt-2 sm:mt-0 sm:border-t-0">
+                        <select id="group-filter-mobile" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 w-full"></select>
+                        <select id="source-filter-mobile" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 w-full"></select>
+                        <input type="search" id="search-input-mobile" placeholder="Search..." class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500">
+                        <button id="reset-filter-btn-mobile" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors w-full">Reset</button>
+                        <div id="search-results-container-mobile" class="hidden absolute top-full right-0 w-full max-h-80 overflow-y-auto bg-gray-800 border border-gray-600 rounded-md mt-1 z-50 custom-scrollbar shadow-lg"></div>
                     </div>
                 </div>
                 <div id="guide-container" class="flex-grow bg-gray-900 overflow-hidden relative custom-scrollbar">
@@ -328,7 +342,7 @@
                             <p class="mt-1 text-sm">Go to the Settings tab to add and activate your M3U and EPG sources.</p>
                         </div>
                     </div>
-                    <!-- NEW: This is where the unified grid will be rendered by guide.js -->
+                    <!-- This is where the unified grid will be rendered by guide.js -->
                     <div id="guide-grid" class="h-full w-full"></div>
                 </div>
             </div>
