@@ -135,43 +135,54 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
     let gridHTML = '';
 
     const timelineWidth = guideState.guideDurationHours * guideState.hourWidthPixels;
-    // Set CSS variable for grid-template-columns width
-    // Dynamically calculate the channel column width based on the visible channel-info element.
-    // This needs to happen after channel-info is potentially rendered or its size is known.
-    // For initial render, we'll use a sensible default or rely on CSS.
-    // We'll set a CSS custom property that the CSS can use.
-    const channelColWidth = window.innerWidth < 768 ? '64px' : '180px'; // Match CSS media query
-    UIElements.guideGrid.style.setProperty('--channel-col-width', channelColWidth);
+    
+    // Set CSS variable for grid-template-columns width, using stored value if available
+    const initialChannelColWidth = guideState.settings.channelColumnWidth || (window.innerWidth < 768 ? 64 : 180);
+    UIElements.guideGrid.style.setProperty('--channel-col-width', `${initialChannelColWidth}px`);
     UIElements.guideGrid.style.setProperty('--timeline-width', `${timelineWidth}px`);
 
 
     // 1. Render Sticky Corner (top-left) and Time Bar Row
     // The NOW button and arrows are now inside sticky-corner
-    gridHTML += `
-        <div class="sticky-corner flex items-center justify-center p-2 sm:p-4">
+    // The sticky-corner and time-bar-cell elements are now static in index.html,
+    // so we only need to populate their dynamic content and attach listeners.
+    
+    // Populate the time bar
+    const timeBarCellEl = UIElements.guideGrid.querySelector('.time-bar-cell');
+    if (timeBarCellEl) {
+        timeBarCellEl.innerHTML = ''; // Clear previous content
+        for (let i = 0; i < guideState.guideDurationHours; i++) {
+            const time = new Date(guideStart);
+            time.setHours(guideStart.getHours() + i);
+            timeBarCellEl.innerHTML += `<div class="absolute top-0 bottom-0 flex items-center justify-start px-2 text-xs text-gray-400 border-r border-gray-700/50" style="left: ${i * guideState.hourWidthPixels}px; width: ${guideState.hourWidthPixels}px;">${time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>`;
+        }
+        timeBarCellEl.style.width = `${timelineWidth}px`;
+    }
+
+    // Populate the sticky corner (where date navigation and resize handle reside)
+    const stickyCornerEl = UIElements.guideGrid.querySelector('.sticky-corner');
+    if (stickyCornerEl) {
+        // Clear only the dynamic content, preserve the resize handle
+        const existingHandle = stickyCornerEl.querySelector('.channel-resize-handle');
+        stickyCornerEl.innerHTML = `
             <div class="flex items-center gap-2">
                 <button id="prev-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&lt;</button>
                 <button id="now-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">Now</button>
                 <button id="next-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&gt;</button>
             </div>
-        </div>
-        <div class="time-bar-cell" style="width: ${timelineWidth}px;">`;
-    for (let i = 0; i < guideState.guideDurationHours; i++) {
-        const time = new Date(guideStart);
-        time.setHours(guideStart.getHours() + i);
-        gridHTML += `<div class="absolute top-0 bottom-0 flex items-center justify-start px-2 text-xs text-gray-400 border-r border-gray-700/50" style="left: ${i * guideState.hourWidthPixels}px; width: ${guideState.hourWidthPixels}px;">${time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>`;
+        `;
+        if (existingHandle) stickyCornerEl.appendChild(existingHandle); // Re-append the handle
     }
-    gridHTML += `</div>`;
 
 
     // 2. Render Channel + Program Rows
+    // We need to build the channel-info and timeline-row pairs and append them to guide-grid
+    let channelAndTimelineRowsHTML = '';
     const sourceColors = ['bg-blue-600', 'bg-green-600', 'bg-pink-600', 'bg-yellow-500', 'bg-indigo-600', 'bg-red-600'];
     const sourceColorMap = new Map();
     let colorIndex = 0;
 
     channelsToRender.forEach((channel, index) => {
-        // We use CSS grid's implicit row placement for .channel-info and .timeline-row
-        // So no explicit grid-row is needed in the HTML
         const channelName = channel.displayName || channel.name;
 
         // Assign a consistent color to each source for the badge
@@ -221,10 +232,16 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
         });
         const timelineRowHTML = `<div class="timeline-row" style="width: ${timelineWidth}px;">${programsHTML}</div>`;
 
-        gridHTML += channelInfoHTML + timelineRowHTML;
+        channelAndTimelineRowsHTML += channelInfoHTML + timelineRowHTML;
     });
-    
-    UIElements.guideGrid.innerHTML = gridHTML;
+
+    // Clear existing dynamic rows, but preserve the sticky corner and time bar row
+    // Remove all children except the first two (sticky-corner and time-bar-cell)
+    while (UIElements.guideGrid.children.length > 2) {
+        UIElements.guideGrid.removeChild(UIElements.guideGrid.lastChild);
+    }
+    // Append the new channel and timeline rows
+    UIElements.guideGrid.insertAdjacentHTML('beforeend', channelAndTimelineRowsHTML);
 
     // After rendering, re-bind event listeners for the newly created buttons inside sticky-corner
     // These elements need to be re-queried as they are part of innerHTML assignment
@@ -254,7 +271,9 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
     
     // Now line needs to be positioned after all elements are rendered
     let nowLineEl = document.getElementById('now-line');
-    if (!nowLineEl) { // Create if it doesn't exist
+    if (!nowLineEl) { // Create if it doesn't exist (should now be in index.html)
+        // This block should ideally not be hit if now-line is in index.html
+        // but keeping it as a fallback/defensive coding for robustness.
         const newLine = document.createElement('div');
         newLine.id = 'now-line';
         newLine.className = 'absolute top-0 bg-red-500 w-0.5 z-30 pointer-events-none hidden';
@@ -290,7 +309,8 @@ const updateNowLine = (guideStart, shouldScroll) => {
 
     // Get the actual width of the channel info column (sticky-corner / channel-info)
     // This is needed because the now-line starts after this column.
-    const channelInfoColWidth = UIElements.guideGrid.querySelector('.sticky-corner')?.offsetWidth || 0;
+    // Ensure UIElements.stickyCorner is properly mapped and exists.
+    const channelInfoColWidth = UIElements.stickyCorner?.offsetWidth || 0;
 
     if (now >= guideStart && now <= guideEnd) {
         // Calculate left position relative to the start of the *scrollable* area
@@ -631,6 +651,5 @@ export function setupGuideEventListeners() {
 
     // Initial setting for page-guide padding, based on whether header is initially collapsed or not.
     // This will be dynamic based on scroll, but ensure it's correct on load.
-    // This should only be set once after the UI is ready, and then managed by the scroll listener.
     // We remove the direct setting here as ui.js handles the initial state based on route.
 }
