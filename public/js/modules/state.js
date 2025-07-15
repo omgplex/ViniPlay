@@ -15,6 +15,9 @@ export const appState = {
     fuseChannels: null, // Fuse.js instance for channels
     fusePrograms: null, // Fuse.js instance for programs
     currentSourceTypeForEditor: 'url',
+    // New state for scroll behavior
+    lastScrollTop: 0,
+    headerVisible: true,
 };
 
 // State specific to the TV Guide
@@ -38,3 +41,10 @@ export const UIElements = Object.fromEntries(
         el
     ])
 );
+
+// Add specific references that might not be picked up by generic ID mapping
+UIElements.mainHeader = document.getElementById('main-header');
+UIElements.desktopTabs = document.getElementById('desktop-tabs');
+UIElements.minimalGuideHeader = document.getElementById('minimal-guide-header');
+UIElements.guideControlsBar = document.getElementById('guide-controls-bar');
+
