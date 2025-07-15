@@ -237,7 +237,10 @@ const updateNowLine = (guideStart, shouldScroll) => {
         nowLineEl.style.left = `${UIElements.guideGrid.querySelector('.channel-info').offsetWidth + left}px`;
         nowLineEl.classList.remove('hidden');
         if (shouldScroll) {
-            UIElements.guideGrid.scrollLeft = left - (UIElements.guideGrid.clientWidth / 4);
+            UIElements.guideGrid.scrollTo({
+                left: left - (UIElements.guideGrid.clientWidth / 4),
+                behavior: 'smooth'
+            });
         }
     } else {
         nowLineEl.classList.add('hidden');
@@ -430,21 +433,22 @@ export function setupGuideEventListeners() {
         guideState.currentDate = new Date();
         renderGuide(guideState.visibleChannels, true);
     });
+
+    // --- MODIFIED: "Now" button logic is updated for consistency. ---
     UIElements.nowBtn.addEventListener('click', () => {
         const now = new Date();
-        // If not viewing today, switch to today and re-render
+        // If guide is not on today's date, switch to it and let the re-render handle the scroll
         if (guideState.currentDate.toDateString() !== now.toDateString()) {
             guideState.currentDate = now;
-            finalizeGuideLoad();
-            setTimeout(() => renderGuide(guideState.visibleChannels, true), 50);
+            finalizeGuideLoad(true); // 'true' will trigger the scroll in render pipeline
         } else {
-            // If already on today, just scroll to the "now" line
+            // If already on today, just trigger the scroll manually by calling updateNowLine
             const guideStart = new Date(guideState.currentDate);
             guideStart.setHours(0, 0, 0, 0);
-            const scrollPos = left = ((now - guideStart) / 3600000) * guideState.hourWidthPixels - (UIElements.guideGrid.clientWidth / 4);
-            UIElements.guideGrid.scrollTo({ left: scrollPos, behavior: 'smooth' });
+            updateNowLine(guideStart, true); // 'true' forces scroll
         }
     });
+
     UIElements.nextDayBtn.addEventListener('click', () => {
         guideState.currentDate.setDate(guideState.currentDate.getDate() + 1);
         finalizeGuideLoad();
