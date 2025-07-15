@@ -24,7 +24,10 @@ export const appState = {
 export const guideState = {
     channels: [],
     programs: {},
-    settings: {}, // This will hold both GLOBAL and USER settings, merged.
+    settings: {
+        // Add a default for channelColumnWidth
+        channelColumnWidth: window.innerWidth < 768 ? 64 : 180, // Default based on screen size
+    }, // This will hold both GLOBAL and USER settings, merged.
     guideDurationHours: 48,
     hourWidthPixels: window.innerWidth < 768 ? 200 : 300,
     currentDate: new Date(),
@@ -48,6 +51,9 @@ UIElements.mainHeader = document.getElementById('main-header');
 UIElements.desktopTabs = document.getElementById('desktop-tabs');
 UIElements.unifiedGuideHeader = document.getElementById('unified-guide-header'); // NEW unified header
 UIElements.guideDateDisplay = document.getElementById('guide-date-display'); // Ensure date display is mapped
+UIElements.stickyCorner = document.querySelector('.sticky-corner'); // Reference to the sticky corner for channel column resize
+UIElements.channelColumnResizeHandle = document.getElementById('channel-column-resize-handle');
+
 
 // No longer directly mapping prev-day-btn, now-btn, next-day-btn here
 // as they are dynamically inserted into the sticky-corner by guide.js and handled there.
