@@ -34,6 +34,7 @@ export const guideState = {
 };
 
 // A cache for frequently accessed DOM elements
+// Update this section to reflect the new UI structure
 export const UIElements = Object.fromEntries(
     [...document.querySelectorAll('[id]')].map(el => [
         // Convert kebab-case id to camelCase for easier access in JS
@@ -45,9 +46,11 @@ export const UIElements = Object.fromEntries(
 // Add specific references that might not be picked up by generic ID mapping
 UIElements.mainHeader = document.getElementById('main-header');
 UIElements.desktopTabs = document.getElementById('desktop-tabs');
-// UIElements.minimalGuideHeader = document.getElementById('minimal-guide-header'); // Removed
-// UIElements.guideControlsBar = document.getElementById('guide-controls-bar'); // Removed
 UIElements.unifiedGuideHeader = document.getElementById('unified-guide-header'); // NEW unified header
+UIElements.guideDateDisplay = document.getElementById('guide-date-display'); // Ensure date display is mapped
+
+// No longer directly mapping prev-day-btn, now-btn, next-day-btn here
+// as they are dynamically inserted into the sticky-corner by guide.js and handled there.
 
 // Manually add resetFilterBtn if auto-mapping doesn't catch it
 UIElements.resetFilterBtn = document.getElementById('reset-filter-btn');
