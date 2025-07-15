@@ -29,7 +29,6 @@ export function handleGuideLoad(m3uContent, epgContent) {
     }
 
     // Cache the loaded data in IndexedDB
-    // This is a "fire and forget" operation for performance
     appState.db?.transaction(['guideData'], 'readwrite').objectStore('guideData').put(guideState.channels, 'channels');
     appState.db?.transaction(['guideData'], 'readwrite').objectStore('guideData').put(guideState.programs, 'programs');
 
@@ -41,13 +40,11 @@ export function handleGuideLoad(m3uContent, epgContent) {
  * @param {boolean} isFirstLoad - Indicates if this is the initial load of the guide.
  */
 export function finalizeGuideLoad(isFirstLoad = false) {
-    // Add favorite status to channels from user settings
     const favoriteIds = new Set(guideState.settings.favorites || []);
     guideState.channels.forEach(channel => {
         channel.isFavorite = favoriteIds.has(channel.id);
     });
 
-    // Populate unique channel groups and sources for the filter dropdowns
     guideState.channelGroups.clear();
     guideState.channelSources.clear();
     guideState.channels.forEach(ch => {
@@ -57,14 +54,12 @@ export function finalizeGuideLoad(isFirstLoad = false) {
     populateGroupFilter();
     populateSourceFilter();
 
-    // Initialize Fuse.js for fuzzy searching channels
     appState.fuseChannels = new Fuse(guideState.channels, {
         keys: ['name', 'displayName', 'source', 'chno'],
         threshold: 0.4,
         includeScore: true,
     });
 
-    // Prepare program data for searching
     const allPrograms = [];
     const guideStart = new Date(guideState.currentDate);
     guideStart.setHours(0, 0, 0, 0);
@@ -76,7 +71,6 @@ export function finalizeGuideLoad(isFirstLoad = false) {
             guideState.programs[channelId].forEach(prog => {
                 const progStart = new Date(prog.start);
                 const progStop = new Date(prog.stop);
-                // Only include programs within the current guide view
                 if (progStop > guideStart && progStart < guideEnd) {
                     allPrograms.push({
                         ...prog,
@@ -92,7 +86,6 @@ export function finalizeGuideLoad(isFirstLoad = false) {
         }
     }
     
-    // Initialize Fuse.js for fuzzy searching programs
     appState.fusePrograms = new Fuse(allPrograms, {
         keys: ['title'],
         threshold: 0.4,
@@ -113,32 +106,34 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
     guideState.visibleChannels = channelsToRender;
     const showNoData = guideState.channels.length === 0;
 
-    // Toggle placeholder vs. guide content visibility
     UIElements.guidePlaceholder.classList.toggle('hidden', !showNoData);
     UIElements.noDataMessage.classList.toggle('hidden', !showNoData);
     UIElements.initialLoadingIndicator.classList.add('hidden');
 
-    // Show/hide main guide elements based on data
+    // Show/hide main guide elements
     UIElements.channelPanelContainer?.classList.toggle('hidden', showNoData);
     UIElements.timelineContainer?.classList.toggle('hidden', showNoData);
 
-    if (showNoData) return;
+    if (showNoData) {
+        UIElements.guideTimeline.innerHTML = ''; // Clear guide if no data
+        return;
+    }
+    
+    const now = new Date(); // Use a single timestamp for this render cycle
+    const guideStart = new Date(guideState.currentDate);
+    guideStart.setHours(0, 0, 0, 0);
 
     // Clear previous content
     UIElements.guideTimeline.innerHTML = '';
     UIElements.timeBar.innerHTML = '';
 
-    // Update date display
     UIElements.guideDateDisplay.textContent = guideState.currentDate.toLocaleDateString([], { weekday: 'short', month: 'long', day: 'numeric' });
 
     // Render time bar
-    const guideStart = new Date(guideState.currentDate);
-    guideStart.setHours(0, 0, 0, 0);
     const totalTimelineWidth = guideState.guideDurationHours * guideState.hourWidthPixels;
     const timeBarContent = document.createElement('div');
     timeBarContent.className = 'relative h-full';
     timeBarContent.style.width = `${totalTimelineWidth}px`;
-    
     for (let i = 0; i < guideState.guideDurationHours; i++) {
         const time = new Date(guideStart);
         time.setHours(guideStart.getHours() + i);
@@ -158,7 +153,6 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
     channelsToRender.forEach(channel => {
         const channelName = channel.displayName || channel.name;
 
-        // Assign a consistent color to each source
         if (!sourceColorMap.has(channel.source)) {
             sourceColorMap.set(channel.source, sourceColors[colorIndex % sourceColors.length]);
             colorIndex++;
@@ -167,15 +161,15 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
         const sourceBadgeHTML = guideState.channelSources.size > 1 ? `<span class="source-badge ${sourceBadgeColor} text-white">${channel.source}</span>` : '';
         const chnoBadgeHTML = channel.chno ? `<span class="chno-badge">${channel.chno}</span>` : '';
 
-        // --- 1. Create Channel Info Cell (Sticky Column) ---
+        // --- 1. Channel Info Cell (Sticky Column) ---
         const channelInfoCell = document.createElement('div');
-        channelInfoCell.className = 'channel-info-cell h-24 flex items-center justify-between p-2';
+        channelInfoCell.className = 'channel-info-cell h-24 flex items-center justify-between p-2 border-b border-r border-gray-700/50';
         channelInfoCell.innerHTML = `
             <div class="flex items-center overflow-hidden cursor-pointer flex-grow min-w-0" data-url="${channel.url}" data-name="${channelName}" data-id="${channel.id}">
                 <img src="${channel.logo}" onerror="this.onerror=null; this.src='https.placehold.co/56x56/1f2937/d1d5db?text=?';" class="w-14 h-14 object-contain mr-3 flex-shrink-0 rounded-md bg-gray-700">
                 <div class="hidden sm:flex flex-col flex-grow min-w-0">
                     <span class="font-semibold text-sm truncate block">${channelName}</span>
-                    <div class="flex items-center gap-2 mt-1">
+                    <div class="flex items-center gap-1 mt-1">
                         ${chnoBadgeHTML}
                         ${sourceBadgeHTML}
                     </div>
@@ -185,13 +179,12 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
         `;
         gridContainer.appendChild(channelInfoCell);
 
-        // --- 2. Create Program Row Container ---
+        // --- 2. Program Row Container ---
         const programRowContainer = document.createElement('div');
-        programRowContainer.className = 'program-row-container';
+        programRowContainer.className = 'program-row-container h-24 border-b border-gray-700/50';
         programRowContainer.style.width = `${totalTimelineWidth}px`;
         
         let programsHTML = '';
-        const now = new Date();
         const guideEnd = new Date(guideStart.getTime() + guideState.guideDurationHours * 3600 * 1000);
         (guideState.programs[channel.id] || []).forEach(prog => {
             const progStart = new Date(prog.start);
@@ -203,43 +196,44 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
 
             const left = ((progStart - guideStart) / 3600000) * guideState.hourWidthPixels;
             const width = (durationMs / 3600000) * guideState.hourWidthPixels;
-            const isLive = now >= progStart && now < progStop;
+            const isLive = now >= progStart && now < progStop; // Use the consistent 'now'
             const progressWidth = isLive ? ((now - progStart) / durationMs) * 100 : 0;
 
-            programsHTML += `<div class="programme-item absolute top-1 bottom-1 bg-gray-800 rounded-md p-2 overflow-hidden flex flex-col justify-center z-5 ${isLive ? 'live' : ''} ${progStop < now ? 'past' : ''}" style="left:${left}px; width:${Math.max(0, width - 2)}px" data-channel-url="${channel.url}" data-channel-id="${channel.id}" data-channel-name="${channelName}" data-prog-title="${prog.title}" data-prog-desc="${prog.desc}" data-prog-start="${progStart.toISOString()}" data-prog-stop="${progStop.toISOString()}"><div class="programme-progress" style="width:${progressWidth}%"></div><p class="prog-title text-white font-semibold truncate relative z-10">${prog.title}</p><p class="prog-time text-gray-400 truncate relative z-10">${progStart.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p></div>`;
+            programsHTML += `<div class="programme-item absolute top-1 bottom-1 bg-gray-800 rounded-md p-2 overflow-hidden flex flex-col justify-center ${isLive ? 'live' : ''} ${progStop < now ? 'past' : ''}" style="left:${left}px; width:${Math.max(0, width - 2)}px" data-channel-url="${channel.url}" data-channel-id="${channel.id}" data-channel-name="${channelName}" data-prog-title="${prog.title}" data-prog-desc="${prog.desc}" data-prog-start="${progStart.toISOString()}" data-prog-stop="${progStop.toISOString()}"><div class="programme-progress" style="width:${progressWidth}%"></div><p class="prog-title text-white font-semibold truncate relative z-10">${prog.title}</p><p class="prog-time text-gray-400 truncate relative z-10">${progStart.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p></div>`;
         });
         programRowContainer.innerHTML = programsHTML;
         gridContainer.appendChild(programRowContainer);
     });
 
-    // Add Now Line and Grid to the DOM
-    const nowLineEl = `<div id="now-line" class="absolute top-0 bottom-0 bg-red-500 w-0.5 hidden"></div>`;
-    UIElements.guideTimeline.innerHTML = nowLineEl;
+    const nowLineEl = document.createElement('div');
+    nowLineEl.id = 'now-line';
+    nowLineEl.className = 'absolute top-0 bottom-0 bg-red-500 w-0.5 hidden';
+    gridContainer.appendChild(nowLineEl); // Add now-line inside the grid
+    
     UIElements.guideTimeline.appendChild(gridContainer);
     
-    // Defer scroll position restoration and now-line update
     setTimeout(() => {
         if (resetScroll) {
             UIElements.guideTimeline.scrollTop = 0;
         }
-        updateNowLine(guideStart, resetScroll);
+        updateNowLine(guideStart, resetScroll, now); // Pass consistent 'now'
     }, 0);
 };
 
 /**
- * Updates the position of the "now" line and program states (live, past).
+ * Updates the position of the "now" line.
  * @param {Date} guideStart - The start time of the current guide view.
  * @param {boolean} shouldScroll - If true, scrolls the timeline to the now line.
+ * @param {Date} now - The current time to ensure sync.
  */
-const updateNowLine = (guideStart, shouldScroll) => {
+const updateNowLine = (guideStart, shouldScroll, now) => {
     const nowLineEl = document.getElementById('now-line');
     if (!nowLineEl) return;
 
-    // The total height is now the scroll height of the grid container
-    const totalGuideHeight = document.getElementById('guide-grid-container')?.scrollHeight || 0;
+    const gridContainer = document.getElementById('guide-grid-container');
+    const totalGuideHeight = gridContainer?.scrollHeight || 0;
     nowLineEl.style.height = `${totalGuideHeight}px`;
 
-    const now = new Date();
     const guideEnd = new Date(guideStart.getTime() + guideState.guideDurationHours * 3600 * 1000);
 
     if (now >= guideStart && now <= guideEnd) {
@@ -247,37 +241,35 @@ const updateNowLine = (guideStart, shouldScroll) => {
         nowLineEl.style.left = `${left}px`;
         nowLineEl.classList.remove('hidden');
         if (shouldScroll) {
-            // Scroll horizontally to the current time, with a bit of an offset
             UIElements.guideTimeline.scrollLeft = left - (UIElements.guideTimeline.clientWidth / 4);
         }
     } else {
         nowLineEl.classList.add('hidden');
     }
 
-    // Update progress bars and states for all visible programs
-    document.querySelectorAll('.programme-item').forEach(item => {
-        const progStart = new Date(item.dataset.progStart);
-        const progStop = new Date(item.dataset.progStop);
-        const isLive = now >= progStart && now < progStop;
-        item.classList.toggle('live', isLive);
-        item.classList.toggle('past', now >= progStop);
+    // This part is now just for scheduling the next update, as live status is set during render
+    setTimeout(() => {
+        const nextNow = new Date();
+        const nextGuideStart = new Date(guideState.currentDate);
+        nextGuideStart.setHours(0, 0, 0, 0);
 
-        const progressEl = item.querySelector('.programme-progress');
-        if (progressEl) {
-            progressEl.style.width = isLive ? `${((now - progStart) / (progStop - progStart)) * 100}%` : '0%';
-        }
-    });
+        // We only need to move the line, not re-render everything
+        const left = ((nextNow - nextGuideStart) / 3600000) * guideState.hourWidthPixels;
+        nowLineEl.style.left = `${left}px`;
 
-    // Schedule the next update
-    setTimeout(() => updateNowLine(guideStart, false), 60000);
+        // Also update progress bars
+        document.querySelectorAll('.programme-item.live .programme-progress').forEach(progressEl => {
+            const item = progressEl.parentElement;
+            const progStart = new Date(item.dataset.progStart);
+            const progStop = new Date(item.dataset.progStop);
+            progressEl.style.width = `${((nextNow - progStart) / (progStop - progStart)) * 100}%`;
+        });
+
+    }, 60000);
 };
-
 
 // --- Filtering and Searching ---
 
-/**
- * Populates the "group" filter dropdown.
- */
 const populateGroupFilter = () => {
     const currentVal = UIElements.groupFilter.value;
     UIElements.groupFilter.innerHTML = `<option value="all">All Groups</option><option value="recents">Recents</option><option value="favorites">Favorites</option>`;
@@ -285,14 +277,10 @@ const populateGroupFilter = () => {
         const cleanGroup = group.replace(/"/g, '&quot;');
         UIElements.groupFilter.innerHTML += `<option value="${cleanGroup}">${group}</option>`;
     });
-    // Restore previous selection if possible
     UIElements.groupFilter.value = currentVal && UIElements.groupFilter.querySelector(`option[value="${currentVal.replace(/"/g, '&quot;')}"]`) ? currentVal : 'all';
     UIElements.groupFilter.classList.remove('hidden');
 };
 
-/**
- * Populates the "source" filter dropdown.
- */
 const populateSourceFilter = () => {
     const currentVal = UIElements.sourceFilter.value;
     UIElements.sourceFilter.innerHTML = `<option value="all">All Sources</option>`;
@@ -301,27 +289,19 @@ const populateSourceFilter = () => {
         UIElements.sourceFilter.innerHTML += `<option value="${cleanSource}">${source}</option>`;
     });
     UIElements.sourceFilter.value = currentVal && UIElements.sourceFilter.querySelector(`option[value="${currentVal.replace(/"/g, '&quot;')}"]`) ? currentVal : 'all';
-    
     UIElements.sourceFilter.classList.remove('hidden');
-    // Only show the source filter if there's more than one source
     UIElements.sourceFilter.style.visibility = guideState.channelSources.size <= 1 ? 'hidden' : 'visible';
 };
 
-/**
- * Filters channels based on dropdowns and rerenders the guide.
- * @param {boolean} isFirstLoad - Indicates if this is the initial load.
- */
 export function handleSearchAndFilter(isFirstLoad = false) {
     const searchTerm = UIElements.searchInput.value.trim();
     const selectedGroup = UIElements.groupFilter.value;
     const selectedSource = UIElements.sourceFilter.value;
     let channelsForGuide = guideState.channels;
 
-    // Apply group filter
     if (selectedGroup !== 'all') {
         if (selectedGroup === 'favorites') {
-            const favoriteIds = new Set(guideState.settings.favorites || []);
-            channelsForGuide = channelsForGuide.filter(ch => favoriteIds.has(ch.id));
+            channelsForGuide = channelsForGuide.filter(ch => ch.isFavorite);
         } else if (selectedGroup === 'recents') {
             const recentIds = guideState.settings.recentChannels || [];
             channelsForGuide = recentIds.map(id => channelsForGuide.find(ch => ch.id === id)).filter(Boolean);
@@ -330,88 +310,26 @@ export function handleSearchAndFilter(isFirstLoad = false) {
         }
     }
     
-    // Apply source filter
     if (selectedSource !== 'all') {
         channelsForGuide = channelsForGuide.filter(ch => ch.source === selectedSource);
     }
     
-    // Apply search term
-    if (searchTerm && appState.fuseChannels && appState.fusePrograms) {
-        const lowerCaseSearchTerm = searchTerm.toLowerCase();
-        // A simple 'includes' filter for quick results before showing Fuse results
-        channelsForGuide = channelsForGuide.filter(ch =>
-            (ch.displayName || ch.name).toLowerCase().includes(lowerCaseSearchTerm) ||
-            (ch.source && ch.source.toLowerCase().includes(lowerCaseSearchTerm)) ||
-            (ch.chno && ch.chno.toLowerCase().includes(lowerCaseSearchTerm))
-        );
-
-        const channelResults = appState.fuseChannels.search(searchTerm).slice(0, 10);
-        
-        let programResults = [];
-        if (guideState.settings.searchScope === 'channels_programs') {
-            programResults = appState.fusePrograms.search(searchTerm).slice(0, 20);
+    if (searchTerm && appState.fuseChannels) {
+        // Use Fuse.js for more accurate search results if the term is non-trivial
+        if (searchTerm.length > 2) {
+            channelsForGuide = appState.fuseChannels.search(searchTerm).map(result => result.item);
+        } else { // Use simple includes for short terms for speed
+            const lowerCaseSearchTerm = searchTerm.toLowerCase();
+            channelsForGuide = channelsForGuide.filter(ch =>
+                (ch.displayName || ch.name).toLowerCase().includes(lowerCaseSearchTerm) ||
+                (ch.chno && ch.chno.includes(lowerCaseSearchTerm))
+            );
         }
-        renderSearchResults(channelResults, programResults);
-    } else {
-        // Hide search results if search term is empty
-        UIElements.searchResultsContainer.innerHTML = '';
-        UIElements.searchResultsContainer.classList.add('hidden');
     }
     
     renderGuide(channelsForGuide, isFirstLoad);
 };
 
-/**
- * Renders the search results dropdown.
- * @param {Array} channelResults - Results from Fuse.js channel search.
- * @param {Array} programResults - Results from Fuse.js program search.
- */
-const renderSearchResults = (channelResults, programResults) => {
-    let html = '';
-
-    if (channelResults.length > 0) {
-        html += '<div class="search-results-header">Channels</div>';
-        html += channelResults.map(({ item }) => `
-            <div class="search-result-channel flex items-center p-3 border-b border-gray-700/50 hover:bg-gray-700 cursor-pointer" data-channel-id="${item.id}">
-                <img src="${item.logo}" onerror="this.onerror=null; this.src='https.placehold.co/40x40/1f2937/d1d5db?text=?';" class="w-10 h-10 object-contain mr-3 rounded-md bg-gray-700 flex-shrink-0">
-                <div class="overflow-hidden">
-                    <p class="font-semibold text-white text-sm truncate">${item.chno ? `[${item.chno}] ` : ''}${item.displayName || item.name}</p>
-                    <p class="text-gray-400 text-xs truncate">${item.group} &bull; ${item.source}</p>
-                </div>
-            </div>
-        `).join('');
-    }
-
-    if (programResults.length > 0) {
-        html += '<div class="search-results-header">Programs</div>';
-        const timeFormat = { hour: '2-digit', minute: '2-digit' };
-        html += programResults.map(({ item }) => `
-             <div class="search-result-program flex items-center p-3 border-b border-gray-700/50 hover:bg-gray-700 cursor-pointer" data-channel-id="${item.channel.id}" data-prog-start="${item.start}">
-                <img src="${item.channel.logo}" onerror="this.onerror=null; this.src='https.placehold.co/40x40/1f2937/d1d5db?text=?';" class="w-10 h-10 object-contain mr-3 rounded-md bg-gray-700 flex-shrink-0">
-                <div class="overflow-hidden">
-                    <p class="font-semibold text-white text-sm truncate" title="${item.title}">${item.title}</p>
-                    <p class="text-gray-400 text-xs truncate">${item.channel.name} &bull; ${item.channel.source}</p>
-                    <p class="text-blue-400 text-xs">${new Date(item.start).toLocaleTimeString([], timeFormat)} - ${new Date(item.stop).toLocaleTimeString([], timeFormat)}</p>
-                </div>
-            </div>
-        `).join('');
-    }
-
-    if (html) {
-        UIElements.searchResultsContainer.innerHTML = html;
-        UIElements.searchResultsContainer.classList.remove('hidden');
-    } else {
-        UIElements.searchResultsContainer.innerHTML = '<p class="text-center text-gray-500 p-4 text-sm">No results found.</p>';
-        UIElements.searchResultsContainer.classList.remove('hidden');
-    }
-};
-
-/**
- * A utility function to limit the execution of a function to once every specified time limit.
- * @param {Function} func The function to throttle.
- * @param {number} limit The time limit in milliseconds.
- * @returns {Function} The throttled function.
- */
 const throttle = (func, limit) => {
     let inThrottle;
     return function() {
@@ -425,14 +343,9 @@ const throttle = (func, limit) => {
     };
 };
 
-
 // --- Event Listeners ---
 
-/**
- * Sets up all event listeners for the guide page.
- */
 export function setupGuideEventListeners() {
-    // --- Guide Navigation ---
     UIElements.prevDayBtn.addEventListener('click', () => {
         guideState.currentDate.setDate(guideState.currentDate.getDate() - 1);
         finalizeGuideLoad();
@@ -443,13 +356,11 @@ export function setupGuideEventListeners() {
     });
     UIElements.nowBtn.addEventListener('click', () => {
         const now = new Date();
-        // If not viewing today, switch to today and re-render
         if (guideState.currentDate.toDateString() !== now.toDateString()) {
             guideState.currentDate = now;
             finalizeGuideLoad();
             setTimeout(() => renderGuide(guideState.visibleChannels, true), 50);
         } else {
-            // If already on today, just scroll to the "now" line
             const guideStart = new Date(guideState.currentDate);
             guideStart.setHours(0, 0, 0, 0);
             const scrollPos = ((now - guideStart) / 3600000) * guideState.hourWidthPixels - (UIElements.guideTimeline.clientWidth / 4);
@@ -461,124 +372,82 @@ export function setupGuideEventListeners() {
         finalizeGuideLoad();
     });
 
-    // --- Filtering and Searching ---
     UIElements.groupFilter.addEventListener('change', () => handleSearchAndFilter());
     UIElements.sourceFilter.addEventListener('change', () => handleSearchAndFilter());
     UIElements.searchInput.addEventListener('input', () => {
         clearTimeout(appState.searchDebounceTimer);
         appState.searchDebounceTimer = setTimeout(() => handleSearchAndFilter(false), 250);
     });
-    // Hide search results when clicking outside
     document.addEventListener('click', e => {
         if (!UIElements.searchInput.contains(e.target) && !UIElements.searchResultsContainer.contains(e.target)) {
             UIElements.searchResultsContainer.classList.add('hidden');
         }
     });
 
-    // --- Interactions (Clicks) ---
+    // Main interaction listener on the timeline (captures clicks on grid cells)
     UIElements.guideTimeline.addEventListener('click', (e) => {
         const favoriteStar = e.target.closest('.favorite-star');
         const channelPlayable = e.target.closest('.channel-info-cell [data-url]');
         const progItem = e.target.closest('.programme-item');
 
         if (favoriteStar) {
-            e.stopPropagation(); // Prevent playing channel when favoriting
+            e.stopPropagation();
             const channelId = favoriteStar.dataset.channelId;
             const channel = guideState.channels.find(c => c.id === channelId);
             if (!channel) return;
 
-            // Toggle favorite state and update UI
             channel.isFavorite = !channel.isFavorite;
             favoriteStar.classList.toggle('favorited', channel.isFavorite);
             
-            // Update settings and save to server
             guideState.settings.favorites = guideState.channels.filter(c => c.isFavorite).map(c => c.id);
             saveUserSetting('favorites', guideState.settings.favorites);
             
-            // If currently viewing favorites, re-filter the list
             if (UIElements.groupFilter.value === 'favorites') {
                 handleSearchAndFilter();
             }
         } else if (channelPlayable) {
             playChannel(channelPlayable.dataset.url, channelPlayable.dataset.name, channelPlayable.dataset.id);
-            // On mobile, hide the sidebar after selecting a channel
             if (window.innerWidth < 1024) {
                 import('./ui.js').then(({ toggleSidebar }) => toggleSidebar(false));
             }
         } else if (progItem) {
-            // Populate and show the program details modal
             UIElements.detailsTitle.textContent = progItem.dataset.progTitle;
             const progStart = new Date(progItem.dataset.progStart);
             const progStop = new Date(progItem.dataset.progStop);
             UIElements.detailsTime.textContent = `${progStart.toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})}`;
             UIElements.detailsDesc.textContent = progItem.dataset.progDesc || "No description available.";
             UIElements.detailsPlayBtn.onclick = () => {
-                playChannel(progItem.dataset.channelUrl, `${progItem.dataset.channelName}`, progItem.dataset.channelId);
+                playChannel(progItem.dataset.channelUrl, progItem.dataset.channelName, progItem.dataset.channelId);
                 closeModal(UIElements.programDetailsModal);
             };
             openModal(UIElements.programDetailsModal);
         }
     });
 
-    // --- Search Results Click ---
-    UIElements.searchResultsContainer.addEventListener('click', e => {
-        const programItem = e.target.closest('.search-result-program');
-        const channelItem = e.target.closest('.search-result-channel');
-
-        UIElements.searchResultsContainer.classList.add('hidden');
-        UIElements.searchInput.value = '';
-
-        if (channelItem) {
-            // TODO: Future enhancement: find and scroll to the channel in the guide
-        } else if (programItem) {
-            // TODO: Future enhancement: find and scroll to the program in the guide
-        }
-    });
-
-    // --- REMOVED: Scroll synchronization logic is no longer needed. ---
-    // --- NEW: Sync horizontal scroll of time-bar with the guide timeline ---
+    // Sync horizontal scroll of time-bar with the guide timeline
     UIElements.guideTimeline.addEventListener('scroll', (e) => {
         UIElements.timeBar.scrollLeft = e.target.scrollLeft;
     });
 
-
-    // --- Collapsing Header and "Show" Button ---
     let lastScrollTop = 0;
     const handleHeaderAndButtonVisibility = () => {
         const scrollTop = UIElements.guideTimeline.scrollTop;
-
-        // A small buffer to prevent jittering from minor scroll adjustments.
-        if (Math.abs(scrollTop - lastScrollTop) <= 5) {
-            return;
-        }
-
+        if (Math.abs(scrollTop - lastScrollTop) <= 5) return;
         const isScrollingDown = scrollTop > lastScrollTop;
         const isCollapsed = UIElements.appContainer.classList.contains('header-collapsed');
-
-        // SCROLLING DOWN: Collapse the header if we scroll past a certain point.
         if (isScrollingDown && scrollTop > 150 && !isCollapsed) {
             UIElements.appContainer.classList.add('header-collapsed');
             UIElements.showHeaderBtn.classList.remove('hidden');
-        } 
-        // SCROLLING UP: Only expand the header if we've reached the very top.
-        else if (!isScrollingDown && scrollTop < 10 && isCollapsed) {
+        } else if (!isScrollingDown && scrollTop < 10 && isCollapsed) {
             UIElements.appContainer.classList.remove('header-collapsed');
             UIElements.showHeaderBtn.classList.add('hidden');
         }
-
-        lastScrollTop = scrollTop <= 0 ? 0 : scrollTop; // For mobile or negative scroll values.
+        lastScrollTop = scrollTop <= 0 ? 0 : scrollTop;
     };
-
-    // Listen to scroll events, but throttled to prevent lag.
     UIElements.guideTimeline.addEventListener('scroll', throttle(handleHeaderAndButtonVisibility, 100), { passive: true });
-
-    // Handle click on the "Show Header" button with a direct action.
     UIElements.showHeaderBtn.addEventListener('click', () => {
-        // First, directly change the state by removing the class and hiding the button.
         UIElements.appContainer.classList.remove('header-collapsed');
         UIElements.showHeaderBtn.classList.add('hidden');
-        
-        // Then, perform the smooth scroll to the top.
         UIElements.guideTimeline.scrollTo({ top: 0, behavior: 'smooth' });
     });
 }
