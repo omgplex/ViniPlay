@@ -618,9 +618,16 @@ export function setupGuideEventListeners() {
 
     const calculateInitialHeaderHeight = () => {
         let height = 0;
-        if (UIElements.mainHeader) height += UIElements.mainHeader.offsetHeight;
-        if (UIElements.desktopTabs) height += UIElements.desktopTabs.offsetHeight;
-        if (UIElements.unifiedGuideHeader) height += UIElements.unifiedGuideHeader.offsetHeight;
+        const mainHeaderHeight = UIElements.mainHeader ? UIElements.mainHeader.offsetHeight : 0;
+        const desktopTabsHeight = UIElements.desktopTabs ? UIElements.desktopTabs.offsetHeight : 0;
+        const unifiedGuideHeaderHeight = UIElements.unifiedGuideHeader ? UIElements.unifiedGuideHeader.offsetHeight : 0;
+
+        console.log(`[Header Heights] Main: ${mainHeaderHeight}px, Desktop Tabs: ${desktopTabsHeight}px, Unified Guide: ${unifiedGuideHeaderHeight}px`);
+
+
+        height += mainHeaderHeight;
+        height += desktopTabsHeight;
+        height += unifiedGuideHeaderHeight;
         return height;
     };
 
