@@ -614,14 +614,19 @@ export function setupGuideEventListeners() {
 
     // --- NEW: Scroll event for header visibility ---
     let lastScrollTop = 0;
-    let initialHeaderHeight = 0; // Will be set on first scroll or app load
+    // initialHeaderHeight will no longer be used for padding-top calculations directly on page-guide
+    // but remains for determining the collapse threshold of the *actual* headers.
+    let initialHeaderHeight = 0; 
 
     const calculateInitialHeaderHeight = () => {
         let height = 0;
         if (UIElements.mainHeader) height += UIElements.mainHeader.offsetHeight;
         if (UIElements.desktopTabs) height += UIElements.desktopTabs.offsetHeight;
-        // unified-guide-header is a direct child of page-guide, its height should not be added to page-guide's paddingTop.
-        // It will naturally flow within the page-guide's content after the padding for global headers.
+        // The unified-guide-header is a direct child of page-guide,
+        // and its height should NOT be added to page-guide's paddingTop.
+        // It's part of the content that flows *after* the global padding,
+        // but it *does* contribute to the total height of the area that collapses.
+        if (UIElements.unifiedGuideHeader) height += UIElements.unifiedGuideHeader.offsetHeight;
         return height;
     };
 
@@ -636,25 +641,26 @@ export function setupGuideEventListeners() {
         // Calculate initial header height if not already done
         if (initialHeaderHeight === 0) {
             initialHeaderHeight = calculateInitialHeaderHeight();
-            // Set initial padding for page-guide when headers are visible
+            // When guide is active, page-guide's paddingTop is always 1px as requested
             if (!UIElements.appContainer.classList.contains('header-collapsed')) {
-                 UIElements.pageGuide.style.paddingTop = `${initialHeaderHeight}px`;
+                 UIElements.pageGuide.style.paddingTop = `1px`;
             }
         }
         
-        const collapseThreshold = initialHeaderHeight * 0.5; // Hide after scrolling half the height of the elements accounted for in initialHeaderHeight
+        // The collapseThreshold now refers to the total height of all elements that are *supposed* to collapse
+        const collapseThreshold = initialHeaderHeight * 0.5; // Hide after scrolling half the height of these elements
 
         if (scrollDirection === 'down' && scrollTop > collapseThreshold) {
             if (!UIElements.appContainer.classList.contains('header-collapsed')) {
                 UIElements.appContainer.classList.add('header-collapsed');
-                // When headers collapse, the page-guide's padding reduces significantly
+                // When headers collapse, maintain page-guide's padding at 1px
                 UIElements.pageGuide.style.paddingTop = `1px`; 
             }
         } else if (scrollDirection === 'up' && scrollTop <= collapseThreshold / 2) { // Show if near top
             if (UIElements.appContainer.classList.contains('header-collapsed')) {
                 UIElements.appContainer.classList.remove('header-collapsed');
-                // Restore full padding when headers are visible again
-                UIElements.pageGuide.style.paddingTop = `${initialHeaderHeight}px`; 
+                // Restore page-guide's padding to 1px when headers are visible again
+                UIElements.pageGuide.style.paddingTop = `1px`; 
             }
         }
         lastScrollTop = scrollTop <= 0 ? 0 : scrollTop; // For Mobile or negative scrolling
