@@ -101,251 +101,207 @@
             flex-shrink: 0;
         }
 
-        /* --- NEW: Guide Grid Styles for sticky headers --- */
+        /* --- Guide Grid Styles for sticky headers --- */
         #guide-container {
-            flex-grow: 1; /* Make it fill available space */
-            background-color: #111827; /* Match body background */
-            overflow: auto; /* Handles both vertical and horizontal scrolling */
-            position: relative; /* For the now-line's absolute positioning relative to scrolled content */
+            flex-grow: 1; 
+            background-color: #111827; 
+            overflow: auto; 
+            position: relative; 
         }
         #guide-grid {
             display: grid;
-            /* Use CSS custom property for resizable channel column width */
-            grid-template-columns: var(--channel-col-width, 180px) 1fr; /* Sticky channel info, then scrollable timeline */
-            grid-auto-rows: min-content; /* Rows size to content, important for first row sticky */
-            position: relative; /* For now-line absolute positioning */
-            min-width: fit-content; /* Ensure grid stretches to contain wide timeline */
-            height: fit-content; /* Allow content to dictate height */
-            /* No overflow here, parent #guide-container handles it */
+            grid-template-columns: var(--channel-col-width, 180px) 1fr; 
+            grid-auto-rows: min-content; 
+            position: relative; 
+            min-width: fit-content; 
+            height: fit-content; 
         }
 
         .sticky-corner {
             position: sticky;
             top: 0;
             left: 0;
-            z-index: 30; /* Highest z-index for the corner */
-            background-color: #1a2233; /* Match channel-info background */
-            height: 28px; /* Explicit smaller height */
-            width: var(--channel-col-width, 180px); /* Default or dynamic width - this needs to be calculated by JS if responsive */
+            z-index: 30; 
+            background-color: #1a2233; 
+            height: 64px; 
+            width: var(--channel-col-width, 180px); 
             border-bottom: 1px solid #374151;
             border-right: 1px solid #374151;
             box-sizing: border-box;
-            display: flex; /* Make it a flex container */
-            flex-direction: column; /* Stack children vertically */
-            align-items: center; /* Center content horizontally */
-            justify-content: center; /* Center content vertically */
-            padding: 0; /* Removed padding */
+            display: flex; 
+            flex-direction: column; 
+            align-items: flex-start; 
+            justify-content: center; 
+            padding: 8px; 
         }
 
-        /* New CSS for the column resize handle */
         .channel-resize-handle {
             position: absolute;
             top: 0;
-            right: 0; /* Align to the right edge of its parent (.sticky-corner) */
+            right: 0; 
             bottom: 0;
-            width: 8px; /* Make it a narrow vertical bar */
-            cursor: ew-resize; /* East-West resize cursor */
-            z-index: 35; /* Higher than sticky corner and time bar */
+            width: 8px; 
+            cursor: ew-resize; 
+            z-index: 35; 
         }
         .channel-resize-handle::after {
             content: '';
             position: absolute;
             display: block;
-            width: 2px; /* Vertical line */
+            width: 2px; 
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            height: 60%; /* Make it span most of the height */
+            height: 60%; 
             background-color: #9ca3af;
             opacity: 0.6;
             border-radius: 1px;
         }
         .channel-resize-handle:hover::after {
             opacity: 1;
-            background-color: #ffffff; /* Brighter on hover */
+            background-color: #ffffff; 
         }
         
         .time-bar-cell {
             position: sticky;
             top: 0;
-            z-index: 25; /* Above programs, below corner */
-            background-color: #111827; /* Match body/guide background */
-            height: 28px; /* Explicit smaller height */
+            z-index: 25; 
+            background-color: #111827; 
+            height: 64px; 
             display: flex;
             align-items: center;
             border-bottom: 1px solid #374151;
             box-sizing: border-box;
-            overflow: hidden; /* Ensure absolute children don't overflow */
+            overflow: hidden; 
         }
         
         .channel-info {
             position: sticky;
             left: 0;
-            z-index: 20; /* Above programs, below corner */
-            background-color: #1a2233; /* Darker than gray-800 */
+            z-index: 20; 
+            background-color: #1a2233; 
             border-right: 1px solid #374151;
             box-sizing: border-box;
-            height: 96px; /* Channel row height */
-            width: var(--channel-col-width, 180px); /* Ensure channel info takes the correct width */
+            height: 96px; 
+            width: var(--channel-col-width, 180px); 
         }
 
         .timeline-row {
             position: relative;
-            height: 96px; /* Match channel-info height */
+            height: 96px; 
         }
         
-        /* The now-line should be absolute within #guide-grid, covering the full height */
         #now-line {
             position: absolute;
             top: 0;
-            background-color: #ef4444; /* red-500 */
-            width: 2px; /* w-0.5 */
-            z-index: 30; /* Should be above programs but below sticky headers for a cleaner look */
-            pointer-events: none; /* Do not block clicks */
-            transition: left 0.5s ease; /* Smooth movement when scrolling to now */
+            background-color: #ef4444; 
+            width: 2px; 
+            z-index: 30; 
+            pointer-events: none; 
+            transition: left 0.5s ease; 
         }
 
-        /* Mobile responsive for sticky channel info */
         @media (max-width: 767px) {
             #guide-grid {
-                grid-template-columns: 64px 1fr; /* Fixed width for logo on mobile */
+                grid-template-columns: 64px 1fr; 
             }
             .channel-info {
-                width: 64px; /* Fixed width for logo on mobile */
+                width: 64px; 
             }
-            .channel-details { display: none; } /* Hide channel name, chno, source on mobile */
-            .favorite-star { display: none; } /* Hide favorite icon on mobile */
-            .sticky-corner { width: 64px; height: 28px; } /* Adjust corner width and height for mobile */
-            /* Hide the resize handle on mobile */
+            .channel-details { display: none; } 
+            .favorite-star { display: none; } 
+            .sticky-corner { width: 64px; height: 64px; } 
             .channel-resize-handle { display: none; }
         }
 
-        /* --- NEW: Scroll-driven header animations --- */
-        /* Default state of top headers */
+        /* --- Scroll-driven header animations --- */
         #main-header, #desktop-tabs, #unified-guide-header {
             transition: transform 0.3s ease-out, opacity 0.3s ease-out, height 0.3s ease-out, padding 0.3s ease-out;
             transform: translateY(0);
             opacity: 1;
-            height: auto; /* Use auto to allow natural height */
+            height: auto; 
             overflow: hidden;
-            flex-shrink: 0; /* Ensure they take their natural height when not collapsed */
-            box-shadow: none; /* Default state */
-            /* Explicitly zero out all margins and padding */
-            margin: 0 !important;
-            padding: 0 !important;
-            min-height: 0 !important; 
+            flex-shrink: 0; 
+            box-shadow: none; 
+            margin: 0; /* Ensures no external margins */
+            /* Removed padding: 0 !important; from here as default Tailwind classes are now correct */
         }
         
-        /* Collapsed state for top headers (applied to app-container by JS) */
         #app-container.header-collapsed #main-header,
         #app-container.header-collapsed #desktop-tabs,
         #app-container.header-collapsed #unified-guide-header {
-            transform: translateY(-100%); /* Move entirely off-screen upwards */
+            transform: translateY(-100%); 
             opacity: 0;
-            height: 0 !important; /* Force height to 0 to collapse space */
-            padding-top: 0 !important; /* Remove padding to fully collapse */
-            padding-bottom: 0 !important; /* Remove padding to fully collapse */
+            height: 0 !important; 
+            padding-top: 0 !important; 
+            padding-bottom: 0 !important; 
             margin-top: 0 !important;
             margin-bottom: 0 !important;
-            border-width: 0 !important; /* Remove borders */
-            pointer-events: none; /* Disable interaction */
+            border-width: 0 !important; 
+            pointer-events: none; 
         }
 
-        /* Apply specific padding using Tailwind classes to content *within* headers, not on headers themselves */
+        /* Apply specific padding/sizing using Tailwind classes to content *within* headers */
         #main-header {
-            height: 28px; /* Fixed height for main header */
-            display: flex; /* Ensure flex properties apply within fixed height */
-            align-items: center; /* Vertically center content */
+            padding: 1rem; /* p-4 */
         }
-        #main-header .flex.items-center.gap-3, /* For logo and title */
-        #main-header .flex.items-center.gap-4 /* For user display and logout */
-        {
-            padding-top: 0px; /* py-0 */
-            padding-bottom: 0px; /* py-0 */
-            padding-left: 8px; /* px-2 equivalent */
-            padding-right: 8px; /* px-2 equivalent */
+        #main-header img { 
+            height: 32px; /* h-8 */
+            width: 32px; /* w-8 */
         }
-        #main-header img { /* Logo */
-            height: 20px; /* h-5 */
-            width: 20px; /* w-5 */
-        }
-        #main-header h1 { /* VINI PLAY title */
-            font-size: 0.9rem; /* text-sm */
+        #main-header h1 { 
+            font-size: 1.25rem; /* text-xl sm:text-2xl */
         }
         #main-header #logout-btn {
-            padding-top: 0px; /* py-0 */
-            padding-bottom: 0px; /* py-0 */
-            font-size: 0.7rem; /* text-xs reduced */
+            font-size: 0.875rem; /* text-sm */
+            padding-top: 0.5rem; /* py-2 */
+            padding-bottom: 0.5rem; /* py-2 */
         }
 
 
         #desktop-tabs {
-            height: 24px; /* Fixed height for desktop tabs */
-            border-bottom: none; /* Remove border-bottom on desktop-tabs as it adds height */
-            display: flex;
-            align-items: center; /* Vertically center buttons */
-            justify-content: flex-start; /* Align buttons to the start */
-            padding-left: 8px; /* px-2 for tabs container */
+            padding-top: 0.75rem; /* py-3 */
+            padding-bottom: 0.75rem; /* py-3 */
+            border-bottom: 1px solid #4b5563; /* border-gray-700 */
         }
         #desktop-tabs .tab-button {
-            padding-top: 0px; /* py-0 */
-            padding-bottom: 0px; /* py-0 */
-            padding-left: 20px; /* px-5 */
-            padding-right: 20px; /* px-5 */
-            font-size: 0.8rem; /* text-sm reduced */
-            line-height: 24px; /* Match parent height to force fit */
+            padding-top: 0.75rem; /* py-3 */
+            padding-bottom: 0.75rem; /* py-3 */
+            padding-left: 1.5rem; /* px-6 */
+            padding-right: 1.5rem; /* px-6 */
+            font-size: 0.875rem; /* text-sm sm:text-base */
+            line-height: normal; /* Reset to normal */
         }
         
         #unified-guide-header {
-            height: 32px; /* Fixed height for unified guide header */
-            border-bottom: 1px solid #374151; /* Keep border-bottom */
-            display: flex;
-            align-items: center; /* Vertically center content */
-            justify-content: space-between; /* Space out elements */
-            /* Adjust padding for small screens */
-            padding-top: 0px; /* py-0 */
-            padding-bottom: 0px; /* py-0 */
-            padding-left: 8px; /* px-2 */
-            padding-right: 8px; /* px-2 */
-        }
-        @media (min-width: 640px) { /* sm breakpoint */
-             #unified-guide-header {
-                 padding-left: 16px; /* sm:px-4 */
-                 padding-right: 16px; /* sm:px-4 */
-            }
+            padding: 0.5rem 1rem; /* p-2 sm:p-4 */
+            border-bottom: 1px solid #374151; 
         }
 
         #unified-guide-header #guide-date-display {
-            font-size: 0.8rem; /* text-sm reduced */
+            font-size: 1rem; /* text-base sm:text-lg */
         }
         #unified-guide-header #group-filter,
         #unified-guide-header #source-filter,
         #unified-guide-header #search-input {
-            padding-top: 0px; /* py-0 */
-            padding-bottom: 0px; /* py-0 */
-            font-size: 0.7rem; /* text-xs reduced */
-            height: 24px; /* Fixed height for inputs/selects */
+            padding-top: 0.5rem; /* py-2 */
+            padding-bottom: 0.5rem; /* py-2 */
+            font-size: 0.875rem; /* text-sm */
+            height: auto; /* Allow auto height */
         }
-        #unified-guide-header #reset-filter-btn {
-            padding-top: 0px; /* py-0 */
-            padding-bottom: 0px; /* py-0 */
-            padding-left: 4px; /* px-1 */
-            padding-right: 4px; /* px-1 */
-            font-size: 0.7rem; /* text-xs reduced */
-            height: 24px; /* Fixed height for button */
-        }
+        #unified-guide-header #reset-filter-btn,
         #unified-guide-header .date-nav-controls button {
-             padding-top: 0px; /* py-0 */
-             padding-bottom: 0px; /* py-0 */
-             padding-left: 4px; /* px-1 */
-             padding-right: 4px; /* px-1 */
-             font-size: 0.7rem; /* text-xs reduced */
-             height: 24px; /* Fixed height for buttons */
+            padding-top: 0.5rem; /* py-2 */
+            padding-bottom: 0.5rem; /* py-2 */
+            padding-left: 0.75rem; /* px-3 */
+            padding-right: 0.75rem; /* px-3 */
+            font-size: 0.875rem; /* text-sm */
+            height: auto; /* Allow auto height */
         }
         
         /* Adjust page-guide padding based on header state */
         #page-guide {
-            transition: padding-top 0.3s ease-out; /* Smooth transition for padding */
+            transition: padding-top 0.3s ease-out; 
         }
     </style>
 </head>
@@ -397,21 +353,21 @@
     <!-- Main App Container -->
     <div id="app-container" class="hidden flex flex-col h-screen">
         <!-- Header -->
-        <header id="main-header" class="bg-gray-800 text-white shadow-md z-30 flex-shrink-0 flex items-center justify-between transition-transform duration-300 ease-out">
+        <header id="main-header" class="bg-gray-800 text-white p-4 shadow-md z-30 flex-shrink-0 flex items-center justify-between transition-transform duration-300 ease-out">
             <div class="flex items-center gap-3">
-                <img src="https://i.imgur.com/rwa8SjI.png" alt="VINI PLAY Logo" class="h-5 w-5">
-                <h1 class="text-sm font-bold">VINI PLAY</h1>
+                <img src="https://i.imgur.com/rwa8SjI.png" alt="VINI PLAY Logo" class="h-8 w-8">
+                <h1 class="text-xl sm:text-2xl font-bold">VINI PLAY</h1>
             </div>
             <div class="flex items-center gap-4">
-                 <span id="user-display" class="text-xs text-gray-400 hidden sm:block"></span>
-                <button id="logout-btn" class="text-xs bg-red-600 hover:bg-red-700 text-white font-bold py-px px-3 rounded-md transition-colors">Logout</button>
+                 <span id="user-display" class="text-sm text-gray-400 hidden sm:block"></span>
+                <button id="logout-btn" class="text-sm bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-md transition-colors">Logout</button>
             </div>
         </header>
 
         <!-- Desktop Tabs -->
         <div id="desktop-tabs" class="hidden lg:flex border-b border-gray-700 bg-gray-800 flex-shrink-0 z-20 transition-transform duration-300 ease-out">
-            <button id="tab-guide" class="tab-button text-sm sm:text-base font-medium text-gray-300 hover:bg-gray-700 active">TV Guide</button>
-            <button id="tab-settings" class="tab-button text-sm sm:text-base font-medium text-gray-300 hover:bg-gray-700">Settings</button>
+            <button id="tab-guide" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700 active">TV Guide</button>
+            <button id="tab-settings" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700">Settings</button>
         </div>
 
         <!-- Main Content -->
@@ -419,18 +375,18 @@
             <!-- TV Guide Page -->
             <div id="page-guide" class="flex flex-grow flex-col overflow-hidden">
                 <!-- NEW: Unified Guide Header Bar -->
-                <div id="unified-guide-header" class="flex-shrink-0 bg-gray-800 border-b border-gray-700 flex items-center justify-between z-30 transition-transform duration-300 ease-out">
+                <div id="unified-guide-header" class="flex-shrink-0 bg-gray-800 p-2 sm:p-4 border-b border-gray-700 flex items-center justify-between z-30 transition-transform duration-300 ease-out">
                     <!-- Left: Date Display (moved from guide-controls-bar to here) -->
                     <div class="flex items-center gap-2 date-nav-controls">
-                        <span id="guide-date-display" class="text-sm font-semibold text-white"></span>
+                        <span id="guide-date-display" class="text-base sm:text-lg font-semibold text-white"></span>
                     </div>
                     
                     <!-- Right: Filters and Search (moved from guide-controls-bar to here) -->
                     <div class="relative w-full sm:w-auto flex flex-wrap items-center justify-end gap-2 filter-search-controls">
-                        <select id="group-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-0.5 text-xs text-white focus:ring-blue-500 focus:border-blue-500"></select>
-                        <select id="source-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-0.5 text-xs text-white focus:ring-blue-500 focus:border-blue-500"></select>
-                        <input type="search" id="search-input" placeholder="Search..." class="flex-grow sm:flex-grow-0 sm:w-48 bg-gray-700 border border-gray-600 rounded-md px-3 py-0.5 text-xs text-white focus:ring-blue-500 focus:border-blue-500">
-                        <button id="reset-filter-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-0.5 px-1 rounded-md text-xs transition-colors flex-shrink-0">Reset</button>
+                        <select id="group-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"></select>
+                        <select id="source-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"></select>
+                        <input type="search" id="search-input" placeholder="Search..." class="flex-grow sm:flex-grow-0 sm:w-48 bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500">
+                        <button id="reset-filter-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors flex-shrink-0">Reset</button>
                         <div id="search-results-container" class="hidden absolute top-full right-0 w-full sm:w-96 max-h-80 overflow-y-auto bg-gray-800 border border-gray-600 rounded-md mt-1 z-50 custom-scrollbar shadow-lg"></div>
                     </div>
                 </div>
@@ -450,11 +406,11 @@
                     <!-- NEW: This is where the unified grid will be rendered by guide.js -->
                     <div id="guide-grid" class="h-full w-full">
                         <!-- Sticky Corner (top-left) for channel column resize handle -->
-                        <div class="sticky-corner flex items-center justify-center p-0">
+                        <div class="sticky-corner flex items-center justify-center p-2 sm:p-4">
                             <div class="flex items-center gap-2">
-                                <button id="prev-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-0.5 px-1 rounded-md text-sm transition-colors">&lt;</button>
-                                <button id="now-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-0.5 px-1 rounded-md text-sm transition-colors">Now</button>
-                                <button id="next-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-0.5 px-1 rounded-md text-sm transition-colors">&gt;</button>
+                                <button id="prev-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&lt;</button>
+                                <button id="now-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">Now</button>
+                                <button id="next-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&gt;</button>
                             </div>
                             <!-- Resize handle for the channel column -->
                             <div id="channel-column-resize-handle" class="channel-resize-handle"></div>
