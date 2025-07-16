@@ -166,9 +166,9 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
         const existingHandle = stickyCornerEl.querySelector('.channel-resize-handle');
         stickyCornerEl.innerHTML = `
             <div class="flex items-center gap-2">
-                <button id="prev-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-0.5 px-1 rounded-md text-sm transition-colors">&lt;</button>
-                <button id="now-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-0.5 px-1 rounded-md text-sm transition-colors">Now</button>
-                <button id="next-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-0.5 px-1 rounded-md text-sm transition-colors">&gt;</button>
+                <button id="prev-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&lt;</button>
+                <button id="now-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">Now</button>
+                <button id="next-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&gt;</button>
             </div>
         `;
         if (existingHandle) stickyCornerEl.appendChild(existingHandle); // Re-append the handle
@@ -432,7 +432,7 @@ export function handleSearchAndFilter(isFirstLoad = false) {
         UIElements.searchResultsContainer.classList.add('hidden');
     }
     
-    renderGuide(channelsForGuide, isFirstLoad);
+    renderGuide(channelsToRender, isFirstLoad);
 };
 
 /**
@@ -476,7 +476,7 @@ const renderSearchResults = (channelResults, programResults) => {
         UIElements.searchResultsContainer.classList.remove('hidden');
     } else {
         UIElements.searchResultsContainer.innerHTML = '<p class="text-center text-gray-500 p-4 text-sm">No results found.</p>';
-        UIElements.searchResultsContainer.classList.remove('hidden');
+        UIElements.searchResultsContainer.classList.add('hidden');
     }
 };
 
@@ -620,8 +620,9 @@ export function setupGuideEventListeners() {
         let height = 0;
         if (UIElements.mainHeader) height += UIElements.mainHeader.offsetHeight;
         if (UIElements.desktopTabs) height += UIElements.desktopTabs.offsetHeight;
-        if (UIElements.unifiedGuideHeader) height += UIElements.unifiedGuideHeader.offsetHeight;
-        console.log(`[Header Heights] Main: ${UIElements.mainHeader?.offsetHeight}px, Desktop Tabs: ${UIElements.desktopTabs?.offsetHeight}px, Unified Guide: ${UIElements.unifiedGuideHeader?.offsetHeight}px, Total: ${height}px`);
+        // IMPORTANT: unifiedGuideHeader is a child of pageGuide, so its height should NOT be added here.
+        // Its height is implicitly handled as part of pageGuide's content.
+        console.log(`[Guide:calculateInitialHeaderHeight] Main: ${UIElements.mainHeader?.offsetHeight}px, Desktop Tabs: ${UIElements.desktopTabs?.offsetHeight}px, Unified Guide (NOT INCLUDED IN PADDING SUM): ${UIElements.unifiedGuideHeader?.offsetHeight}px, Calculated Total for Padding: ${height}px`);
         return height;
     };
 
