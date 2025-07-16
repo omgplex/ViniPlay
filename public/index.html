@@ -125,7 +125,7 @@
             left: 0;
             z-index: 30; /* Highest z-index for the corner */
             background-color: #1a2233; /* Match channel-info background */
-            height: 64px; /* Explicit height, matches time-bar-cell */
+            height: 36px; /* Explicit height, matches desired minimal bar height */
             width: var(--channel-col-width, 180px); /* Default or dynamic width - this needs to be calculated by JS if responsive */
             border-bottom: 1px solid #374151;
             border-right: 1px solid #374151;
@@ -134,7 +134,7 @@
             flex-direction: column; /* Stack children vertically */
             align-items: flex-start; /* Align to start for content within */
             justify-content: center; /* Center content vertically */
-            padding: 8px; /* Add some padding */
+            padding: 0; /* Removed padding */
         }
 
         /* New CSS for the column resize handle */
@@ -170,7 +170,7 @@
             top: 0;
             z-index: 25; /* Above programs, below corner */
             background-color: #111827; /* Match body/guide background */
-            height: 64px; /* Explicit height */
+            height: 36px; /* Explicit height, matches desired minimal bar height */
             display: flex;
             align-items: center;
             border-bottom: 1px solid #374151;
@@ -215,7 +215,7 @@
             }
             .channel-details { display: none; } /* Hide channel name, chno, source on mobile */
             .favorite-star { display: none; } /* Hide favorite icon on mobile */
-            .sticky-corner { width: 64px; } /* Adjust corner width for mobile */
+            .sticky-corner { width: 64px; height: 36px; } /* Adjust corner width and height for mobile */
             /* Hide the resize handle on mobile */
             .channel-resize-handle { display: none; }
         }
@@ -336,7 +336,7 @@
                         <select id="group-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"></select>
                         <select id="source-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"></select>
                         <input type="search" id="search-input" placeholder="Search..." class="flex-grow sm:flex-grow-0 sm:w-48 bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500">
-                        <button id="reset-filter-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors flex-shrink-0">Reset</button>
+                        <button id="reset-filter-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-0.5 px-1 rounded-md text-sm transition-colors flex-shrink-0">Reset</button>
                         <div id="search-results-container" class="hidden absolute top-full right-0 w-full sm:w-96 max-h-80 overflow-y-auto bg-gray-800 border border-gray-600 rounded-md mt-1 z-50 custom-scrollbar shadow-lg"></div>
                     </div>
                 </div>
@@ -356,11 +356,11 @@
                     <!-- NEW: This is where the unified grid will be rendered by guide.js -->
                     <div id="guide-grid" class="h-full w-full">
                         <!-- Sticky Corner (top-left) for channel column resize handle -->
-                        <div class="sticky-corner flex items-center justify-center p-2 sm:p-4">
+                        <div class="sticky-corner flex items-center justify-center p-0">
                             <div class="flex items-center gap-2">
-                                <button id="prev-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&lt;</button>
-                                <button id="now-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">Now</button>
-                                <button id="next-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&gt;</button>
+                                <button id="prev-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-0.5 px-1 rounded-md text-sm transition-colors">&lt;</button>
+                                <button id="now-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-0.5 px-1 rounded-md text-sm transition-colors">Now</button>
+                                <button id="next-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-0.5 px-1 rounded-md text-sm transition-colors">&gt;</button>
                             </div>
                             <!-- Resize handle for the channel column -->
                             <div id="channel-column-resize-handle" class="channel-resize-handle"></div>
@@ -473,7 +473,7 @@
                             <!-- User Agents Section -->
                             <div>
                                 <label for="user-agent-select" class="block text-sm font-medium text-gray-400 mb-2">Active User Agent</label>
-                                <select id="user-agent-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500 mb-2"></select>
+                                <select id="user-agent-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 mb-2"></select>
                                 <div class="flex gap-2">
                                     <button id="add-user-agent-btn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-md">New</button>
                                     <button id="edit-user-agent-btn" class="flex-1 bg-gray-600 hover:bg-gray-500 text-white text-sm font-bold py-2 px-4 rounded-md">Edit</button>
@@ -483,7 +483,7 @@
                             <!-- Stream Profiles Section -->
                             <div>
                                 <label for="stream-profile-select" class="block text-sm font-medium text-gray-400 mb-2">Active Stream Profile</label>
-                                <select id="stream-profile-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500 mb-2"></select>
+                                <select id="stream-profile-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 mb-2"></select>
                                 <div class="flex gap-2">
                                     <button id="add-stream-profile-btn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-md">New</button>
                                     <button id="edit-stream-profile-btn" class="flex-1 bg-gray-600 hover:bg-gray-500 text-white text-sm font-bold py-2 px-4 rounded-md">Edit</button>
