@@ -42,7 +42,7 @@ export async function initMainApp() {
         
         // Restore dimensions of resizable modals and column
         restoreDimensions();
-        
+
         // Populate UI elements that depend on settings
         populateTimezoneSelector();
         updateUIFromSettings();
@@ -69,6 +69,7 @@ export async function initMainApp() {
         }
         
         // Handle the initial route once the app is ready
+        // This will also trigger the initial padding calculation for page-guide
         handleRouteChange();
 
     } catch (e) {
