@@ -620,12 +620,8 @@ export function setupGuideEventListeners() {
 
     const calculateInitialHeaderHeight = () => {
         let height = 0;
+        // Only consider main-header and unified-guide-header for collapse calculation
         if (UIElements.mainHeader) height += UIElements.mainHeader.offsetHeight;
-        if (UIElements.desktopTabs) height += UIElements.desktopTabs.offsetHeight;
-        // The unified-guide-header is a direct child of page-guide,
-        // and its height should NOT be added to page-guide's paddingTop.
-        // It's part of the content that flows *after* the global padding,
-        // but it *does* contribute to the total height of the area that collapses.
         if (UIElements.unifiedGuideHeader) height += UIElements.unifiedGuideHeader.offsetHeight;
         return height;
     };
