@@ -199,11 +199,22 @@ export const handleRouteChange = () => {
     UIElements.pageSettings.classList.toggle('flex', !isGuide);
     
     // Manage header visibility based on the active tab
-    const appContainer = document.getElementById('app-container');
+    // Ensure UIElements.appContainer is correctly mapped in state.js
+    const appContainer = UIElements.appContainer; 
+
+    // Calculate initial combined header height for padding adjustment
+    let combinedHeaderHeight = 0;
+    if (UIElements.mainHeader) combinedHeaderHeight += UIElements.mainHeader.offsetHeight;
+    if (UIElements.desktopTabs) combinedHeaderHeight += UIElements.desktopTabs.offsetHeight;
+    if (UIElements.unifiedGuideHeader) combinedHeaderHeight += UIElements.unifiedGuideHeader.offsetHeight;
+
     if (isGuide) {
-        // When navigating to guide, reset padding top for page-guide.
-        // The scroll listener in guide.js will manage collapsing/expanding headers.
-        UIElements.pageGuide.style.paddingTop = `0px`; 
+        // When navigating to guide, ensure headers are uncollapsed and set initial padding
+        if (appContainer) {
+            appContainer.classList.remove('header-collapsed');
+        }
+        UIElements.pageGuide.style.paddingTop = `${combinedHeaderHeight}px`;
+
         // Reset guide scroll to top when coming back to it
         if (UIElements.guideContainer) {
             UIElements.guideContainer.scrollTop = 0;
@@ -214,6 +225,9 @@ export const handleRouteChange = () => {
             appContainer.classList.remove('header-collapsed');
         }
         // Ensure page-guide padding is reset when leaving guide page
+        // No need to set padding here, as guide.js logic only applies to the guide page.
+        // For other pages, page-guide is hidden, so its padding doesn't matter.
+        // If a padding is needed for settings, it should be managed directly within page-settings.
         UIElements.pageGuide.style.paddingTop = `0px`; 
 
         // If navigating to the settings page, refresh relevant data
