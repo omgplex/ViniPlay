@@ -199,40 +199,34 @@ export const handleRouteChange = () => {
     UIElements.pageSettings.classList.toggle('flex', !isGuide);
     
     // Manage header visibility based on the active tab
-    // Ensure UIElements.appContainer is correctly mapped in state.js
     const appContainer = UIElements.appContainer; 
 
     // Calculate initial combined header height for padding adjustment
     let combinedHeaderHeight = 0;
     if (UIElements.mainHeader) combinedHeaderHeight += UIElements.mainHeader.offsetHeight;
     if (UIElements.desktopTabs) combinedHeaderHeight += UIElements.desktopTabs.offsetHeight;
-    if (UIElements.unifiedGuideHeader) combinedHeaderHeight += UIElements.unifiedGuideHeader.offsetHeight;
+    // IMPORTANT: unifiedGuideHeader is a child of pageGuide, so its height should NOT be added here.
+    // Its height is implicitly handled as part of pageGuide's content.
+
+    console.log(`[UI:handleRouteChange] Calculated combinedHeaderHeight (main + desktop tabs): ${combinedHeaderHeight}px`);
+    console.trace();
 
     if (isGuide) {
-        // When navigating to guide, ensure headers are uncollapsed and set initial padding
         if (appContainer) {
             appContainer.classList.remove('header-collapsed');
         }
         console.log(`[UI:handleRouteChange] Setting page-guide padding-top to: ${combinedHeaderHeight}px`);
-        console.trace();
         UIElements.pageGuide.style.paddingTop = `${combinedHeaderHeight}px`;
 
-        // Reset guide scroll to top when coming back to it
         if (UIElements.guideContainer) {
             UIElements.guideContainer.scrollTop = 0;
         }
     } else {
-        // If navigating to settings, ensure main header is fully visible (by removing collapsed class)
         if (appContainer) {
             appContainer.classList.remove('header-collapsed');
         }
-        // Ensure page-guide padding is reset when leaving guide page
-        // No need to set padding here, as guide.js logic only applies to the guide page.
-        // For other pages, page-guide is hidden, so its padding doesn't matter.
-        // If a padding is needed for settings, it should be managed directly within page-settings.
         UIElements.pageGuide.style.paddingTop = `0px`; 
 
-        // If navigating to the settings page, refresh relevant data
         updateUIFromSettings();
         if (appState.currentUser?.isAdmin) {
             refreshUserList();
