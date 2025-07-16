@@ -107,7 +107,6 @@
             background-color: #111827; /* Match body background */
             overflow: auto; /* Handles both vertical and horizontal scrolling */
             position: relative; /* For the now-line's absolute positioning relative to scrolled content */
-            /* padding-top: 0; This will be set by JS */
         }
         #guide-grid {
             display: grid;
@@ -235,16 +234,6 @@
             padding-bottom: initial;
         }
         
-        /* Specific padding for main-header and desktop-tabs to control collapse */
-        #main-header { padding: 0.5rem 1rem; } /* Equivalent to py-2 px-4 */
-        #desktop-tabs { padding-top: 0.25rem; padding-bottom: 0.25rem; } /* Equivalent to py-1 */
-        #unified-guide-header { padding: 0.25rem 0.5rem; } /* Equivalent to py-1 px-2 (mobile) */
-        @media (min-width: 640px) { /* sm breakpoint */
-            #unified-guide-header {
-                padding: 0.5rem 1rem; /* Equivalent to py-2 px-4 (desktop) */
-            }
-        }
-
         /* Collapsed state for top headers (applied to app-container by JS) */
         #app-container.header-collapsed #main-header,
         #app-container.header-collapsed #desktop-tabs,
@@ -314,7 +303,7 @@
     <!-- Main App Container -->
     <div id="app-container" class="hidden flex flex-col h-screen">
         <!-- Header -->
-        <header id="main-header" class="bg-gray-800 text-white p-4 shadow-md z-30 flex-shrink-0 flex items-center justify-between transition-transform duration-300 ease-out">
+        <header id="main-header" class="bg-gray-800 text-white p-2 shadow-md z-30 flex-shrink-0 flex items-center justify-between transition-transform duration-300 ease-out">
             <div class="flex items-center gap-3">
                 <img src="https://i.imgur.com/rwa8SjI.png" alt="VINI PLAY Logo" class="h-8 w-8">
                 <h1 class="text-xl sm:text-2xl font-bold">VINI PLAY</h1>
@@ -327,8 +316,8 @@
 
         <!-- Desktop Tabs -->
         <div id="desktop-tabs" class="hidden lg:flex border-b border-gray-700 bg-gray-800 flex-shrink-0 z-20 transition-transform duration-300 ease-out">
-            <button id="tab-guide" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700 active">TV Guide</button>
-            <button id="tab-settings" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700">Settings</button>
+            <button id="tab-guide" class="tab-button text-sm sm:text-base font-medium py-2 px-6 text-gray-300 hover:bg-gray-700 active">TV Guide</button>
+            <button id="tab-settings" class="tab-button text-sm sm:text-base font-medium py-2 px-6 text-gray-300 hover:bg-gray-700">Settings</button>
         </div>
 
         <!-- Main Content -->
@@ -336,7 +325,7 @@
             <!-- TV Guide Page -->
             <div id="page-guide" class="flex flex-grow flex-col overflow-hidden">
                 <!-- NEW: Unified Guide Header Bar -->
-                <div id="unified-guide-header" class="flex-shrink-0 bg-gray-800 p-2 sm:p-4 border-b border-gray-700 flex items-center justify-between z-30 transition-transform duration-300 ease-out">
+                <div id="unified-guide-header" class="flex-shrink-0 bg-gray-800 py-1 px-2 sm:py-2 sm:px-4 border-b border-gray-700 flex items-center justify-between z-30 transition-transform duration-300 ease-out">
                     <!-- Left: Date Display (moved from guide-controls-bar to here) -->
                     <div class="flex items-center gap-2 date-nav-controls">
                         <span id="guide-date-display" class="text-base sm:text-lg font-semibold text-white"></span>
