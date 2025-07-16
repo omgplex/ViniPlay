@@ -203,10 +203,11 @@ export const handleRouteChange = () => {
     const appContainer = UIElements.appContainer; 
 
     // Calculate initial combined header height for padding adjustment
+    // page-guide's padding-top should only account for elements *above* it in the DOM tree.
+    // unified-guide-header is a direct child of page-guide and should not contribute to its parent's padding.
     let combinedHeaderHeight = 0;
     if (UIElements.mainHeader) combinedHeaderHeight += UIElements.mainHeader.offsetHeight;
     if (UIElements.desktopTabs) combinedHeaderHeight += UIElements.desktopTabs.offsetHeight;
-    if (UIElements.unifiedGuideHeader) combinedHeaderHeight += UIElements.unifiedGuideHeader.offsetHeight;
 
     if (isGuide) {
         // When navigating to guide, ensure headers are uncollapsed and set initial padding
