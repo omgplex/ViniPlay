@@ -15,9 +15,6 @@ export const appState = {
     fuseChannels: null, // Fuse.js instance for channels
     fusePrograms: null, // Fuse.js instance for programs
     currentSourceTypeForEditor: 'url',
-    // New state for scroll behavior
-    lastScrollTop: 0,
-    headerVisible: true,
 };
 
 // State specific to the TV Guide
@@ -47,9 +44,11 @@ export const UIElements = Object.fromEntries(
 );
 
 // Add specific references that might not be picked up by generic ID mapping
+UIElements.appContainer = document.getElementById('app-container'); // Ensure appContainer is mapped
 UIElements.mainHeader = document.getElementById('main-header');
 UIElements.desktopTabs = document.getElementById('desktop-tabs');
 UIElements.unifiedGuideHeader = document.getElementById('unified-guide-header'); // NEW unified header
+UIElements.pageGuide = document.getElementById('page-guide'); // Ensure pageGuide is mapped
 UIElements.guideDateDisplay = document.getElementById('guide-date-display'); // Ensure date display is mapped
 UIElements.stickyCorner = document.querySelector('.sticky-corner'); // Reference to the sticky corner for channel column resize
 UIElements.channelColumnResizeHandle = document.getElementById('channel-column-resize-handle');
@@ -60,4 +59,3 @@ UIElements.channelColumnResizeHandle = document.getElementById('channel-column-r
 
 // Manually add resetFilterBtn if auto-mapping doesn't catch it
 UIElements.resetFilterBtn = document.getElementById('reset-filter-btn');
-
