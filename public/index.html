@@ -236,9 +236,14 @@
         }
         
         /* Specific padding for main-header and desktop-tabs to control collapse */
-        #main-header { padding: 1rem; } /* Equivalent to p-4 */
-        #desktop-tabs { padding-top: 0.75rem; padding-bottom: 0.75rem; } /* Equivalent to py-3 */
-        #unified-guide-header { padding: 0.5rem 1rem; } /* Equivalent to p-2 sm:p-4 */
+        #main-header { padding: 0.5rem 1rem; } /* Equivalent to py-2 px-4 */
+        #desktop-tabs { padding-top: 0.25rem; padding-bottom: 0.25rem; } /* Equivalent to py-1 */
+        #unified-guide-header { padding: 0.25rem 0.5rem; } /* Equivalent to py-1 px-2 (mobile) */
+        @media (min-width: 640px) { /* sm breakpoint */
+            #unified-guide-header {
+                padding: 0.5rem 1rem; /* Equivalent to py-2 px-4 (desktop) */
+            }
+        }
 
         /* Collapsed state for top headers (applied to app-container by JS) */
         #app-container.header-collapsed #main-header,
