@@ -33,30 +33,29 @@ export const guideState = {
     visibleChannels: [],
 };
 
-// A cache for frequently accessed DOM elements - now populated after DOMContentLoaded
-export const UIElements = {};
+// A cache for frequently accessed DOM elements
+// Update this section to reflect the new UI structure
+export const UIElements = Object.fromEntries(
+    [...document.querySelectorAll('[id]')].map(el => [
+        // Convert kebab-case id to camelCase for easier access in JS
+        el.id.replace(/-(\w)/g, (match, letter) => letter.toUpperCase()),
+        el
+    ])
+);
 
-// Function to initialize UIElements after the DOM is ready
-export const initializeUIElements = () => {
-    Object.assign(UIElements, Object.fromEntries(
-        [...document.querySelectorAll('[id]')].map(el => [
-            // Convert kebab-case id to camelCase for easier access in JS
-            el.id.replace(/-(\w)/g, (match, letter) => letter.toUpperCase()),
-            el
-        ])
-    ));
-
-    // Add specific references that might not be picked up by generic ID mapping
-    UIElements.appContainer = document.getElementById('app-container'); // Ensure appContainer is mapped
-    UIElements.mainHeader = document.getElementById('main-header');
-    UIElements.desktopTabs = document.getElementById('desktop-tabs');
-    UIElements.unifiedGuideHeader = document.getElementById('unified-guide-header'); // NEW unified header
-    UIElements.pageGuide = document.getElementById('page-guide'); // Ensure pageGuide is mapped
-    UIElements.guideDateDisplay = document.getElementById('guide-date-display'); // Ensure date display is mapped
-    UIElements.stickyCorner = document.querySelector('.sticky-corner'); // Reference to the sticky corner for channel column resize
-    UIElements.channelColumnResizeHandle = document.getElementById('channel-column-resize-handle');
+// Add specific references that might not be picked up by generic ID mapping
+UIElements.appContainer = document.getElementById('app-container'); // Ensure appContainer is mapped
+UIElements.mainHeader = document.getElementById('main-header');
+UIElements.desktopTabs = document.getElementById('desktop-tabs');
+UIElements.unifiedGuideHeader = document.getElementById('unified-guide-header'); // NEW unified header
+UIElements.pageGuide = document.getElementById('page-guide'); // Ensure pageGuide is mapped
+UIElements.guideDateDisplay = document.getElementById('guide-date-display'); // Ensure date display is mapped
+UIElements.stickyCorner = document.querySelector('.sticky-corner'); // Reference to the sticky corner for channel column resize
+UIElements.channelColumnResizeHandle = document.getElementById('channel-column-resize-handle');
 
 
-    // Manually add resetFilterBtn if auto-mapping doesn't catch it
-    UIElements.resetFilterBtn = document.getElementById('reset-filter-btn');
-};
+// No longer directly mapping prev-day-btn, now-btn, next-day-btn here
+// as they are dynamically inserted into the sticky-corner by guide.js and handled there.
+
+// Manually add resetFilterBtn if auto-mapping doesn't catch it
+UIElements.resetFilterBtn = document.getElementById('reset-filter-btn');
