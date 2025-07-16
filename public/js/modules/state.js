@@ -46,7 +46,7 @@ export const UIElements = Object.fromEntries(
 // Add specific references that might not be picked up by generic ID mapping
 UIElements.appContainer = document.getElementById('app-container'); // Ensure appContainer is mapped
 UIElements.mainHeader = document.getElementById('main-header');
-UIElements.desktopTabs = document.getElementById('desktop-tabs');
+// UIElements.desktopTabs = document.getElementById('desktop-tabs'); // Removed as per request
 UIElements.unifiedGuideHeader = document.getElementById('unified-guide-header'); // NEW unified header
 UIElements.pageGuide = document.getElementById('page-guide'); // Ensure pageGuide is mapped
 UIElements.guideDateDisplay = document.getElementById('guide-date-display'); // Ensure date display is mapped
