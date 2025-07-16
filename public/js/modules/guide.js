@@ -614,42 +614,55 @@ export function setupGuideEventListeners() {
 
     // --- NEW: Scroll event for header visibility ---
     let lastScrollTop = 0;
-    const scrollableElement = UIElements.guideContainer; // The main scrollable area for the guide grid
-    const appContainer = document.getElementById('app-container');
-    const unifiedGuideHeader = UIElements.unifiedGuideHeader; // The new unified header
+    let initialHeaderHeight = 0; // Will be set on first scroll or app load
+
+    const calculateInitialHeaderHeight = () => {
+        let height = 0;
+        if (UIElements.mainHeader) height += UIElements.mainHeader.offsetHeight;
+        if (UIElements.desktopTabs) height += UIElements.desktopTabs.offsetHeight;
+        if (UIElements.unifiedGuideHeader) height += UIElements.unifiedGuideHeader.offsetHeight;
+        return height;
+    };
 
     const handleScrollHeader = throttle(() => {
-        const scrollTop = scrollableElement.scrollTop;
+        if (!UIElements.guideContainer || !UIElements.appContainer || !UIElements.pageGuide) {
+            return; // Exit if elements aren't ready
+        }
+
+        const scrollTop = UIElements.guideContainer.scrollTop;
         const scrollDirection = scrollTop > lastScrollTop ? 'down' : 'up';
         
-        // Calculate the combined height of the main headers that *will* hide
-        let collapsibleHeaderHeight = 0;
-        if (UIElements.mainHeader) collapsibleHeaderHeight += UIElements.mainHeader.offsetHeight;
-        if (UIElements.desktopTabs && !UIElements.desktopTabs.classList.contains('hidden')) {
-            collapsibleHeaderHeight += UIElements.desktopTabs.offsetHeight;
+        // Calculate initial header height if not already done
+        if (initialHeaderHeight === 0) {
+            initialHeaderHeight = calculateInitialHeaderHeight();
+            // Set initial padding for page-guide when headers are visible
+            if (!UIElements.appContainer.classList.contains('header-collapsed')) {
+                 UIElements.pageGuide.style.paddingTop = `${initialHeaderHeight}px`;
+            }
         }
         
-        const threshold = collapsibleHeaderHeight * 0.5; // Hide after scrolling half the height
+        const collapseThreshold = initialHeaderHeight * 0.5; // Hide after scrolling half the height of all headers
 
-        if (scrollDirection === 'down' && scrollTop > threshold) {
-            if (!appContainer.classList.contains('header-collapsed')) {
-                appContainer.classList.add('header-collapsed');
-                // Set padding-top for page-guide to account for the unifiedGuideHeader's height
-                UIElements.pageGuide.style.paddingTop = `${unifiedGuideHeader.offsetHeight}px`;
+        if (scrollDirection === 'down' && scrollTop > collapseThreshold) {
+            if (!UIElements.appContainer.classList.contains('header-collapsed')) {
+                UIElements.appContainer.classList.add('header-collapsed');
+                UIElements.pageGuide.style.paddingTop = `1px`; // Reduce padding significantly
             }
-        } else if (scrollDirection === 'up' && scrollTop <= threshold) { // Also show if near top
-            if (appContainer.classList.contains('header-collapsed')) {
-                appContainer.classList.remove('header-collapsed');
-                // Reset padding-top
-                UIElements.pageGuide.style.paddingTop = `0px`;
+        } else if (scrollDirection === 'up' && scrollTop <= collapseThreshold / 2) { // Show if near top
+            if (UIElements.appContainer.classList.contains('header-collapsed')) {
+                UIElements.appContainer.classList.remove('header-collapsed');
+                UIElements.pageGuide.style.paddingTop = `${initialHeaderHeight}px`; // Restore full padding
             }
         }
         lastScrollTop = scrollTop <= 0 ? 0 : scrollTop; // For Mobile or negative scrolling
     }, 100);
 
-    scrollableElement.addEventListener('scroll', handleScrollHeader);
+    // Attach scroll listener to the guide container
+    UIElements.guideContainer.addEventListener('scroll', handleScrollHeader);
 
-    // Initial setting for page-guide padding, based on whether header is initially collapsed or not.
-    // This will be dynamic based on scroll, but ensure it's correct on load.
-    // We remove the direct setting here as ui.js handles the initial state based on route.
+    // Initial call to set padding correctly on page load, even before any scroll
+    // This will calculate `initialHeaderHeight` and set `page-guide` padding.
+    // Ensure this runs only once during the main app initialization or when navigating to the guide.
+    // It is called from main.js when `handleRouteChange` is first invoked,
+    // which in turn will ensure it's correct initially.
 }
