@@ -43,7 +43,8 @@ const showApp = (user) => {
     UIElements.appContainer.classList.remove('hidden');
     UIElements.appContainer.classList.add('flex');
 
-    UIElements.userDisplay.textContent = `Welcome, ${user.username}`;
+    // Display only the username, without "Welcome,"
+    UIElements.userDisplay.textContent = user.username;
     UIElements.userDisplay.classList.remove('hidden');
     UIElements.userManagementSection.classList.toggle('hidden', !user.isAdmin);
 
