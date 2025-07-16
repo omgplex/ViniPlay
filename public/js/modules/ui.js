@@ -221,7 +221,6 @@ export const handleRouteChange = () => {
         }
         // Ensure page-guide padding is reset when leaving guide page
         // No need to set padding here, as guide.js logic only applies to the guide page.
-        // For other pages, page-guide is hidden, so its padding doesn't matter.
         // If a padding is needed for settings, it should be managed directly within page-settings.
         UIElements.pageGuide.style.paddingTop = `0px`; 
 
