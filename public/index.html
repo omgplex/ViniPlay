@@ -107,7 +107,7 @@
             background-color: #111827; /* Match body background */
             overflow: auto; /* Handles both vertical and horizontal scrolling */
             position: relative; /* For the now-line's absolute positioning relative to scrolled content */
-            padding-top: 0; /* This will be set by JS using CSS custom property */
+            /* padding-top: 0; This will be set by JS */
         }
         #guide-grid {
             display: grid;
@@ -223,47 +223,41 @@
 
         /* --- NEW: Scroll-driven header animations --- */
         /* Default state of top headers */
-        #main-header, #desktop-tabs {
+        #main-header, #desktop-tabs, #unified-guide-header {
             transition: transform 0.3s ease-out, opacity 0.3s ease-out, height 0.3s ease-out, padding 0.3s ease-out;
             transform: translateY(0);
             opacity: 1;
-            height: auto;
+            height: auto; /* Use auto to allow natural height */
             overflow: hidden;
             flex-shrink: 0; /* Ensure they take their natural height when not collapsed */
+            box-shadow: none; /* Default state */
+            padding-top: initial;
+            padding-bottom: initial;
         }
+        
+        /* Specific padding for main-header and desktop-tabs to control collapse */
+        #main-header { padding: 1rem; } /* Equivalent to p-4 */
+        #desktop-tabs { padding-top: 0.75rem; padding-bottom: 0.75rem; } /* Equivalent to py-3 */
+        #unified-guide-header { padding: 0.5rem 1rem; } /* Equivalent to p-2 sm:p-4 */
 
         /* Collapsed state for top headers (applied to app-container by JS) */
         #app-container.header-collapsed #main-header,
-        #app-container.header-collapsed #desktop-tabs {
-            transform: translateY(-100%);
+        #app-container.header-collapsed #desktop-tabs,
+        #app-container.header-collapsed #unified-guide-header {
+            transform: translateY(-100%); /* Move entirely off-screen upwards */
             opacity: 0;
-            height: 0;
-            padding-top: 0;
-            padding-bottom: 0;
-            pointer-events: none;
-        }
-
-        /* Unified Guide Header (always sticky top within page-guide) */
-        #unified-guide-header {
-            position: sticky;
-            top: 0;
-            z-index: 40; /* Above all other other content and header parts */
-            background-color: #111827; /* Match body bg */
-            transition: all 0.3s ease-out;
-            box-shadow: none; /* Default state */
-            flex-wrap: wrap; /* Allow wrapping on smaller screens */
-            justify-content: space-between; /* Space between date/nav and search/filters */
-            align-items: center;
+            height: 0 !important; /* Force height to 0 to collapse space */
+            padding-top: 0 !important; /* Remove padding to fully collapse */
+            padding-bottom: 0 !important; /* Remove padding to fully collapse */
+            margin-top: 0 !important;
+            margin-bottom: 0 !important;
+            border-width: 0 !important; /* Remove borders */
+            pointer-events: none; /* Disable interaction */
         }
         
-        /* Apply shadow when the main header is collapsed */
-        #app-container.header-collapsed #unified-guide-header {
-            box-shadow: 0 2px 5px rgba(0,0,0,0.3); /* Subtle shadow when sticky and alone */
-        }
-
-        /* Page guide padding is managed by JS to push content down below the sticky header */
+        /* Adjust page-guide padding based on header state */
         #page-guide {
-            transition: padding-top 0.3s ease-out;
+            transition: padding-top 0.3s ease-out; /* Smooth transition for padding */
         }
     </style>
 </head>
@@ -315,7 +309,7 @@
     <!-- Main App Container -->
     <div id="app-container" class="hidden flex flex-col h-screen">
         <!-- Header -->
-        <header id="main-header" class="bg-gray-800 text-white p-4 shadow-md z-30 flex-shrink-0 flex items-center justify-between">
+        <header id="main-header" class="bg-gray-800 text-white p-4 shadow-md z-30 flex-shrink-0 flex items-center justify-between transition-transform duration-300 ease-out">
             <div class="flex items-center gap-3">
                 <img src="https://i.imgur.com/rwa8SjI.png" alt="VINI PLAY Logo" class="h-8 w-8">
                 <h1 class="text-xl sm:text-2xl font-bold">VINI PLAY</h1>
@@ -327,7 +321,7 @@
         </header>
 
         <!-- Desktop Tabs -->
-        <div id="desktop-tabs" class="hidden lg:flex border-b border-gray-700 bg-gray-800 flex-shrink-0 z-20">
+        <div id="desktop-tabs" class="hidden lg:flex border-b border-gray-700 bg-gray-800 flex-shrink-0 z-20 transition-transform duration-300 ease-out">
             <button id="tab-guide" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700 active">TV Guide</button>
             <button id="tab-settings" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700">Settings</button>
         </div>
@@ -337,7 +331,7 @@
             <!-- TV Guide Page -->
             <div id="page-guide" class="flex flex-grow flex-col overflow-hidden">
                 <!-- NEW: Unified Guide Header Bar -->
-                <div id="unified-guide-header" class="flex-shrink-0 bg-gray-800 p-2 sm:p-4 border-b border-gray-700 flex items-center justify-between z-30 sticky top-0">
+                <div id="unified-guide-header" class="flex-shrink-0 bg-gray-800 p-2 sm:p-4 border-b border-gray-700 flex items-center justify-between z-30 transition-transform duration-300 ease-out">
                     <!-- Left: Date Display (moved from guide-controls-bar to here) -->
                     <div class="flex items-center gap-2 date-nav-controls">
                         <span id="guide-date-display" class="text-base sm:text-lg font-semibold text-white"></span>
@@ -379,6 +373,8 @@
                         </div>
                         <!-- Time Bar Row (dynamically generated by JS) -->
                         <div class="time-bar-cell"></div>
+                        <!-- Now Line -->
+                        <div id="now-line" class="absolute top-0 bg-red-500 w-0.5 z-30 pointer-events-none hidden"></div>
                         <!-- Channel Info and Program Rows (dynamically generated by JS) -->
                     </div>
                 </div>
