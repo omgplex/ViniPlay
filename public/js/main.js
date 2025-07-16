@@ -5,7 +5,7 @@
  * Initializes the app by setting up authentication, event listeners, and loading initial data.
  */
 
-import { appState, guideState, UIElements } from './modules/state.js';
+import { appState, guideState, UIElements, initializeUIElements } from './modules/state.js'; // Import initializeUIElements
 import { apiFetch } from './modules/api.js';
 import { checkAuthStatus, setupAuthEventListeners } from './modules/auth.js';
 import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './modules/guide.js';
@@ -173,6 +173,7 @@ function setupCoreEventListeners() {
 
 // --- App Start ---
 document.addEventListener('DOMContentLoaded', () => {
+    initializeUIElements(); // IMPORTANT: Populate UIElements once DOM is ready
     // Setup listeners for the initial auth forms first
     setupAuthEventListeners();
     // Then check the auth status to decide what to show
