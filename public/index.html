@@ -132,7 +132,7 @@
             box-sizing: border-box;
             display: flex; /* Make it a flex container */
             flex-direction: column; /* Stack children vertically */
-            align-items: flex-start; /* Align to start for content within */
+            align-items: center; /* Center content horizontally */
             justify-content: center; /* Center content vertically */
             padding: 0; /* Removed padding */
         }
@@ -232,6 +232,9 @@
             box-shadow: none; /* Default state */
             padding-top: initial;
             padding-bottom: initial;
+            /* Explicitly set min-height to 0 and height to auto for all headers */
+            min-height: 0 !important; 
+            height: auto !important; 
         }
         
         /* Collapsed state for top headers (applied to app-container by JS) */
@@ -247,6 +250,14 @@
             margin-bottom: 0 !important;
             border-width: 0 !important; /* Remove borders */
             pointer-events: none; /* Disable interaction */
+        }
+
+        /* Specific padding for main-header and desktop-tabs to control collapse (now minimal) */
+        #main-header { padding: 4px 8px; } /* py-1 px-2 equivalent */
+        #desktop-tabs button { padding: 0px 24px; } /* py-0 px-6 equivalent */
+        #unified-guide-header { padding: 2px 8px; } /* py-0.5 px-2 equivalent */
+        @media (min-width: 640px) { /* sm breakpoint */
+             #unified-guide-header { padding: 4px 16px; } /* sm:py-1 sm:px-4 equivalent */
         }
         
         /* Adjust page-guide padding based on header state */
@@ -315,7 +326,7 @@
         </header>
 
         <!-- Desktop Tabs -->
-        <div id="desktop-tabs" class="hidden lg:flex border-b border-gray-700 bg-gray-800 flex-shrink-0 z-20 transition-transform duration-300 ease-out my-0">
+        <div id="desktop-tabs" class="hidden lg:flex border-b border-gray-700 bg-gray-800 flex-shrink-0 z-20 transition-transform duration-300 ease-out my-0 p-0">
             <button id="tab-guide" class="tab-button text-sm sm:text-base font-medium py-0 px-6 text-gray-300 hover:bg-gray-700 active">TV Guide</button>
             <button id="tab-settings" class="tab-button text-sm sm:text-base font-medium py-0 px-6 text-gray-300 hover:bg-gray-700">Settings</button>
         </div>
@@ -515,7 +526,7 @@
                             <div>
                                  <label for="search-scope-select" class="block text-sm font-medium text-gray-400 mb-1">Guide Search Scope</label>
                                   <p class="text-xs text-gray-500 mb-2">Control what the search bar in the TV Guide looks for.</p>
-                                 <select id="search-scope-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500">
+                                 <select id="search-scope-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500">
                                      <option value="channels_programs">Channels & Programs (Default)</option>
                                      <option value="channels_only">Channels Only</option>
                                  </select>
