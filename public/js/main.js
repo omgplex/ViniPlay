@@ -138,6 +138,7 @@ function restoreDimensions() {
  */
 function setupCoreEventListeners() {
     // Main navigation
+    // These now correctly target the tab buttons moved into the main-header
     ['tabGuide', 'bottomNavGuide'].forEach(id => UIElements[id]?.addEventListener('click', () => switchTab('guide')));
     ['tabSettings', 'bottomNavSettings'].forEach(id => UIElements[id]?.addEventListener('click', () => switchTab('settings')));
     
