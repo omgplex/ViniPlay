@@ -166,9 +166,9 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
         const existingHandle = stickyCornerEl.querySelector('.channel-resize-handle');
         stickyCornerEl.innerHTML = `
             <div class="flex items-center gap-2">
-                <button id="prev-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&lt;</button>
-                <button id="now-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">Now</button>
-                <button id="next-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&gt;</button>
+                <button id="prev-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-0.5 px-1 rounded-md text-sm transition-colors">&lt;</button>
+                <button id="now-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-0.5 px-1 rounded-md text-sm transition-colors">Now</button>
+                <button id="next-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-0.5 px-1 rounded-md text-sm transition-colors">&gt;</button>
             </div>
         `;
         if (existingHandle) stickyCornerEl.appendChild(existingHandle); // Re-append the handle
@@ -618,16 +618,10 @@ export function setupGuideEventListeners() {
 
     const calculateInitialHeaderHeight = () => {
         let height = 0;
-        const mainHeaderHeight = UIElements.mainHeader ? UIElements.mainHeader.offsetHeight : 0;
-        const desktopTabsHeight = UIElements.desktopTabs ? UIElements.desktopTabs.offsetHeight : 0;
-        const unifiedGuideHeaderHeight = UIElements.unifiedGuideHeader ? UIElements.unifiedGuideHeader.offsetHeight : 0;
-
-        console.log(`[Header Heights] Main: ${mainHeaderHeight}px, Desktop Tabs: ${desktopTabsHeight}px, Unified Guide: ${unifiedGuideHeaderHeight}px`);
-
-
-        height += mainHeaderHeight;
-        height += desktopTabsHeight;
-        height += unifiedGuideHeaderHeight;
+        if (UIElements.mainHeader) height += UIElements.mainHeader.offsetHeight;
+        if (UIElements.desktopTabs) height += UIElements.desktopTabs.offsetHeight;
+        if (UIElements.unifiedGuideHeader) height += UIElements.unifiedGuideHeader.offsetHeight;
+        console.log(`[Header Heights] Main: ${UIElements.mainHeader?.offsetHeight}px, Desktop Tabs: ${UIElements.desktopTabs?.offsetHeight}px, Unified Guide: ${UIElements.unifiedGuideHeader?.offsetHeight}px, Total: ${height}px`);
         return height;
     };
 
@@ -644,6 +638,8 @@ export function setupGuideEventListeners() {
             initialHeaderHeight = calculateInitialHeaderHeight();
             // Set initial padding for page-guide when headers are visible
             if (!UIElements.appContainer.classList.contains('header-collapsed')) {
+                 console.log(`[Guide:handleScrollHeader] Restoring page-guide padding-top to: ${initialHeaderHeight}px (on initialHeight === 0)`);
+                 console.trace();
                  UIElements.pageGuide.style.paddingTop = `${initialHeaderHeight}px`;
             }
         }
@@ -658,6 +654,8 @@ export function setupGuideEventListeners() {
         } else if (scrollDirection === 'up' && scrollTop <= collapseThreshold / 2) { // Show if near top
             if (UIElements.appContainer.classList.contains('header-collapsed')) {
                 UIElements.appContainer.classList.remove('header-collapsed');
+                console.log(`[Guide:handleScrollHeader] Restoring page-guide padding-top to: ${initialHeaderHeight}px`);
+                console.trace();
                 UIElements.pageGuide.style.paddingTop = `${initialHeaderHeight}px`; // Restore full padding
             }
         }
@@ -669,7 +667,6 @@ export function setupGuideEventListeners() {
 
     // Initial call to set padding correctly on page load, even before any scroll
     // This will calculate `initialHeaderHeight` and set `page-guide` padding.
-    // Ensure this runs only once during the main app initialization or when navigating to the guide.
     // It is called from main.js when `handleRouteChange` is first invoked,
     // which in turn will ensure it's correct initially.
 }
