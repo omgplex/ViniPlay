@@ -101,33 +101,37 @@
             flex-shrink: 0;
         }
 
-        /* --- NEW: Guide Grid Styles for sticky headers --- */
+        /* --- NEW: Guide Grid Styles for sticky headers and virtualization --- */
         #guide-container {
             flex-grow: 1; /* Make it fill available space */
             background-color: #111827; /* Match body background */
-            overflow: auto; /* Handles both vertical and horizontal scrolling */
+            overflow: auto; /* Handles both vertical and horizontal scrolling for the overall grid */
             position: relative; /* For the now-line's absolute positioning relative to scrolled content */
             /* padding-top: 0; This will be set by JS */
+            display: flex; /* Flex container for guide-grid-main */
+            flex-direction: column;
         }
-        #guide-grid {
+
+        #guide-grid-main {
             display: grid;
             /* Use CSS custom property for resizable channel column width */
             grid-template-columns: var(--channel-col-width, 180px) 1fr; /* Sticky channel info, then scrollable timeline */
-            grid-auto-rows: min-content; /* Rows size to content, important for first row sticky */
-            position: relative; /* For now-line absolute positioning */
+            grid-template-rows: 64px 1fr; /* First row for sticky time bar, second for scrollable content */
+            position: relative; /* For now-line absolute positioning within this context */
             min-width: fit-content; /* Ensure grid stretches to contain wide timeline */
-            height: fit-content; /* Allow content to dictate height */
-            /* No overflow here, parent #guide-container handles it */
+            height: fit-content; /* Allow content to dictate height, along with min-height */
+            min-height: 100%; /* Ensure grid takes at least full height of its parent */
         }
 
         .sticky-corner {
+            grid-area: 1 / 1; /* Position in grid: row 1, column 1 */
             position: sticky;
             top: 0;
             left: 0;
             z-index: 30; /* Highest z-index for the corner */
             background-color: #1a2233; /* Match channel-info background */
             height: 64px; /* Explicit height, matches time-bar-cell */
-            width: var(--channel-col-width, 180px); /* Default or dynamic width - this needs to be calculated by JS if responsive */
+            width: var(--channel-col-width, 180px); /* Default or dynamic width */
             border-bottom: 1px solid #374151;
             border-right: 1px solid #374151;
             box-sizing: border-box;
@@ -167,6 +171,7 @@
         }
         
         .time-bar-cell {
+            grid-area: 1 / 2; /* Position in grid: row 1, column 2 */
             position: sticky;
             top: 0;
             z-index: 25; /* Above programs, below corner */
@@ -179,23 +184,50 @@
             overflow: hidden; /* Ensure absolute children don't overflow */
         }
         
-        .channel-info {
-            position: sticky;
+        /* NEW: Virtualized content containers */
+        #channel-list-scroll-container {
+            grid-area: 2 / 1; /* Position in grid: row 2, column 1 */
+            position: sticky; /* Make it sticky to the left */
             left: 0;
-            z-index: 20; /* Above programs, below corner */
+            z-index: 20; /* Below sticky corner, above timeline programs */
+            overflow: hidden; /* This container itself doesn't scroll, its inner content will be positioned */
             background-color: #1a2233; /* Darker than gray-800 */
             border-right: 1px solid #374151;
-            box-sizing: border-box;
-            height: 96px; /* Channel row height */
-            width: var(--channel-col-width, 180px); /* Ensure channel info takes the correct width */
         }
 
-        .timeline-row {
-            position: relative;
-            height: 96px; /* Match channel-info height */
+        #channel-list-inner {
+            position: relative; /* Contains absolutely positioned channel-info items */
+            min-height: 100%; /* Ensure it always takes at least the height of its parent */
+        }
+
+        .channel-info {
+            position: absolute; /* Absolute positioning for virtualization */
+            left: 0;
+            width: 100%; /* Take full width of its parent (#channel-list-inner) */
+            height: 96px; /* Channel row height */
+            box-sizing: border-box;
+            /* No border-right here, as it's on the parent #channel-list-scroll-container */
+        }
+
+        #timeline-scroll-container {
+            grid-area: 2 / 2; /* Position in grid: row 2, column 2 */
+            overflow: hidden; /* This container itself doesn't scroll, its inner content will be positioned */
+        }
+
+        #timeline-inner {
+            position: relative; /* Contains absolutely positioned timeline-row items */
+            min-height: 100%; /* Ensure it always takes at least the height of its parent */
+            min-width: 100%; /* Ensure it always takes at least the width of its parent */
         }
         
-        /* The now-line should be absolute within #guide-grid, covering the full height */
+        .timeline-row {
+            position: absolute; /* Absolute positioning for virtualization */
+            left: 0;
+            height: 96px; /* Match channel-info height */
+            /* No border-bottom here, as rows are separated implicitly by their vertical position */
+        }
+        
+        /* The now-line should be absolute within #guide-grid-main, covering the full height */
         #now-line {
             position: absolute;
             top: 0;
@@ -208,7 +240,7 @@
 
         /* Mobile responsive for sticky channel info */
         @media (max-width: 767px) {
-            #guide-grid {
+            #guide-grid-main {
                 grid-template-columns: 64px 1fr; /* Fixed width for logo on mobile */
             }
             .channel-info {
@@ -223,7 +255,7 @@
 
         /* --- NEW: Scroll-driven header animations --- */
         /* Default state of top headers */
-        #main-header, #unified-guide-header { /* Removed #desktop-tabs */
+        #main-header, #unified-guide-header {
             transition: transform 0.3s ease-out, opacity 0.3s ease-out, height 0.3s ease-out, padding 0.3s ease-out;
             transform: translateY(0);
             opacity: 1;
@@ -235,14 +267,13 @@
             padding-bottom: initial;
         }
         
-        /* Specific padding for main-header and desktop-tabs to control collapse */
-        #main-header { padding: 1rem; } /* Equivalent to p-4 */
-        /* #desktop-tabs { padding-top: 0.75rem; padding-bottom: 0.75rem; } Removed this block */
-        #unified-guide-header { padding: 0.5rem 1rem; } /* Equivalent to p-2 sm:p-4 */
+        /* Specific padding for main-header to control collapse */
+        #main-header { padding: 1rem; }
+        #unified-guide-header { padding: 0.5rem 1rem; }
 
         /* Collapsed state for top headers (applied to app-container by JS) */
         #app-container.header-collapsed #main-header,
-        #app-container.header-collapsed #unified-guide-header { /* Removed #desktop-tabs */
+        #app-container.header-collapsed #unified-guide-header {
             transform: translateY(-100%); /* Move entirely off-screen upwards */
             opacity: 0;
             height: 0 !important; /* Force height to 0 to collapse space */
@@ -325,12 +356,6 @@
             </div>
         </header>
 
-        <!-- Removed: Desktop Tabs bar (content moved to main-header) -->
-        <!-- <div id="desktop-tabs" class="hidden lg:flex border-b border-gray-700 bg-gray-800 flex-shrink-0 z-20 transition-transform duration-300 ease-out">
-            <button id="tab-guide" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700 active">TV Guide</button>
-            <button id="tab-settings" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700">Settings</button>
-        </div> -->
-
         <!-- Main Content -->
         <main class="flex-grow flex flex-col overflow-hidden">
             <!-- TV Guide Page -->
@@ -352,7 +377,8 @@
                     </div>
                 </div>
 
-                <div id="guide-container" class="flex-grow bg-gray-900 overflow-hidden relative custom-scrollbar">
+                <div id="guide-container" class="flex-grow bg-gray-900 relative custom-scrollbar">
+                    <!-- Overlay for initial loading/no data -->
                     <div id="guide-placeholder" class="absolute inset-0 flex items-center justify-center z-40">
                         <div id="initial-loading-indicator" class="text-center text-gray-400">
                             <div class="loader mx-auto"></div>
@@ -364,9 +390,10 @@
                             <p class="mt-1 text-sm">Go to the Settings tab to add and activate your M3U and EPG sources.</p>
                         </div>
                     </div>
-                    <!-- NEW: This is where the unified grid will be rendered by guide.js -->
-                    <div id="guide-grid" class="h-full w-full">
-                        <!-- Sticky Corner (top-left) for channel column resize handle -->
+
+                    <!-- This is the main grid container with sticky elements for virtualization -->
+                    <div id="guide-grid-main" class="h-full w-full">
+                        <!-- Sticky Corner (top-left) for channel column resize handle and date navigation -->
                         <div class="sticky-corner flex items-center justify-center p-2 sm:p-4">
                             <div class="flex items-center gap-2">
                                 <button id="prev-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&lt;</button>
@@ -378,9 +405,23 @@
                         </div>
                         <!-- Time Bar Row (dynamically generated by JS) -->
                         <div class="time-bar-cell"></div>
-                        <!-- Now Line -->
+
+                        <!-- Now Line (absolute within guide-grid-main) -->
                         <div id="now-line" class="absolute top-0 bg-red-500 w-0.5 z-30 pointer-events-none hidden"></div>
-                        <!-- Channel Info and Program Rows (dynamically generated by JS) -->
+
+                        <!-- NEW: Scrollable Channel List Container (Sticky left) -->
+                        <div id="channel-list-scroll-container" class="channel-list-scroll-container custom-scrollbar">
+                            <div id="channel-list-inner" class="channel-list-inner">
+                                <!-- Virtualized Channel Info elements will be rendered here by guide.js -->
+                            </div>
+                        </div>
+
+                        <!-- NEW: Scrollable Timeline Container -->
+                        <div id="timeline-scroll-container" class="timeline-scroll-container custom-scrollbar">
+                            <div id="timeline-inner" class="timeline-inner">
+                                <!-- Virtualized Timeline rows and program items will be rendered here by guide.js -->
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
