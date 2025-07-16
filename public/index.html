@@ -125,7 +125,7 @@
             left: 0;
             z-index: 30; /* Highest z-index for the corner */
             background-color: #1a2233; /* Match channel-info background */
-            height: 36px; /* Explicit height, matches desired minimal bar height */
+            height: 28px; /* Explicit smaller height */
             width: var(--channel-col-width, 180px); /* Default or dynamic width - this needs to be calculated by JS if responsive */
             border-bottom: 1px solid #374151;
             border-right: 1px solid #374151;
@@ -170,7 +170,7 @@
             top: 0;
             z-index: 25; /* Above programs, below corner */
             background-color: #111827; /* Match body/guide background */
-            height: 36px; /* Explicit height, matches desired minimal bar height */
+            height: 28px; /* Explicit smaller height */
             display: flex;
             align-items: center;
             border-bottom: 1px solid #374151;
@@ -215,7 +215,7 @@
             }
             .channel-details { display: none; } /* Hide channel name, chno, source on mobile */
             .favorite-star { display: none; } /* Hide favorite icon on mobile */
-            .sticky-corner { width: 64px; height: 36px; } /* Adjust corner width and height for mobile */
+            .sticky-corner { width: 64px; height: 28px; } /* Adjust corner width and height for mobile */
             /* Hide the resize handle on mobile */
             .channel-resize-handle { display: none; }
         }
@@ -252,38 +252,95 @@
         }
 
         /* Apply specific padding using Tailwind classes to content *within* headers, not on headers themselves */
+        #main-header {
+            height: 28px; /* Fixed height for main header */
+            display: flex; /* Ensure flex properties apply within fixed height */
+            align-items: center; /* Vertically center content */
+        }
         #main-header .flex.items-center.gap-3, /* For logo and title */
-        #main-header .flex.items-center.gap-4, /* For user display and logout */
-        #unified-guide-header .flex.items-center.gap-2.date-nav-controls, /* For date navigation */
-        #unified-guide-header .relative.w-full.sm\:w-auto.flex.flex-wrap.items-center.justify-end.gap-2.filter-search-controls /* For filters and search */
+        #main-header .flex.items-center.gap-4 /* For user display and logout */
         {
-            padding-top: 4px; /* py-1 equivalent */
-            padding-bottom: 4px; /* py-1 equivalent */
+            padding-top: 0px; /* py-0 */
+            padding-bottom: 0px; /* py-0 */
             padding-left: 8px; /* px-2 equivalent */
             padding-right: 8px; /* px-2 equivalent */
         }
+        #main-header img { /* Logo */
+            height: 20px; /* h-5 */
+            width: 20px; /* w-5 */
+        }
+        #main-header h1 { /* VINI PLAY title */
+            font-size: 0.9rem; /* text-sm */
+        }
+        #main-header #logout-btn {
+            padding-top: 0px; /* py-0 */
+            padding-bottom: 0px; /* py-0 */
+            font-size: 0.7rem; /* text-xs reduced */
+        }
 
+
+        #desktop-tabs {
+            height: 24px; /* Fixed height for desktop tabs */
+            border-bottom: none; /* Remove border-bottom on desktop-tabs as it adds height */
+            display: flex;
+            align-items: center; /* Vertically center buttons */
+            justify-content: flex-start; /* Align buttons to the start */
+            padding-left: 8px; /* px-2 for tabs container */
+        }
         #desktop-tabs .tab-button {
             padding-top: 0px; /* py-0 */
             padding-bottom: 0px; /* py-0 */
-            padding-left: 24px; /* px-6 */
-            padding-right: 24px; /* px-6 */
+            padding-left: 20px; /* px-5 */
+            padding-right: 20px; /* px-5 */
+            font-size: 0.8rem; /* text-sm reduced */
+            line-height: 24px; /* Match parent height to force fit */
         }
         
         #unified-guide-header {
-             /* Adjust padding for small screens */
-            padding-top: 2px; /* py-0.5 */
-            padding-bottom: 2px; /* py-0.5 */
+            height: 32px; /* Fixed height for unified guide header */
+            border-bottom: 1px solid #374151; /* Keep border-bottom */
+            display: flex;
+            align-items: center; /* Vertically center content */
+            justify-content: space-between; /* Space out elements */
+            /* Adjust padding for small screens */
+            padding-top: 0px; /* py-0 */
+            padding-bottom: 0px; /* py-0 */
             padding-left: 8px; /* px-2 */
             padding-right: 8px; /* px-2 */
         }
         @media (min-width: 640px) { /* sm breakpoint */
              #unified-guide-header {
-                 padding-top: 4px; /* sm:py-1 */
-                 padding-bottom: 4px; /* sm:py-1 */
                  padding-left: 16px; /* sm:px-4 */
                  padding-right: 16px; /* sm:px-4 */
             }
+        }
+
+        #unified-guide-header #guide-date-display {
+            font-size: 0.8rem; /* text-sm reduced */
+        }
+        #unified-guide-header #group-filter,
+        #unified-guide-header #source-filter,
+        #unified-guide-header #search-input {
+            padding-top: 0px; /* py-0 */
+            padding-bottom: 0px; /* py-0 */
+            font-size: 0.7rem; /* text-xs reduced */
+            height: 24px; /* Fixed height for inputs/selects */
+        }
+        #unified-guide-header #reset-filter-btn {
+            padding-top: 0px; /* py-0 */
+            padding-bottom: 0px; /* py-0 */
+            padding-left: 4px; /* px-1 */
+            padding-right: 4px; /* px-1 */
+            font-size: 0.7rem; /* text-xs reduced */
+            height: 24px; /* Fixed height for button */
+        }
+        #unified-guide-header .date-nav-controls button {
+             padding-top: 0px; /* py-0 */
+             padding-bottom: 0px; /* py-0 */
+             padding-left: 4px; /* px-1 */
+             padding-right: 4px; /* px-1 */
+             font-size: 0.7rem; /* text-xs reduced */
+             height: 24px; /* Fixed height for buttons */
         }
         
         /* Adjust page-guide padding based on header state */
@@ -342,12 +399,12 @@
         <!-- Header -->
         <header id="main-header" class="bg-gray-800 text-white shadow-md z-30 flex-shrink-0 flex items-center justify-between transition-transform duration-300 ease-out">
             <div class="flex items-center gap-3">
-                <img src="https://i.imgur.com/rwa8SjI.png" alt="VINI PLAY Logo" class="h-8 w-8">
-                <h1 class="text-xl sm:text-2xl font-bold">VINI PLAY</h1>
+                <img src="https://i.imgur.com/rwa8SjI.png" alt="VINI PLAY Logo" class="h-5 w-5">
+                <h1 class="text-sm font-bold">VINI PLAY</h1>
             </div>
             <div class="flex items-center gap-4">
-                 <span id="user-display" class="text-sm text-gray-400 hidden sm:block"></span>
-                <button id="logout-btn" class="text-sm bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-md transition-colors">Logout</button>
+                 <span id="user-display" class="text-xs text-gray-400 hidden sm:block"></span>
+                <button id="logout-btn" class="text-xs bg-red-600 hover:bg-red-700 text-white font-bold py-px px-3 rounded-md transition-colors">Logout</button>
             </div>
         </header>
 
@@ -365,15 +422,15 @@
                 <div id="unified-guide-header" class="flex-shrink-0 bg-gray-800 border-b border-gray-700 flex items-center justify-between z-30 transition-transform duration-300 ease-out">
                     <!-- Left: Date Display (moved from guide-controls-bar to here) -->
                     <div class="flex items-center gap-2 date-nav-controls">
-                        <span id="guide-date-display" class="text-base sm:text-lg font-semibold text-white"></span>
+                        <span id="guide-date-display" class="text-sm font-semibold text-white"></span>
                     </div>
                     
                     <!-- Right: Filters and Search (moved from guide-controls-bar to here) -->
                     <div class="relative w-full sm:w-auto flex flex-wrap items-center justify-end gap-2 filter-search-controls">
-                        <select id="group-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"></select>
-                        <select id="source-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"></select>
-                        <input type="search" id="search-input" placeholder="Search..." class="flex-grow sm:flex-grow-0 sm:w-48 bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500">
-                        <button id="reset-filter-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-0.5 px-1 rounded-md text-sm transition-colors flex-shrink-0">Reset</button>
+                        <select id="group-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-0.5 text-xs text-white focus:ring-blue-500 focus:border-blue-500"></select>
+                        <select id="source-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-0.5 text-xs text-white focus:ring-blue-500 focus:border-blue-500"></select>
+                        <input type="search" id="search-input" placeholder="Search..." class="flex-grow sm:flex-grow-0 sm:w-48 bg-gray-700 border border-gray-600 rounded-md px-3 py-0.5 text-xs text-white focus:ring-blue-500 focus:border-blue-500">
+                        <button id="reset-filter-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-0.5 px-1 rounded-md text-xs transition-colors flex-shrink-0">Reset</button>
                         <div id="search-results-container" class="hidden absolute top-full right-0 w-full sm:w-96 max-h-80 overflow-y-auto bg-gray-800 border border-gray-600 rounded-md mt-1 z-50 custom-scrollbar shadow-lg"></div>
                     </div>
                 </div>
