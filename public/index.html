@@ -223,7 +223,7 @@
 
         /* --- NEW: Scroll-driven header animations --- */
         /* Default state of top headers */
-        #main-header, #desktop-tabs, #unified-guide-header {
+        #main-header, #unified-guide-header { /* Removed #desktop-tabs */
             transition: transform 0.3s ease-out, opacity 0.3s ease-out, height 0.3s ease-out, padding 0.3s ease-out;
             transform: translateY(0);
             opacity: 1;
@@ -237,13 +237,12 @@
         
         /* Specific padding for main-header and desktop-tabs to control collapse */
         #main-header { padding: 1rem; } /* Equivalent to p-4 */
-        #desktop-tabs { padding-top: 0.75rem; padding-bottom: 0.75rem; } /* Equivalent to py-3 */
+        /* #desktop-tabs { padding-top: 0.75rem; padding-bottom: 0.75rem; } Removed this block */
         #unified-guide-header { padding: 0.5rem 1rem; } /* Equivalent to p-2 sm:p-4 */
 
         /* Collapsed state for top headers (applied to app-container by JS) */
         #app-container.header-collapsed #main-header,
-        #app-container.header-collapsed #desktop-tabs,
-        #app-container.header-collapsed #unified-guide-header {
+        #app-container.header-collapsed #unified-guide-header { /* Removed #desktop-tabs */
             transform: translateY(-100%); /* Move entirely off-screen upwards */
             opacity: 0;
             height: 0 !important; /* Force height to 0 to collapse space */
@@ -314,17 +313,23 @@
                 <img src="https://i.imgur.com/rwa8SjI.png" alt="VINI PLAY Logo" class="h-8 w-8">
                 <h1 class="text-xl sm:text-2xl font-bold">VINI PLAY</h1>
             </div>
+            <!-- Combined user display, desktop tabs, and logout button -->
             <div class="flex items-center gap-4">
                  <span id="user-display" class="text-sm text-gray-400 hidden sm:block"></span>
+                <!-- Desktop Tabs (moved here) -->
+                <div class="hidden lg:flex gap-2">
+                    <button id="tab-guide" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 active rounded-md transition-colors">TV Guide</button>
+                    <button id="tab-settings" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Settings</button>
+                </div>
                 <button id="logout-btn" class="text-sm bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-md transition-colors">Logout</button>
             </div>
         </header>
 
-        <!-- Desktop Tabs -->
-        <div id="desktop-tabs" class="hidden lg:flex border-b border-gray-700 bg-gray-800 flex-shrink-0 z-20 transition-transform duration-300 ease-out">
+        <!-- Removed: Desktop Tabs bar (content moved to main-header) -->
+        <!-- <div id="desktop-tabs" class="hidden lg:flex border-b border-gray-700 bg-gray-800 flex-shrink-0 z-20 transition-transform duration-300 ease-out">
             <button id="tab-guide" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700 active">TV Guide</button>
             <button id="tab-settings" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700">Settings</button>
-        </div>
+        </div> -->
 
         <!-- Main Content -->
         <main class="flex-grow flex flex-col overflow-hidden">
