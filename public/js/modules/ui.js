@@ -213,6 +213,8 @@ export const handleRouteChange = () => {
         if (appContainer) {
             appContainer.classList.remove('header-collapsed');
         }
+        console.log(`[UI:handleRouteChange] Setting page-guide padding-top to: ${combinedHeaderHeight}px`);
+        console.trace();
         UIElements.pageGuide.style.paddingTop = `${combinedHeaderHeight}px`;
 
         // Reset guide scroll to top when coming back to it
