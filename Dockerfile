@@ -11,6 +11,9 @@ COPY package*.json ./
 # Install app dependencies inside the container
 RUN npm install
 
+# Run the build script to transpile JSX files
+RUN npm run build
+
 # Copy the rest of your application's source code
 COPY . .
 
