@@ -12,7 +12,7 @@ import { showProgramDetails } from './ui.js'; // Ensure showProgramDetails is im
 import { showConfirm, showNotification } from './ui.js'; // Ensure showConfirm and showNotification are imported
 import React from 'react';
 import ReactDOM from 'react-dom/client'; // Import React DOM client for rendering
-import ReactGuide from '../react-guide.jsx'; // Import the new React Guide component
+import ReactGuide from '../react-guide-bundle.js'; // Import the new React Guide component (now transpiled)
 import Fuse from 'fuse.js'; // Import Fuse.js
 
 
@@ -243,7 +243,7 @@ function handleSearchAndFilterProxy(searchTerm, selectedGroup, selectedSource) {
 
 export function setupGuideEventListeners() {
     UIElements.groupFilter.addEventListener('change', (e) => handleSearchAndFilterProxy(UIElements.searchInput.value, e.target.value, UIElements.sourceFilter.value));
-    UIElements.sourceFilter.addEventListener('change', (e) => handleSearchAndFilterProxy(UIElements.searchInput.value, UIElements.groupFilter.value, e.target.value));
+    UIElements.sourceFilter.addEventListener('change', (e) => handleSearchAndFilterProxy(UIElements.searchInput.value, UIElements.groupFilter.value, UIElements.sourceFilter.value));
 
     // Handle search input with debounce, then proxy to React
     UIElements.searchInput.addEventListener('input', () => {
@@ -256,6 +256,7 @@ export function setupGuideEventListeners() {
     // Hide search results when clicking outside (React component will handle its own search results visibility now)
     document.addEventListener('click', e => {
         if (!UIElements.searchInput.contains(e.target) && !UIElements.searchResultsContainer.contains(e.target) && !e.target.closest('.search-result-channel') && !e.target.closest('.search-result-program')) {
+            // Note: UIElements.searchResultsContainer might be hidden by React. This is for the vanilla JS fallbacks.
             UIElements.searchResultsContainer.classList.add('hidden');
         }
     });
