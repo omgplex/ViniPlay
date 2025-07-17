@@ -102,71 +102,62 @@
         }
 
         /* --- NEW: Guide Grid Styles for sticky headers --- */
-        #guide-container {
+        /*
+         * react-guide-root (the new mounting point for React app, will handle the scrolling)
+         */
+        #react-guide-root {
             flex-grow: 1; /* Make it fill available space */
             background-color: #111827; /* Match body background */
-            overflow: auto; /* Handles both vertical and horizontal scrolling */
-            position: relative; /* For the now-line's absolute positioning relative to scrolled content */
-            /* padding-top: 0; This will be set by JS */
-        }
-        #guide-grid {
-            display: grid;
-            /* Use CSS custom property for resizable channel column width */
-            grid-template-columns: var(--channel-col-width, 180px) 1fr; /* Sticky channel info, then scrollable timeline */
-            grid-auto-rows: min-content; /* Rows size to content, important for first row sticky */
-            position: relative; /* For now-line absolute positioning */
-            min-width: fit-content; /* Ensure grid stretches to contain wide timeline */
-            height: fit-content; /* Allow content to dictate height */
-            /* No overflow here, parent #guide-container handles it */
+            overflow: hidden; /* Prevent this div from scrolling, let React Grid manage it */
+            position: relative; /* For now-line's absolute positioning relative to scrolled content */
+            display: flex; /* React component will manage its own internal layout */
+            flex-direction: column; /* To stack header and grid */
         }
 
-        .sticky-corner {
+        /* These styles will apply to elements rendered by React */
+        .react-guide-grid-container {
+            flex-grow: 1;
+            overflow: auto; /* This is the actual scrollable element managed by react-window */
+            position: relative;
+        }
+
+        .react-channel-info-cell {
             position: sticky;
-            top: 0;
             left: 0;
-            z-index: 30; /* Highest z-index for the corner */
-            background-color: #1a2233; /* Match channel-info background */
-            height: 64px; /* Explicit height, matches time-bar-cell */
-            width: var(--channel-col-width, 180px); /* Default or dynamic width - this needs to be calculated by JS if responsive */
-            border-bottom: 1px solid #374151;
+            z-index: 20; /* Above programs, below corner */
+            background-color: #1a2233; /* Darker than gray-800 */
             border-right: 1px solid #374151;
             box-sizing: border-box;
-            display: flex; /* Make it a flex container */
-            flex-direction: column; /* Stack children vertically */
-            align-items: flex-start; /* Align to start for content within */
-            justify-content: center; /* Center content vertically */
-            padding: 8px; /* Add some padding */
+            padding: 2px; /* Adjusted padding for better fit in virtualized cell */
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            overflow: hidden; /* Ensure content doesn't break out of cell */
+            height: 100%; /* Fill the cell height */
+        }
+        .react-channel-info-cell .channel-details {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            flex-grow: 1;
+            min-width: 0;
+        }
+        .react-channel-info-cell .channel-details .font-semibold {
+            font-size: 0.9rem;
+            white-space: nowrap; /* Prevent wrapping */
+        }
+        .react-channel-info-cell .channel-details .flex {
+             white-space: nowrap;
+        }
+        .react-channel-info-cell .chno-badge, .react-channel-info-cell .source-badge {
+            display: inline-flex; /* Use inline-flex for proper badge alignment */
+            align-items: center;
+            justify-content: center;
+            height: 18px; /* Fixed height for badges */
         }
 
-        /* New CSS for the column resize handle */
-        .channel-resize-handle {
-            position: absolute;
-            top: 0;
-            right: 0; /* Align to the right edge of its parent (.sticky-corner) */
-            bottom: 0;
-            width: 8px; /* Make it a narrow vertical bar */
-            cursor: ew-resize; /* East-West resize cursor */
-            z-index: 35; /* Higher than sticky corner and time bar */
-        }
-        .channel-resize-handle::after {
-            content: '';
-            position: absolute;
-            display: block;
-            width: 2px; /* Vertical line */
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            height: 60%; /* Make it span most of the height */
-            background-color: #9ca3af;
-            opacity: 0.6;
-            border-radius: 1px;
-        }
-        .channel-resize-handle:hover::after {
-            opacity: 1;
-            background-color: #ffffff; /* Brighter on hover */
-        }
-        
-        .time-bar-cell {
+        .react-time-bar-cell {
             position: sticky;
             top: 0;
             z-index: 25; /* Above programs, below corner */
@@ -178,24 +169,71 @@
             box-sizing: border-box;
             overflow: hidden; /* Ensure absolute children don't overflow */
         }
-        
-        .channel-info {
-            position: sticky;
+
+        .react-programme-item {
+            position: absolute; /* positioned by react-window */
+            top: 1px; /* Small top padding */
+            bottom: 1px; /* Small bottom padding */
+            background-color: #374151; /* gray-700 */
+            border-left: 3px solid #3b82f6;
+            border-radius: 4px;
+            padding: 0.5rem; /* p-2 */
+            overflow: hidden;
+            flex-direction: column;
+            justify-content: center;
+            z-index: 5;
+            transition: all 0.2s;
+        }
+        .react-programme-item:hover {
+            background-color: #4b5563; /* gray-600 */
+            cursor: pointer;
+        }
+        .react-programme-item.past {
+            background-color: #374151;
+            border-left-color: #6b7280;
+            opacity: 0.6;
+        }
+        .react-programme-item.live {
+            border-left: 4px solid #fb923c;
+            background-color: #374151;
+        }
+        .react-programme-item.live::after {
+            content: 'LIVE';
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background-color: #ef4444;
+            color: white;
+            padding: 1px 4px;
+            font-size: 0.65rem;
+            font-weight: 700;
+            border-radius: 4px;
+            z-index: 20;
+        }
+        .react-programme-item .prog-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: white;
+            white-space: nowrap; /* Prevent wrapping */
+        }
+        .react-programme-item .prog-time {
+            font-size: 0.75rem;
+            color: #d1d5db;
+            white-space: nowrap; /* Prevent wrapping */
+        }
+        .react-programme-item .programme-progress {
+            position: absolute;
+            top: 0;
             left: 0;
-            z-index: 20; /* Above programs, below corner */
-            background-color: #1a2233; /* Darker than gray-800 */
-            border-right: 1px solid #374151;
-            box-sizing: border-box;
-            height: 96px; /* Channel row height */
-            width: var(--channel-col-width, 180px); /* Ensure channel info takes the correct width */
+            bottom: 0;
+            background-color: rgba(59, 130, 246, 0.3);
+            border-radius: 2px 0 0 2px;
+            pointer-events: none;
+            transition: width 0.3s linear;
         }
 
-        .timeline-row {
-            position: relative;
-            height: 96px; /* Match channel-info height */
-        }
-        
-        /* The now-line should be absolute within #guide-grid, covering the full height */
+
+        /* The now-line should be absolute within #react-guide-root, covering the full height */
         #now-line {
             position: absolute;
             top: 0;
@@ -205,58 +243,46 @@
             pointer-events: none; /* Do not block clicks */
             transition: left 0.5s ease; /* Smooth movement when scrolling to now */
         }
-
         /* Mobile responsive for sticky channel info */
         @media (max-width: 767px) {
-            #guide-grid {
-                grid-template-columns: 64px 1fr; /* Fixed width for logo on mobile */
-            }
-            .channel-info {
+            .react-channel-info-cell {
                 width: 64px; /* Fixed width for logo on mobile */
             }
-            .channel-details { display: none; } /* Hide channel name, chno, source on mobile */
-            .favorite-star { display: none; } /* Hide favorite icon on mobile */
-            .sticky-corner { width: 64px; } /* Adjust corner width for mobile */
-            /* Hide the resize handle on mobile */
-            .channel-resize-handle { display: none; }
+            .react-channel-info-cell .channel-details { display: none; } /* Hide channel name, chno, source on mobile */
+            .react-channel-info-cell .favorite-star { display: none; } /* Hide favorite icon on mobile */
         }
 
         /* --- NEW: Scroll-driven header animations --- */
-        /* Default state of top headers */
-        #main-header, #unified-guide-header { /* Removed #desktop-tabs */
+        #main-header, #unified-guide-header {
             transition: transform 0.3s ease-out, opacity 0.3s ease-out, height 0.3s ease-out, padding 0.3s ease-out;
             transform: translateY(0);
             opacity: 1;
-            height: auto; /* Use auto to allow natural height */
+            height: auto;
             overflow: hidden;
-            flex-shrink: 0; /* Ensure they take their natural height when not collapsed */
-            box-shadow: none; /* Default state */
+            flex-shrink: 0;
+            box-shadow: none;
             padding-top: initial;
             padding-bottom: initial;
         }
         
-        /* Specific padding for main-header and desktop-tabs to control collapse */
-        #main-header { padding: 1rem; } /* Equivalent to p-4 */
-        /* #desktop-tabs { padding-top: 0.75rem; padding-bottom: 0.75rem; } Removed this block */
-        #unified-guide-header { padding: 0.5rem 1rem; } /* Equivalent to p-2 sm:p-4 */
+        #main-header { padding: 1rem; }
+        #unified-guide-header { padding: 0.5rem 1rem; }
 
-        /* Collapsed state for top headers (applied to app-container by JS) */
         #app-container.header-collapsed #main-header,
-        #app-container.header-collapsed #unified-guide-header { /* Removed #desktop-tabs */
-            transform: translateY(-100%); /* Move entirely off-screen upwards */
+        #app-container.header-collapsed #unified-guide-header {
+            transform: translateY(-100%);
             opacity: 0;
-            height: 0 !important; /* Force height to 0 to collapse space */
-            padding-top: 0 !important; /* Remove padding to fully collapse */
-            padding-bottom: 0 !important; /* Remove padding to fully collapse */
+            height: 0 !important;
+            padding-top: 0 !important;
+            padding-bottom: 0 !important;
             margin-top: 0 !important;
             margin-bottom: 0 !important;
-            border-width: 0 !important; /* Remove borders */
-            pointer-events: none; /* Disable interaction */
+            border-width: 0 !important;
+            pointer-events: none;
         }
         
-        /* Adjust page-guide padding based on header state */
         #page-guide {
-            transition: padding-top 0.3s ease-out; /* Smooth transition for padding */
+            transition: padding-top 0.3s ease-out;
         }
     </style>
 </head>
@@ -291,7 +317,7 @@
                     <input type="text" id="setup-username" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" required>
                 </div>
                 <div>
-                    <label for="setup-password" class="text-sm font-medium text-gray-400 block mb-2">Password</label>
+                    <label for="setup-password" class="block text-sm font-medium text-gray-400 mb-2">Password</label>
                     <input type="password" id="setup-password" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" required>
                 </div>
                 <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition-colors">Create Admin & Login</button>
@@ -325,24 +351,18 @@
             </div>
         </header>
 
-        <!-- Removed: Desktop Tabs bar (content moved to main-header) -->
-        <!-- <div id="desktop-tabs" class="hidden lg:flex border-b border-gray-700 bg-gray-800 flex-shrink-0 z-20 transition-transform duration-300 ease-out">
-            <button id="tab-guide" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700 active">TV Guide</button>
-            <button id="tab-settings" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700">Settings</button>
-        </div> -->
-
         <!-- Main Content -->
         <main class="flex-grow flex flex-col overflow-hidden">
-            <!-- TV Guide Page -->
+            <!-- TV Guide Page - Now a React Root -->
             <div id="page-guide" class="flex flex-grow flex-col overflow-hidden">
-                <!-- NEW: Unified Guide Header Bar -->
+                <!-- NEW: Unified Guide Header Bar (will remain here, outside React root) -->
                 <div id="unified-guide-header" class="flex-shrink-0 bg-gray-800 p-2 sm:p-4 border-b border-gray-700 flex items-center justify-between z-30 transition-transform duration-300 ease-out">
-                    <!-- Left: Date Display (moved from guide-controls-bar to here) -->
+                    <!-- Left: Date Display -->
                     <div class="flex items-center gap-2 date-nav-controls">
                         <span id="guide-date-display" class="text-base sm:text-lg font-semibold text-white"></span>
                     </div>
                     
-                    <!-- Right: Filters and Search (moved from guide-controls-bar to here) -->
+                    <!-- Right: Filters and Search -->
                     <div class="relative w-full sm:w-auto flex flex-wrap items-center justify-end gap-2 filter-search-controls">
                         <select id="group-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"></select>
                         <select id="source-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"></select>
@@ -352,7 +372,9 @@
                     </div>
                 </div>
 
-                <div id="guide-container" class="flex-grow bg-gray-900 overflow-hidden relative custom-scrollbar">
+                <!-- NEW: React will mount here -->
+                <div id="react-guide-root" class="flex-grow flex flex-col">
+                    <!-- Initial placeholder/loader will be managed by React Guide component -->
                     <div id="guide-placeholder" class="absolute inset-0 flex items-center justify-center z-40">
                         <div id="initial-loading-indicator" class="text-center text-gray-400">
                             <div class="loader mx-auto"></div>
@@ -364,24 +386,8 @@
                             <p class="mt-1 text-sm">Go to the Settings tab to add and activate your M3U and EPG sources.</p>
                         </div>
                     </div>
-                    <!-- NEW: This is where the unified grid will be rendered by guide.js -->
-                    <div id="guide-grid" class="h-full w-full">
-                        <!-- Sticky Corner (top-left) for channel column resize handle -->
-                        <div class="sticky-corner flex items-center justify-center p-2 sm:p-4">
-                            <div class="flex items-center gap-2">
-                                <button id="prev-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&lt;</button>
-                                <button id="now-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">Now</button>
-                                <button id="next-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&gt;</button>
-                            </div>
-                            <!-- Resize handle for the channel column -->
-                            <div id="channel-column-resize-handle" class="channel-resize-handle"></div>
-                        </div>
-                        <!-- Time Bar Row (dynamically generated by JS) -->
-                        <div class="time-bar-cell"></div>
-                        <!-- Now Line -->
-                        <div id="now-line" class="absolute top-0 bg-red-500 w-0.5 z-30 pointer-events-none hidden"></div>
-                        <!-- Channel Info and Program Rows (dynamically generated by JS) -->
-                    </div>
+                     <!-- Now Line (absolute within react-guide-root) -->
+                    <div id="now-line" class="absolute top-0 bg-red-500 w-0.5 z-30 pointer-events-none hidden"></div>
                 </div>
             </div>
 
@@ -696,6 +702,5 @@
 
     <!-- Main Application Script (Refactored) -->
     <script type="module" src="/js/main.js"></script>
-
 </body>
 </html>
