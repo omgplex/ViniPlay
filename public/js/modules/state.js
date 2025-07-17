@@ -27,7 +27,7 @@ export const guideState = {
     }, // This will hold both GLOBAL and USER settings, merged.
     guideDurationHours: 48,
     hourWidthPixels: window.innerWidth < 768 ? 200 : 300,
-    currentDate: new Date(), // Already initialized to current date, which is good
+    currentDate: new Date(),
     channelGroups: new Set(),
     channelSources: new Set(), // For the source filter
     visibleChannels: [],
