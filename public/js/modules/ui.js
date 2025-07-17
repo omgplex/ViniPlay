@@ -211,10 +211,8 @@ export const handleRouteChange = () => {
         UIElements.pageGuide.style.paddingTop = `1px`;
 
         // Reset guide scroll to top when coming back to it
-        // The main scroll container is now UIElements.guideContainer
         if (UIElements.guideContainer) {
             UIElements.guideContainer.scrollTop = 0;
-            UIElements.guideContainer.scrollLeft = 0; // Reset horizontal scroll too
         }
     } else {
         // If navigating to settings, ensure main header is fully visible (by removing collapsed class)
@@ -254,4 +252,3 @@ export const switchTab = (activeTab) => {
     const newPath = activeTab === 'guide' ? '/tvguide' : '/settings';
     navigate(newPath);
 };
-
