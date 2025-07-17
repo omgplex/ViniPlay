@@ -112,4 +112,3 @@ export function setupPlayerEventListeners() {
         localStorage.setItem('iptvPlayerVolume', UIElements.videoElement.volume);
     });
 }
-```
