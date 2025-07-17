@@ -15,6 +15,11 @@ export const appState = {
     fuseChannels: null, // Fuse.js instance for channels
     fusePrograms: null, // Fuse.js instance for programs
     currentSourceTypeForEditor: 'url',
+    // New state for virtual scrolling
+    virtualScroll: {
+        rowHeight: 96, // Height of each channel/program row in pixels
+        bufferRows: 5, // Number of rows to render above and below the visible viewport
+    }
 };
 
 // State specific to the TV Guide
@@ -30,7 +35,7 @@ export const guideState = {
     currentDate: new Date(),
     channelGroups: new Set(),
     channelSources: new Set(), // For the source filter
-    visibleChannels: [],
+    visibleChannels: [], // This is the FILTERED list, not necessarily the VISIBLE (rendered) list
 };
 
 // A cache for frequently accessed DOM elements
@@ -46,16 +51,20 @@ export const UIElements = Object.fromEntries(
 // Add specific references that might not be picked up by generic ID mapping
 UIElements.appContainer = document.getElementById('app-container'); // Ensure appContainer is mapped
 UIElements.mainHeader = document.getElementById('main-header');
-// UIElements.desktopTabs = document.getElementById('desktop-tabs'); // Removed as per request
 UIElements.unifiedGuideHeader = document.getElementById('unified-guide-header'); // NEW unified header
 UIElements.pageGuide = document.getElementById('page-guide'); // Ensure pageGuide is mapped
 UIElements.guideDateDisplay = document.getElementById('guide-date-display'); // Ensure date display is mapped
 UIElements.stickyCorner = document.querySelector('.sticky-corner'); // Reference to the sticky corner for channel column resize
 UIElements.channelColumnResizeHandle = document.getElementById('channel-column-resize-handle');
 
+// NEW: References for virtualization containers
+UIElements.guideGridMain = document.getElementById('guide-grid-main'); // The main grid container
+UIElements.channelListScrollContainer = document.getElementById('channel-list-scroll-container');
+UIElements.channelListInner = document.getElementById('channel-list-inner');
+UIElements.timelineScrollContainer = document.getElementById('timeline-scroll-container');
+UIElements.timelineInner = document.getElementById('timeline-inner');
 
-// No longer directly mapping prev-day-btn, now-btn, next-day-btn here
-// as they are dynamically inserted into the sticky-corner by guide.js and handled there.
 
 // Manually add resetFilterBtn if auto-mapping doesn't catch it
 UIElements.resetFilterBtn = document.getElementById('reset-filter-btn');
+
