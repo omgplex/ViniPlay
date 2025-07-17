@@ -259,17 +259,18 @@ const renderGuide = (channelsToRender, resetScroll = false, initialScrollY = 0) 
     guideContainer.addEventListener('scroll', guideState.scrollHandler);
 
     // Initial render and positioning
-    updateVisibleRows();
-    updateNowLine(guideStart, true); // Always scroll horizontally to now on initial render
-
+    updateVisibleRows(); // Render initial visible rows
+    
     // Apply initial vertical scroll
     if (initialScrollY > 0) {
         guideContainer.scrollTop = initialScrollY;
-    } else if (resetScroll) { // Fallback to reset to top if no specific scroll Y
+    } else if (resetScroll) {
         guideContainer.scrollTop = 0;
     }
-    // Date navigation button listeners are now handled via delegation in setupGuideEventListeners.
-    // Removed direct onclick assignments from here.
+
+    // Call updateNowLine *after* the DOM has had a chance to render and measure elements
+    // This is crucial for accurate clientWidth for horizontal scrolling
+    requestAnimationFrame(() => updateNowLine(guideStart, true));
 };
 
 /**
@@ -279,7 +280,7 @@ const renderGuide = (channelsToRender, resetScroll = false, initialScrollY = 0) 
  */
 const updateNowLine = (guideStart, shouldScroll = false) => {
     const nowLineEl = document.getElementById('now-line');
-    if (!nowLineEl) return;
+    if (!nowLineEl || !UIElements.guideContainer) return; // Ensure elements exist
 
     const now = new Date();
     const guideEnd = new Date(guideStart.getTime() + guideState.guideDurationHours * 3600 * 1000);
@@ -289,11 +290,16 @@ const updateNowLine = (guideStart, shouldScroll = false) => {
         const leftOffsetInScrollableArea = ((now - guideStart) / 3600000) * guideState.hourWidthPixels;
         nowLineEl.style.left = `${channelInfoColWidth + leftOffsetInScrollableArea}px`;
         nowLineEl.classList.remove('hidden');
+
         if (shouldScroll) {
-            UIElements.guideContainer.scrollTo({
-                left: leftOffsetInScrollableArea - (UIElements.guideContainer.clientWidth / 4), // Offset to center the now line a bit
-                behavior: 'smooth'
-            });
+            // Use setTimeout to ensure the layout has settled and clientWidth is accurate
+            setTimeout(() => {
+                const scrollTargetLeft = leftOffsetInScrollableArea - (UIElements.guideContainer.clientWidth / 4);
+                UIElements.guideContainer.scrollTo({
+                    left: Math.max(0, scrollTargetLeft), // Ensure scrollLeft is not negative
+                    behavior: 'smooth'
+                });
+            }, 50); // Small delay to allow layout to settle
         }
     } else {
         nowLineEl.classList.add('hidden');
@@ -305,8 +311,15 @@ const updateNowLine = (guideStart, shouldScroll = false) => {
     if (contentWrapper) {
         nowLineEl.style.height = `${contentWrapper.scrollHeight}px`;
     } else {
-        // If contentWrapper isn't ready, fallback or defer
-        nowLineEl.style.height = `${UIElements.guideContainer.scrollHeight}px`;
+        // If contentWrapper isn't ready, retry setting height after a delay
+        setTimeout(() => {
+            const currentContentWrapper = UIElements.guideGrid.querySelector('#virtual-content-wrapper');
+            if (currentContentWrapper) {
+                nowLineEl.style.height = `${currentContentWrapper.scrollHeight}px`;
+            } else {
+                nowLineEl.style.height = `${UIElements.guideContainer.scrollHeight}px`;
+            }
+        }, 100);
     }
 
 
@@ -418,7 +431,9 @@ export function handleSearchAndFilter(isInitialLoad = false) {
 
     // Calculate initial vertical scroll position for 'Now' button and initial load
     let initialScrollY = 0;
-    if (isInitialLoad || (UIElements.groupFilter.value === 'all' && UIElements.sourceFilter.value === 'all' && !searchTerm)) {
+    // Only attempt to scroll to 'now' if it's an initial load or 'now' button click,
+    // AND filters are not applied (to avoid conflicting with filter results)
+    if (isInitialLoad && selectedGroup === 'all' && selectedSource === 'all' && !searchTerm) {
         const now = new Date();
         // Try to find a channel with a live program
         let targetChannelIndex = -1;
@@ -537,16 +552,12 @@ export function setupGuideEventListeners() {
             finalizeGuideLoad();
         } else if (e.target.closest('#now-btn')) {
             const now = new Date();
+            // Only update guideState.currentDate if it's not already today
             if (guideState.currentDate.toDateString() !== now.toDateString()) {
                 guideState.currentDate = now;
-                finalizeGuideLoad(true); // Re-render and scroll to current time/channel
-            } else {
-                // If already on today, just scroll to now time and channel
-                const guideStart = new Date(guideState.currentDate);
-                guideStart.setHours(0, 0, 0, 0);
-                updateNowLine(guideStart, true); // Scroll horizontally
-                handleSearchAndFilter(true); // Re-filter and re-render to scroll vertically
             }
+            // Always trigger a full reload and scroll to now (both horizontal and vertical)
+            finalizeGuideLoad(true);
         } else if (e.target.closest('#next-day-btn')) {
             guideState.currentDate.setDate(guideState.currentDate.getDate() + 1);
             finalizeGuideLoad();
@@ -700,3 +711,4 @@ export function setupGuideEventListeners() {
 
     UIElements.guideContainer.addEventListener('scroll', handleScrollHeader);
 }
+```
