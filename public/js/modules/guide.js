@@ -259,7 +259,6 @@ const renderGuide = (channelsToRender, resetScroll = false, initialScrollY = 0) 
     guideContainer.addEventListener('scroll', guideState.scrollHandler);
 
     // Initial render and positioning
-    // Removed resetScroll to always apply initialScrollY if provided
     updateVisibleRows();
     updateNowLine(guideStart, true); // Always scroll horizontally to now on initial render
 
@@ -269,35 +268,8 @@ const renderGuide = (channelsToRender, resetScroll = false, initialScrollY = 0) 
     } else if (resetScroll) { // Fallback to reset to top if no specific scroll Y
         guideContainer.scrollTop = 0;
     }
-
-
-    // --- Re-attach date navigation listeners ---
-    const prevDayBtn = UIElements.guideGrid.querySelector('#prev-day-btn');
-    const nowBtn = UIElements.guideGrid.querySelector('#now-btn');
-    const nextDayBtn = UIElements.guideGrid.querySelector('#next-day-btn');
-    
-    // Use .onclick to ensure we're not adding duplicate listeners on re-renders
-    if (prevDayBtn) prevDayBtn.onclick = () => {
-        guideState.currentDate.setDate(guideState.currentDate.getDate() - 1);
-        finalizeGuideLoad();
-    };
-    if (nowBtn) nowBtn.onclick = () => {
-        const now = new Date();
-        if (guideState.currentDate.toDateString() !== now.toDateString()) {
-            guideState.currentDate = now;
-            finalizeGuideLoad(true); // Re-render and scroll to current time/channel
-        } else {
-            // If already on today, just scroll to now time and channel
-            const guideStart = new Date(guideState.currentDate);
-            guideStart.setHours(0, 0, 0, 0);
-            updateNowLine(guideStart, true); // Scroll horizontally
-            handleSearchAndFilter(true); // Re-filter and re-render to scroll vertically
-        }
-    };
-    if (nextDayBtn) nextDayBtn.onclick = () => {
-        guideState.currentDate.setDate(guideState.currentDate.getDate() + 1);
-        finalizeGuideLoad();
-    };
+    // Date navigation button listeners are now handled via delegation in setupGuideEventListeners.
+    // Removed direct onclick assignments from here.
 };
 
 /**
@@ -557,9 +529,32 @@ export function setupGuideEventListeners() {
         }
     });
 
+    // --- Date Navigation Buttons (Delegated) ---
+    // Attach listener to a static parent element (unifiedGuideHeader)
+    UIElements.unifiedGuideHeader.addEventListener('click', (e) => {
+        if (e.target.closest('#prev-day-btn')) {
+            guideState.currentDate.setDate(guideState.currentDate.getDate() - 1);
+            finalizeGuideLoad();
+        } else if (e.target.closest('#now-btn')) {
+            const now = new Date();
+            if (guideState.currentDate.toDateString() !== now.toDateString()) {
+                guideState.currentDate = now;
+                finalizeGuideLoad(true); // Re-render and scroll to current time/channel
+            } else {
+                // If already on today, just scroll to now time and channel
+                const guideStart = new Date(guideState.currentDate);
+                guideStart.setHours(0, 0, 0, 0);
+                updateNowLine(guideStart, true); // Scroll horizontally
+                handleSearchAndFilter(true); // Re-filter and re-render to scroll vertically
+            }
+        } else if (e.target.closest('#next-day-btn')) {
+            guideState.currentDate.setDate(guideState.currentDate.getDate() + 1);
+            finalizeGuideLoad();
+        }
+    });
+
     // --- Interactions (Clicks on the new grid) ---
     // Event delegation is used here on the guideGrid, which is now efficient
-    
     UIElements.guideGrid.addEventListener('click', (e) => {
         const favoriteStar = e.target.closest('.favorite-star');
         const channelInfo = e.target.closest('.channel-info');
