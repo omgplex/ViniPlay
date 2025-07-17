@@ -309,11 +309,14 @@ const updateNowLine = (guideStart, shouldScroll = false) => {
         nowLineEl.style.left = `${channelInfoColWidth + leftOffsetInScrollableArea}px`;
         nowLineEl.classList.remove('hidden');
         if (shouldScroll) {
-            UIElements.guideContainer.scrollTo({
-                left: leftOffsetInScrollableArea - (UIElements.guideContainer.clientWidth / 4),
-                behavior: 'smooth'
-            });
-        }
+            // Add a short delay to ensure the guide content has rendered before scrolling
+            setTimeout(() => {
+                UIElements.guideContainer.scrollTo({
+                    left: leftOffsetInScrollableArea - (UIElements.guideContainer.clientWidth / 4),
+                    behavior: 'smooth'
+                });
+            }, 100); // A 100ms delay is usually enough
+        }        
     } else {
         nowLineEl.classList.add('hidden');
     }
