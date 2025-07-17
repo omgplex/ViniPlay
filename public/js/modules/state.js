@@ -31,6 +31,7 @@ export const guideState = {
     channelGroups: new Set(),
     channelSources: new Set(), // For the source filter
     visibleChannels: [],
+    scrollHandler: null, // NEW: Holds the reference to the throttled scroll handler for virtualization
 };
 
 // A cache for frequently accessed DOM elements
