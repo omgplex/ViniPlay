@@ -4,9 +4,7 @@
   "description": "A simple IPTV player with server-side storage and user authentication.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "build": "babel public/js/react-guide.jsx --out-file public/js/react-guide-bundle.js --presets=@babel/preset-react,@babel/preset-env",
-    "postinstall": "npm run build"
+    "start": "node server.js"
   },
   "author": "Andrea Ardovini",
   "license": "MIT",
@@ -20,15 +18,6 @@
     "connect-sqlite3": "^0.9.15",
     "dotenv": "^16.4.5",
     "xml-js": "^1.6.11",
-    "fuse.js": "^7.0.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-window": "^1.8.10"
-  },
-  "devDependencies": {
-    "@babel/cli": "^7.24.8",
-    "@babel/core": "^7.24.9",
-    "@babel/preset-env": "^7.24.8",
-    "@babel/preset-react": "^7.24.7"
+    "fuse.js": "^7.0.0"
   }
 }
