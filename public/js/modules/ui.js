@@ -6,7 +6,6 @@
 
 import { UIElements, appState, guideState } from './state.js';
 import { refreshUserList, updateUIFromSettings } from './settings.js';
-import { renderReactGuide } from './guide.js'; // Import renderReactGuide
 
 let confirmCallback = null;
 
@@ -130,31 +129,60 @@ export const makeModalResizable = (handleEl, containerEl, minWidth, minHeight, s
 };
 
 /**
- * Shows the program details modal.
- * @param {object} channel - The channel object.
- * @param {object} program - The program object.
+ * Makes a column resizable horizontally by dragging a handle.
+ * @param {HTMLElement} handleEl - The handle element to drag.
+ * @param {HTMLElement} targetEl - The element whose width is being controlled (e.g., the grid container).
+ * @param {number} minWidth - The minimum width for the column.
+ * @param {string} settingKey - The key to save the width under in user settings.
+ * @param {string} cssVarName - The CSS custom property name to update (e.g., '--channel-col-width').
  */
-export const showProgramDetails = (channel, program) => {
-    UIElements.detailsTitle.textContent = program.title;
-    const progStart = new Date(program.start);
-    const progStop = new Date(program.stop);
-    UIElements.detailsTime.textContent = `${progStart.toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})}`;
-    UIElements.detailsDesc.textContent = program.desc || "No description available.";
-    UIElements.detailsPlayBtn.onclick = () => {
-        // Assuming playChannel is available in the global scope or passed down via imports
-        // If playChannel is imported, ensure it's imported in this module or passed as a callback from main.js
-        import('./player.js').then(({ playChannel }) => {
-            playChannel(channel.url, `${channel.displayName || channel.name}`, channel.id);
-            closeModal(UIElements.programDetailsModal);
-        });
-    };
-    openModal(UIElements.programDetailsModal);
+export const makeColumnResizable = (handleEl, targetEl, minWidth, settingKey, cssVarName) => {
+    // Lazy import to avoid circular dependencies
+    import('./api.js').then(({ saveUserSetting }) => {
+        let resizeDebounceTimer;
+        let startWidth;
+        let startX;
+
+        // Ensure targetEl is not null
+        if (!targetEl) {
+            console.error('makeColumnResizable: targetEl is null. Cannot apply resize logic.');
+            return;
+        }
+
+        handleEl.addEventListener('mousedown', e => {
+            e.preventDefault();
+            startX = e.clientX;
+            // Get the current value of the CSS variable or default to minWidth if not set
+            startWidth = parseInt(getComputedStyle(targetEl).getPropertyValue(cssVarName)) || minWidth;
+            
+            const doResize = (e) => {
+                const newWidth = startWidth + (e.clientX - startX);
+                const finalWidth = Math.max(minWidth, newWidth);
+                targetEl.style.setProperty(cssVarName, `${finalWidth}px`);
+            };
+
+            const stopResize = () => {
+                window.removeEventListener('mousemove', doResize);
+                window.removeEventListener('mouseup', stopResize);
+                document.body.style.cursor = ''; // Reset cursor
+
+                clearTimeout(resizeDebounceTimer);
+                resizeDebounceTimer = setTimeout(() => {
+                    const currentWidth = parseInt(getComputedStyle(targetEl).getPropertyValue(cssVarName));
+                    saveUserSetting(settingKey, currentWidth);
+                }, 500); // Save after 500ms of no activity
+            };
+
+            document.body.style.cursor = 'ew-resize'; // East-West resize cursor for column
+            window.addEventListener('mousemove', doResize);
+            window.addEventListener('mouseup', stopResize);
+        }, false);
+    });
 };
 
 
 /**
  * Handles client-side routing by showing/hiding pages based on the URL path.
- * Updated to work with the React Guide component.
  */
 export const handleRouteChange = () => {
     const path = window.location.pathname;
@@ -171,8 +199,10 @@ export const handleRouteChange = () => {
     UIElements.pageSettings.classList.toggle('flex', !isGuide);
     
     // Manage header visibility based on the active tab
+    // Ensure UIElements.appContainer is correctly mapped in state.js
     const appContainer = UIElements.appContainer; 
 
+    // When navigating to guide, ensure headers are uncollapsed and set initial padding
     if (isGuide) {
         if (appContainer) {
             appContainer.classList.remove('header-collapsed');
@@ -180,48 +210,18 @@ export const handleRouteChange = () => {
         // Hardcode padding-top to 1px as requested
         UIElements.pageGuide.style.paddingTop = `1px`;
 
-        // The React guide component will handle its own scrolling and `now-line` positioning
-        // You might want to trigger a scroll to now here if the user navigates back to guide
-        // from another tab and the guide component is already mounted.
-        // This is handled by the React component internally upon data/date changes.
-        if (UIElements.guideDateDisplay) {
-            UIElements.guideDateDisplay.textContent = guideState.currentDate.toLocaleDateString([], { weekday: 'short', month: 'long', day: 'numeric' });
+        // Reset guide scroll to top when coming back to it
+        if (UIElements.guideContainer) {
+            UIElements.guideContainer.scrollTop = 0;
         }
-        
-        // Ensure React Guide component is rendered with current data if it's the active tab
-        renderReactGuide(
-            guideState.channels,
-            guideState.programs,
-            guideState.settings,
-            {
-                playChannel: import('./player.js').then(mod => mod.playChannel), // Async import
-                showConfirm: showConfirm,
-                saveUserSetting: import('./api.js').then(mod => mod.saveUserSetting), // Async import
-                showProgramDetailsModal: showProgramDetails,
-                onDateChange: (newDate) => {
-                    guideState.currentDate = newDate;
-                    UIElements.guideDateDisplay.textContent = newDate.toLocaleDateString([], { weekday: 'short', month: 'long', day: 'numeric' });
-                    renderReactGuide(guideState.channels, guideState.programs, guideState.settings, {
-                        playChannel: import('./player.js').then(mod => mod.playChannel), showConfirm, saveUserSetting: import('./api.js').then(mod => mod.saveUserSetting),
-                        showProgramDetailsModal: showProgramDetails, onDateChange,
-                        guideDateDisplay: guideState.currentDate.toISOString(), onSearchAndFilter: UIElements.handleSearchAndFilterProxy,
-                        channelGroups: guideState.channelGroups, channelSources: guideState.channelSources, onToggleHeaderVisibility: UIElements.onToggleHeaderVisibility
-                    });
-                },
-                guideDateDisplay: guideState.currentDate.toISOString(),
-                onSearchAndFilter: UIElements.handleSearchAndFilterProxy,
-                channelGroups: guideState.channelGroups,
-                channelSources: guideState.channelSources,
-                onToggleHeaderVisibility: UIElements.onToggleHeaderVisibility
-            }
-        );
-
-
     } else {
         // If navigating to settings, ensure main header is fully visible (by removing collapsed class)
         if (appContainer) {
             appContainer.classList.remove('header-collapsed');
         }
+        // Ensure page-guide padding is reset when leaving guide page
+        // No need to set padding here, as guide.js logic only applies to the guide page.
+        // If a padding is needed for settings, it should be managed directly within page-settings.
         UIElements.pageGuide.style.paddingTop = `0px`; 
 
         // If navigating to the settings page, refresh relevant data
@@ -230,6 +230,18 @@ export const handleRouteChange = () => {
             refreshUserList();
         }
     }
+};
+
+/**
+ * Pushes a new state to the browser history and triggers a route change.
+ * @param {string} path - The new path to navigate to (e.g., '/settings').
+ */
+export const navigate = (path) => {
+    // Only push state if the path is different
+    if (window.location.pathname !== path) {
+        window.history.pushState({}, path, window.location.origin + path);
+    }
+    handleRouteChange();
 };
 
 /**
