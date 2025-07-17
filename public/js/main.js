@@ -11,7 +11,7 @@ import { checkAuthStatus, setupAuthEventListeners } from './modules/auth.js';
 import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './modules/guide.js';
 import { setupPlayerEventListeners } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
-import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable } from './modules/ui.js';
+import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable } from './modules/ui.js'; // Import makeColumnResizable
 
 /**
  * Initializes the main application after successful authentication.
@@ -129,7 +129,7 @@ function restoreDimensions() {
     }
     // Restore channel column width
     if (guideState.settings.channelColumnWidth) {
-        UIElements.guideGridMain.style.setProperty('--channel-col-width', `${guideState.settings.channelColumnWidth}px`);
+        UIElements.guideGrid.style.setProperty('--channel-col-width', `${guideState.settings.channelColumnWidth}px`);
     }
 }
 
@@ -160,10 +160,10 @@ function setupCoreEventListeners() {
 
     // Resizable channel column
     // Only enable if the handle and grid exist and it's not a mobile view where column is fixed
-    if (UIElements.channelColumnResizeHandle && UIElements.guideGridMain && window.innerWidth >= 768) {
+    if (UIElements.channelColumnResizeHandle && UIElements.guideGrid && window.innerWidth >= 768) {
         makeColumnResizable(
             UIElements.channelColumnResizeHandle,
-            UIElements.guideGridMain, // Target the main grid to update its CSS variable
+            UIElements.guideGrid,
             100, // Minimum width for the channel column
             'channelColumnWidth', // Setting key
             '--channel-col-width' // CSS custom property to update
@@ -179,4 +179,3 @@ document.addEventListener('DOMContentLoaded', () => {
     // Then check the auth status to decide what to show
     checkAuthStatus();
 });
-
