@@ -133,6 +133,8 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
     // --- Static Header/Time Bar Setup (Done once per full render) ---
     const guideStart = new Date(guideState.currentDate);
     guideStart.setHours(0, 0, 0, 0);
+    // NEW: Create a stable UTC reference for midnight
+    const guideStartUtc = new Date(Date.UTC(guideStart.getUTCFullYear(), guideStart.getUTCMonth(), guideStart.getUTCDate()));
     const timelineWidth = guideState.guideDurationHours * guideState.hourWidthPixels;
     UIElements.guideGrid.style.setProperty('--timeline-width', `${timelineWidth}px`);
     UIElements.guideDateDisplay.textContent = guideState.currentDate.toLocaleDateString([], { weekday: 'short', month: 'long', day: 'numeric' });
@@ -142,8 +144,7 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
     if (timeBarCellEl) {
         timeBarCellEl.innerHTML = '';
         for (let i = 0; i < guideState.guideDurationHours; i++) {
-            const time = new Date(guideStart);
-            time.setHours(guideStart.getHours() + i);
+            const time = new Date(guideStartUtc.getTime() + i * 3600 * 1000);
             timeBarCellEl.innerHTML += `<div class="absolute top-0 bottom-0 flex items-center justify-start px-2 text-xs text-gray-400 border-r border-gray-700/50" style="left: ${i * guideState.hourWidthPixels}px; width: ${guideState.hourWidthPixels}px;">${time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>`;
         }
         timeBarCellEl.style.width = `${timelineWidth}px`;
@@ -225,16 +226,16 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
             // Scrollable Timeline Row
             let programsHTML = '';
             const now = new Date();
-            const guideEnd = new Date(guideStart.getTime() + guideState.guideDurationHours * 3600 * 1000);
+            const guideEnd = new Date(guideStartUtc.getTime() + guideState.guideDurationHours * 3600 * 1000);
             (guideState.programs[channel.id] || []).forEach(prog => {
                 const progStart = new Date(prog.start);
                 const progStop = new Date(prog.stop);
-                if (progStop < guideStart || progStart > guideEnd) return;
+                if (progStop < guideStartUtc || progStart > guideEnd) return;
 
                 const durationMs = progStop - progStart;
                 if (durationMs <= 0) return;
 
-                const left = ((progStart - guideStart) / 3600000) * guideState.hourWidthPixels;
+                const left = ((progStart.getTime() - guideStartUtc.getTime()) / 3600000) * guideState.hourWidthPixels;
                 const width = (durationMs / 3600000) * guideState.hourWidthPixels;
                 const isLive = now >= progStart && now < progStop;
                 const progressWidth = isLive ? ((now - progStart) / durationMs) * 100 : 0;
@@ -262,7 +263,7 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
         guideContainer.scrollTop = 0;
     }
     updateVisibleRows();
-    updateNowLine(guideStart, resetScroll);
+    updateNowLine(guideStartUtc, resetScroll);
 
     // --- Re-attach date navigation listeners ---
     const prevDayBtn = UIElements.guideGrid.querySelector('#prev-day-btn');
@@ -282,7 +283,8 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
         } else {
             const guideStart = new Date(guideState.currentDate);
             guideStart.setHours(0, 0, 0, 0);
-            updateNowLine(guideStart, true);
+            const guideStartUtc = new Date(Date.UTC(guideStart.getUTCFullYear(), guideStart.getUTCMonth(), guideStart.getUTCDate()));
+            updateNowLine(guideStartUtc, true);
         }
     };
     if (nextDayBtn) nextDayBtn.onclick = () => {
@@ -293,19 +295,20 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
 
 /**
  * Updates the position of the "now" line and program states (live, past).
- * @param {Date} guideStart - The start time of the current guide view.
+ * @param {Date} guideStartUtc - The start time of the current guide view in UTC.
  * @param {boolean} shouldScroll - If true, scrolls the timeline to the now line.
  */
-const updateNowLine = (guideStart, shouldScroll = false) => {
+const updateNowLine = (guideStartUtc, shouldScroll = false) => {
     const nowLineEl = document.getElementById('now-line');
     if (!nowLineEl) return;
 
     const now = new Date();
-    const guideEnd = new Date(guideStart.getTime() + guideState.guideDurationHours * 3600 * 1000);
-    const channelInfoColWidth = UIElements.stickyCorner?.offsetWidth || 0;
+    const nowValue = now.getTime(); // Use getTime() for UTC milliseconds
+    const guideEnd = new Date(guideStartUtc.getTime() + guideState.guideDurationHours * 3600 * 1000);
+    const channelInfoColWidth = guideState.settings.channelColumnWidth;
 
-    if (now >= guideStart && now <= guideEnd) {
-        const leftOffsetInScrollableArea = ((now - guideStart) / 3600000) * guideState.hourWidthPixels;
+    if (nowValue >= guideStartUtc.getTime() && nowValue <= guideEnd.getTime()) {
+        const leftOffsetInScrollableArea = ((nowValue - guideStartUtc.getTime()) / 3600000) * guideState.hourWidthPixels;
         nowLineEl.style.left = `${channelInfoColWidth + leftOffsetInScrollableArea}px`;
         nowLineEl.classList.remove('hidden');
         if (shouldScroll) {
@@ -340,7 +343,7 @@ const updateNowLine = (guideStart, shouldScroll = false) => {
         }
     });
 
-    setTimeout(() => updateNowLine(guideStart, false), 60000);
+    setTimeout(() => updateNowLine(guideStartUtc, false), 60000);
 };
 
 // --- Filtering and Searching ---
