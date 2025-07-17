@@ -114,9 +114,8 @@ export function finalizeGuideLoad(isFirstLoad = false) {
  * Renders the guide using UI virtualization.
  * @param {Array<object>} channelsToRender - The filtered list of channels to display.
  * @param {boolean} resetScroll - If true, scrolls the guide to the top-left.
- * @param {number} initialScrollY - Optional. The Y-scroll position (in pixels) to set the guide to.
  */
-const renderGuide = (channelsToRender, resetScroll = false, initialScrollY = 0) => {
+const renderGuide = (channelsToRender, resetScroll = false) => {
     guideState.visibleChannels = channelsToRender;
     const totalRows = channelsToRender.length;
     const showNoData = totalRows === 0;
@@ -259,18 +258,37 @@ const renderGuide = (channelsToRender, resetScroll = false, initialScrollY = 0) 
     guideContainer.addEventListener('scroll', guideState.scrollHandler);
 
     // Initial render and positioning
-    updateVisibleRows(); // Render initial visible rows
-    
-    // Apply initial vertical scroll
-    if (initialScrollY > 0) {
-        guideContainer.scrollTop = initialScrollY;
-    } else if (resetScroll) {
+    if (resetScroll) {
         guideContainer.scrollTop = 0;
     }
+    updateVisibleRows();
+    updateNowLine(guideStart, resetScroll);
 
-    // Call updateNowLine *after* the DOM has had a chance to render and measure elements
-    // This is crucial for accurate clientWidth for horizontal scrolling
-    requestAnimationFrame(() => updateNowLine(guideStart, true));
+    // --- Re-attach date navigation listeners ---
+    const prevDayBtn = UIElements.guideGrid.querySelector('#prev-day-btn');
+    const nowBtn = UIElements.guideGrid.querySelector('#now-btn');
+    const nextDayBtn = UIElements.guideGrid.querySelector('#next-day-btn');
+    
+    // Use .onclick to ensure we're not adding duplicate listeners on re-renders
+    if (prevDayBtn) prevDayBtn.onclick = () => {
+        guideState.currentDate.setDate(guideState.currentDate.getDate() - 1);
+        finalizeGuideLoad();
+    };
+    if (nowBtn) nowBtn.onclick = () => {
+        const now = new Date();
+        if (guideState.currentDate.toDateString() !== now.toDateString()) {
+            guideState.currentDate = now;
+            finalizeGuideLoad(true);
+        } else {
+            const guideStart = new Date(guideState.currentDate);
+            guideStart.setHours(0, 0, 0, 0);
+            updateNowLine(guideStart, true);
+        }
+    };
+    if (nextDayBtn) nextDayBtn.onclick = () => {
+        guideState.currentDate.setDate(guideState.currentDate.getDate() + 1);
+        finalizeGuideLoad();
+    };
 };
 
 /**
@@ -280,7 +298,7 @@ const renderGuide = (channelsToRender, resetScroll = false, initialScrollY = 0) 
  */
 const updateNowLine = (guideStart, shouldScroll = false) => {
     const nowLineEl = document.getElementById('now-line');
-    if (!nowLineEl || !UIElements.guideContainer) return; // Ensure elements exist
+    if (!nowLineEl) return;
 
     const now = new Date();
     const guideEnd = new Date(guideStart.getTime() + guideState.guideDurationHours * 3600 * 1000);
@@ -290,16 +308,11 @@ const updateNowLine = (guideStart, shouldScroll = false) => {
         const leftOffsetInScrollableArea = ((now - guideStart) / 3600000) * guideState.hourWidthPixels;
         nowLineEl.style.left = `${channelInfoColWidth + leftOffsetInScrollableArea}px`;
         nowLineEl.classList.remove('hidden');
-
         if (shouldScroll) {
-            // Use setTimeout to ensure the layout has settled and clientWidth is accurate
-            setTimeout(() => {
-                const scrollTargetLeft = leftOffsetInScrollableArea - (UIElements.guideContainer.clientWidth / 4);
-                UIElements.guideContainer.scrollTo({
-                    left: Math.max(0, scrollTargetLeft), // Ensure scrollLeft is not negative
-                    behavior: 'smooth'
-                });
-            }, 50); // Small delay to allow layout to settle
+            UIElements.guideContainer.scrollTo({
+                left: leftOffsetInScrollableArea - (UIElements.guideContainer.clientWidth / 4),
+                behavior: 'smooth'
+            });
         }
     } else {
         nowLineEl.classList.add('hidden');
@@ -307,20 +320,7 @@ const updateNowLine = (guideStart, shouldScroll = false) => {
     
     // Now line height should cover the full virtualized height
     const contentWrapper = UIElements.guideGrid.querySelector('#virtual-content-wrapper');
-    // We need to wait for contentWrapper to exist before setting its height
-    if (contentWrapper) {
-        nowLineEl.style.height = `${contentWrapper.scrollHeight}px`;
-    } else {
-        // If contentWrapper isn't ready, retry setting height after a delay
-        setTimeout(() => {
-            const currentContentWrapper = UIElements.guideGrid.querySelector('#virtual-content-wrapper');
-            if (currentContentWrapper) {
-                nowLineEl.style.height = `${currentContentWrapper.scrollHeight}px`;
-            } else {
-                nowLineEl.style.height = `${UIElements.guideContainer.scrollHeight}px`;
-            }
-        }, 100);
-    }
+    nowLineEl.style.height = `${contentWrapper?.scrollHeight || UIElements.guideContainer.scrollHeight}px`;
 
 
     // Update progress bars only on visible items for performance
@@ -337,7 +337,6 @@ const updateNowLine = (guideStart, shouldScroll = false) => {
         }
     });
 
-    // Recalculate now line position and progress bars every minute
     setTimeout(() => updateNowLine(guideStart, false), 60000);
 };
 
@@ -377,9 +376,9 @@ const populateSourceFilter = () => {
 
 /**
  * Filters channels based on dropdowns and rerenders the guide.
- * @param {boolean} isInitialLoad - Indicates if this is the initial load, affecting vertical scroll.
+ * @param {boolean} isFirstLoad - Indicates if this is the initial load.
  */
-export function handleSearchAndFilter(isInitialLoad = false) {
+export function handleSearchAndFilter(isFirstLoad = false) {
     const searchTerm = UIElements.searchInput.value.trim();
     const selectedGroup = UIElements.groupFilter.value;
     const selectedSource = UIElements.sourceFilter.value;
@@ -405,58 +404,28 @@ export function handleSearchAndFilter(isInitialLoad = false) {
 
     // Apply search term
     if (searchTerm && appState.fuseChannels && appState.fusePrograms) {
-        // No simple 'includes' filter here. Fuse.js is designed for this.
-        const channelResults = appState.fuseChannels.search(searchTerm).map(result => result.item);
+        const lowerCaseSearchTerm = searchTerm.toLowerCase();
+        // A simple 'includes' filter for quick results before showing Fuse results
+        channelsForGuide = channelsForGuide.filter(ch =>
+            (ch.displayName || ch.name).toLowerCase().includes(lowerCaseSearchTerm) ||
+            (ch.source && ch.source.toLowerCase().includes(lowerCaseSearchTerm)) ||
+            (ch.chno && ch.chno.toLowerCase().includes(lowerCaseSearchTerm))
+        );
+
+        const channelResults = appState.fuseChannels.search(searchTerm).slice(0, 10);
 
         let programResults = [];
         if (guideState.settings.searchScope === 'channels_programs') {
-            programResults = appState.fusePrograms.search(searchTerm).map(result => result.item);
+            programResults = appState.fusePrograms.search(searchTerm).slice(0, 20);
         }
-        
         renderSearchResults(channelResults, programResults);
-
-        // Filter channelsForGuide based on search results for primary display
-        const searchedChannelIds = new Set(channelResults.map(ch => ch.id));
-        const channelsWithSearchedPrograms = new Set(programResults.map(p => p.channel.id));
-        
-        channelsForGuide = channelsForGuide.filter(ch =>
-            searchedChannelIds.has(ch.id) || channelsWithSearchedPrograms.has(ch.id)
-        );
-
     } else {
         // Hide search results if search term is empty
         UIElements.searchResultsContainer.innerHTML = '';
         UIElements.searchResultsContainer.classList.add('hidden');
     }
 
-    // Calculate initial vertical scroll position for 'Now' button and initial load
-    let initialScrollY = 0;
-    // Only attempt to scroll to 'now' if it's an initial load or 'now' button click,
-    // AND filters are not applied (to avoid conflicting with filter results)
-    if (isInitialLoad && selectedGroup === 'all' && selectedSource === 'all' && !searchTerm) {
-        const now = new Date();
-        // Try to find a channel with a live program
-        let targetChannelIndex = -1;
-        for (let i = 0; i < channelsForGuide.length; i++) {
-            const channel = channelsForGuide[i];
-            const programs = guideState.programs[channel.id] || [];
-            const hasLiveProgram = programs.some(prog => {
-                const progStart = new Date(prog.start);
-                const progStop = new Date(prog.stop);
-                return now >= progStart && now < progStop;
-            });
-            if (hasLiveProgram) {
-                targetChannelIndex = i;
-                break;
-            }
-        }
-        
-        if (targetChannelIndex !== -1) {
-            initialScrollY = Math.max(0, targetChannelIndex * ROW_HEIGHT - (UIElements.guideContainer.clientHeight / 3)); // Scroll to make it visible
-        }
-    }
-
-    renderGuide(channelsForGuide, isInitialLoad, initialScrollY);
+    renderGuide(channelsForGuide, isFirstLoad);
 };
 
 /**
@@ -469,12 +438,12 @@ const renderSearchResults = (channelResults, programResults) => {
 
     if (channelResults.length > 0) {
         html += '<div class="search-results-header">Channels</div>';
-        html += channelResults.map(({ id, logo, chno, displayName, name, group, source }) => `
-            <div class="search-result-channel flex items-center p-3 border-b border-gray-700/50 hover:bg-gray-700 cursor-pointer" data-channel-id="${id}">
-                <img src="${logo}" onerror="this.onerror=null; this.src='https://placehold.co/40x40/1f2937/d1d5db?text=?';" class="w-10 h-10 object-contain mr-3 rounded-md bg-gray-700 flex-shrink-0">
+        html += channelResults.map(({ item }) => `
+            <div class="search-result-channel flex items-center p-3 border-b border-gray-700/50 hover:bg-gray-700 cursor-pointer" data-channel-id="${item.id}">
+                <img src="${item.logo}" onerror="this.onerror=null; this.src='https://placehold.co/40x40/1f2937/d1d5db?text=?';" class="w-10 h-10 object-contain mr-3 rounded-md bg-gray-700 flex-shrink-0">
                 <div class="overflow-hidden">
-                    <p class="font-semibold text-white text-sm truncate">${chno ? `[${chno}] ` : ''}${displayName || name}</p>
-                    <p class="text-gray-400 text-xs truncate">${group} &bull; ${source}</p>
+                    <p class="font-semibold text-white text-sm truncate">${item.chno ? `[${item.chno}] ` : ''}${item.displayName || item.name}</p>
+                    <p class="text-gray-400 text-xs truncate">${item.group} &bull; ${item.source}</p>
                 </div>
             </div>
         `).join('');
@@ -483,13 +452,13 @@ const renderSearchResults = (channelResults, programResults) => {
     if (programResults.length > 0) {
         html += '<div class="search-results-header">Programs</div>';
         const timeFormat = { hour: '2-digit', minute: '2-digit' };
-        html += programResults.map(({ channel, start, stop, title }) => `
-             <div class="search-result-program flex items-center p-3 border-b border-gray-700/50 hover:bg-gray-700 cursor-pointer" data-channel-id="${channel.id}" data-prog-start="${start}">
-                <img src="${channel.logo}" onerror="this.onerror=null; this.src='https://placehold.co/40x40/1f2937/d1d5db?text=?';" class="w-10 h-10 object-contain mr-3 rounded-md bg-gray-700 flex-shrink-0">
+        html += programResults.map(({ item }) => `
+             <div class="search-result-program flex items-center p-3 border-b border-gray-700/50 hover:bg-gray-700 cursor-pointer" data-channel-id="${item.channel.id}" data-prog-start="${item.start}">
+                <img src="${item.channel.logo}" onerror="this.onerror=null; this.src='https://placehold.co/40x40/1f2937/d1d5db?text=?';" class="w-10 h-10 object-contain mr-3 rounded-md bg-gray-700 flex-shrink-0">
                 <div class="overflow-hidden">
-                    <p class="font-semibold text-white text-sm truncate" title="${title}">${title}</p>
-                    <p class="text-gray-400 text-xs truncate">${channel.name} &bull; ${channel.source}</p>
-                    <p class="text-blue-400 text-xs">${new Date(start).toLocaleTimeString([], timeFormat)} - ${new Date(stop).toLocaleTimeString([], timeFormat)}</p>
+                    <p class="font-semibold text-white text-sm truncate" title="${item.title}">${item.title}</p>
+                    <p class="text-gray-400 text-xs truncate">${item.channel.name} &bull; ${item.channel.source}</p>
+                    <p class="text-blue-400 text-xs">${new Date(item.start).toLocaleTimeString([], timeFormat)} - ${new Date(item.stop).toLocaleTimeString([], timeFormat)}</p>
                 </div>
             </div>
         `).join('');
@@ -544,28 +513,9 @@ export function setupGuideEventListeners() {
         }
     });
 
-    // --- Date Navigation Buttons (Delegated) ---
-    // Attach listener to a static parent element (unifiedGuideHeader)
-    UIElements.unifiedGuideHeader.addEventListener('click', (e) => {
-        if (e.target.closest('#prev-day-btn')) {
-            guideState.currentDate.setDate(guideState.currentDate.getDate() - 1);
-            finalizeGuideLoad();
-        } else if (e.target.closest('#now-btn')) {
-            const now = new Date();
-            // Only update guideState.currentDate if it's not already today
-            if (guideState.currentDate.toDateString() !== now.toDateString()) {
-                guideState.currentDate = now;
-            }
-            // Always trigger a full reload and scroll to now (both horizontal and vertical)
-            finalizeGuideLoad(true);
-        } else if (e.target.closest('#next-day-btn')) {
-            guideState.currentDate.setDate(guideState.currentDate.getDate() + 1);
-            finalizeGuideLoad();
-        }
-    });
-
     // --- Interactions (Clicks on the new grid) ---
     // Event delegation is used here on the guideGrid, which is now efficient
+    // because only visible rows are in the DOM at any time.
     UIElements.guideGrid.addEventListener('click', (e) => {
         const favoriteStar = e.target.closest('.favorite-star');
         const channelInfo = e.target.closest('.channel-info');
@@ -617,62 +567,47 @@ export function setupGuideEventListeners() {
         const channelItem = e.target.closest('.search-result-channel');
 
         UIElements.searchResultsContainer.classList.add('hidden');
-        UIElements.searchInput.value = ''; // Clear search input after selection
+        UIElements.searchInput.value = '';
 
         if (channelItem) {
             const channelId = channelItem.dataset.channelId;
-            const targetChannel = guideState.visibleChannels.find(c => c.id === channelId);
-            if (targetChannel) {
-                const channelIndex = guideState.visibleChannels.indexOf(targetChannel);
-                if (channelIndex > -1) {
-                    // Scroll to the channel vertically
-                    UIElements.guideContainer.scrollTo({ top: channelIndex * ROW_HEIGHT, behavior: 'smooth' });
+            const channelIndex = guideState.visibleChannels.findIndex(c => c.id === channelId);
+            if (channelIndex > -1) {
+                // Scroll to the item's virtual position
+                UIElements.guideContainer.scrollTo({ top: channelIndex * ROW_HEIGHT, behavior: 'smooth' });
 
-                    // Highlight after scroll, targeting the actual DOM element
-                    setTimeout(() => {
-                        const channelRowElement = UIElements.guideGrid.querySelector(`.channel-info[data-id="${channelId}"]`);
-                        if (channelRowElement) {
-                            channelRowElement.classList.add('highlighted-search');
-                            setTimeout(() => { channelRowElement.classList.remove('highlighted-search'); }, 2500);
-                        }
-                    }, 500); // Wait for vertical scroll to complete
-                }
+                // Highlight after scroll
+                setTimeout(() => {
+                    const channelRow = UIElements.guideGrid.querySelector(`.channel-info[data-id="${channelId}"]`);
+                    if (channelRow) {
+                        channelRow.style.transition = 'background-color 0.5s';
+                        channelRow.style.backgroundColor = '#3b82f6'; // Highlight
+                        setTimeout(() => { channelRow.style.backgroundColor = ''; }, 2000);
+                    }
+                }, 500); // Wait for scroll to finish
             }
         } else if (programItem) {
              const progStart = new Date(programItem.dataset.progStart);
              const guideStart = new Date(guideState.currentDate);
              guideStart.setHours(0,0,0,0);
 
-             // Check if the program's date is different from the current guide date
-             const dateDiff = Math.floor((progStart.getTime() - guideStart.getTime()) / (1000 * 60 * 60 * 24));
+             const dateDiff = Math.floor((progStart - guideStart) / (1000 * 60 * 60 * 24));
              if (dateDiff !== 0) {
                  guideState.currentDate.setDate(guideState.currentDate.getDate() + dateDiff);
-                 finalizeGuideLoad(true); // Re-render the guide for the new day, and scroll to now/channel
-             }
-
-             // Find the channel and scroll to it horizontally AND vertically
-             const channelId = programItem.dataset.channelId;
-             const targetChannel = guideState.visibleChannels.find(c => c.id === channelId);
-             if (targetChannel) {
-                 const channelIndex = guideState.visibleChannels.indexOf(targetChannel);
-                 if (channelIndex > -1) {
-                    UIElements.guideContainer.scrollTo({ top: channelIndex * ROW_HEIGHT, behavior: 'smooth' });
-                 }
+                 finalizeGuideLoad();
              }
 
             setTimeout(() => {
-                const programElement = UIElements.guideGrid.querySelector(`.programme-item[data-channel-id="${programItem.dataset.channelId}"][data-prog-start="${programItem.dataset.progStart}"]`);
+                const programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programItem.dataset.progStart}"]`);
                 if(programElement) {
-                    // Calculate horizontal scroll for the program
-                    const programLeft = parseFloat(programElement.style.left);
-                    const scrollLeft = programLeft - (UIElements.guideContainer.clientWidth / 4); // Center the program horizontally
+                    const scrollLeft = programElement.offsetLeft - (UIElements.guideContainer.clientWidth / 4);
                     UIElements.guideContainer.scrollTo({ left: scrollLeft, behavior: 'smooth' });
 
-                    // Highlight the program item
-                    programElement.classList.add('highlighted-search');
-                    setTimeout(() => { programElement.classList.remove('highlighted-search'); }, 2500);
+                    programElement.style.transition = 'outline 0.5s';
+                    programElement.style.outline = '3px solid #facc15';
+                    setTimeout(() => { programElement.style.outline = 'none'; }, 2500);
                 }
-            }, 500); // Wait for vertical scroll to finish
+            }, 200);
         }
     });
 
@@ -711,4 +646,3 @@ export function setupGuideEventListeners() {
 
     UIElements.guideContainer.addEventListener('scroll', handleScrollHeader);
 }
-```
