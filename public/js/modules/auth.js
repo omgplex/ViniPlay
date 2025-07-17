@@ -15,7 +15,7 @@ export const showLoginScreen = (errorMsg = null) => {
     UIElements.appContainer.classList.add('hidden');
     UIElements.loginForm.classList.remove('hidden');
     UIElements.setupForm.classList.add('hidden');
-    if (UIElements.authLoader) UIElements.authLoader.classList.add('hidden'); // Ensure loader is hidden
+    UIElements.authLoader.classList.add('hidden');
     if (errorMsg) {
         UIElements.loginError.textContent = errorMsg;
         UIElements.loginError.classList.remove('hidden');
@@ -30,7 +30,7 @@ const showSetupScreen = () => {
     UIElements.appContainer.classList.add('hidden');
     UIElements.loginForm.classList.add('hidden');
     UIElements.setupForm.classList.remove('hidden');
-    if (UIElements.authLoader) UIElements.authLoader.classList.add('hidden'); // Ensure loader is hidden
+    UIElements.authLoader.classList.add('hidden');
 };
 
 /**
@@ -42,7 +42,6 @@ const showApp = (user) => {
     UIElements.authContainer.classList.add('hidden');
     UIElements.appContainer.classList.remove('hidden');
     UIElements.appContainer.classList.add('flex');
-    if (UIElements.authLoader) UIElements.authLoader.classList.add('hidden'); // Ensure loader is hidden
 
     // Display only the username, without "Welcome,"
     UIElements.userDisplay.textContent = user.username;
@@ -61,30 +60,15 @@ const showApp = (user) => {
  * Determines whether to show the login, setup, or main app screen.
  */
 export async function checkAuthStatus() {
-    // Ensure loader is visible and auth container is shown while checking status
-    if (UIElements.authLoader) UIElements.authLoader.classList.remove('hidden');
-    UIElements.authContainer.classList.remove('hidden');
-
     try {
         const res = await fetch('/api/auth/status');
-        // Check if response is OK before trying to parse JSON
-        if (!res.ok) {
-            // For non-OK responses, still try to parse JSON for error message,
-            // but ensure the loader is hidden afterwards.
-            const errorData = await res.json().catch(() => ({ error: `Server error: ${res.status}` }));
-            throw new Error(errorData.error || `Server responded with status: ${res.status}`);
-        }
-
         const status = await res.json();
 
         if (status.isLoggedIn) {
             showApp(status.user);
         } else {
+            // If not logged in, check if the app needs initial setup
             const setupRes = await fetch('/api/auth/needs-setup');
-            if (!setupRes.ok) {
-                const errorData = await setupRes.json().catch(() => ({ error: `Server error: ${setupRes.status}` }));
-                throw new Error(errorData.error || `Server responded with status: ${setupRes.status}`);
-            }
             const setup = await setupRes.json();
             if (setup.needsSetup) {
                 showSetupScreen();
@@ -94,8 +78,7 @@ export async function checkAuthStatus() {
         }
     } catch (e) {
         console.error("Auth check failed:", e);
-        // Explicitly hide loader and show login screen with error
-        showLoginScreen("Could not verify authentication status: " + e.message);
+        showLoginScreen("Could not verify authentication status.");
     }
 }
 
@@ -146,4 +129,3 @@ export function setupAuthEventListeners() {
         window.location.reload();
     });
 }
-```
