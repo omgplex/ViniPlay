@@ -180,6 +180,40 @@ export const makeColumnResizable = (handleEl, targetEl, minWidth, settingKey, cs
     });
 };
 
+/**
+ * Opens the mobile navigation menu.
+ */
+export const openMobileMenu = () => {
+    if (UIElements.mobileNavMenu) {
+        UIElements.mobileNavMenu.classList.remove('hidden');
+        UIElements.mobileNavMenu.classList.remove('-translate-x-full');
+        UIElements.mobileNavMenu.classList.add('translate-x-0');
+    }
+    if (UIElements.mobileMenuOverlay) {
+        UIElements.mobileMenuOverlay.classList.remove('hidden');
+    }
+    document.body.classList.add('overflow-hidden');
+};
+
+/**
+ * Closes the mobile navigation menu.
+ */
+export const closeMobileMenu = () => {
+    if (UIElements.mobileNavMenu) {
+        UIElements.mobileNavMenu.classList.add('-translate-x-full');
+        UIElements.mobileNavMenu.classList.remove('translate-x-0');
+        // Add 'hidden' after transition to allow animation
+        UIElements.mobileNavMenu.addEventListener('transitionend', function handler() {
+            UIElements.mobileNavMenu.classList.add('hidden');
+            UIElements.mobileNavMenu.removeEventListener('transitionend', handler);
+        });
+    }
+    if (UIElements.mobileMenuOverlay) {
+        UIElements.mobileMenuOverlay.classList.add('hidden');
+    }
+    document.body.classList.remove('overflow-hidden');
+};
+
 
 /**
  * Handles client-side routing by showing/hiding pages based on the URL path.
@@ -188,9 +222,16 @@ export const handleRouteChange = () => {
     const path = window.location.pathname;
     const isGuide = path.startsWith('/tvguide') || path === '/';
 
-    // Toggle active state for desktop and mobile navigation buttons
-    ['tabGuide', 'bottomNavGuide'].forEach(id => UIElements[id]?.classList.toggle('active', isGuide));
-    ['tabSettings', 'bottomNavSettings'].forEach(id => UIElements[id]?.classList.toggle('active', !isGuide));
+    // Close mobile menu if it's open when navigating
+    closeMobileMenu();
+
+    // Toggle active state for desktop navigation buttons
+    UIElements.tabGuide?.classList.toggle('active', isGuide);
+    UIElements.tabSettings?.classList.toggle('active', !isGuide);
+    // Toggle active state for new mobile navigation buttons
+    UIElements.mobileNavGuide?.classList.toggle('active', isGuide);
+    UIElements.mobileNavSettings?.classList.toggle('active', !isGuide);
+
 
     // Show/hide the relevant page content
     UIElements.pageGuide.classList.toggle('hidden', !isGuide);
