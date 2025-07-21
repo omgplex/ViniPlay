@@ -47,12 +47,20 @@ export const UIElements = Object.fromEntries(
 // Add specific references that might not be picked up by generic ID mapping
 UIElements.appContainer = document.getElementById('app-container'); // Ensure appContainer is mapped
 UIElements.mainHeader = document.getElementById('main-header');
-// UIElements.desktopTabs = document.getElementById('desktop-tabs'); // Removed as per request
 UIElements.unifiedGuideHeader = document.getElementById('unified-guide-header'); // NEW unified header
 UIElements.pageGuide = document.getElementById('page-guide'); // Ensure pageGuide is mapped
 UIElements.guideDateDisplay = document.getElementById('guide-date-display'); // Ensure date display is mapped
 UIElements.stickyCorner = document.querySelector('.sticky-corner'); // Reference to the sticky corner for channel column resize
 UIElements.channelColumnResizeHandle = document.getElementById('channel-column-resize-handle');
+
+// NEW: Mobile menu elements
+UIElements.mobileMenuToggle = document.getElementById('mobile-menu-toggle');
+UIElements.mobileNavMenu = document.getElementById('mobile-nav-menu');
+UIElements.mobileMenuClose = document.getElementById('mobile-menu-close');
+UIElements.mobileNavGuide = document.getElementById('mobile-nav-guide');
+UIElements.mobileNavSettings = document.getElementById('mobile-nav-settings');
+UIElements.mobileNavLogoutBtn = document.getElementById('mobile-nav-logout-btn');
+UIElements.mobileMenuOverlay = document.getElementById('mobile-menu-overlay');
 
 
 // No longer directly mapping prev-day-btn, now-btn, next-day-btn here
@@ -60,3 +68,4 @@ UIElements.channelColumnResizeHandle = document.getElementById('channel-column-r
 
 // Manually add resetFilterBtn if auto-mapping doesn't catch it
 UIElements.resetFilterBtn = document.getElementById('reset-filter-btn');
+
