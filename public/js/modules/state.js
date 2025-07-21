@@ -35,37 +35,42 @@ export const guideState = {
 };
 
 // A cache for frequently accessed DOM elements
-// Update this section to reflect the new UI structure
-export const UIElements = Object.fromEntries(
-    [...document.querySelectorAll('[id]')].map(el => [
-        // Convert kebab-case id to camelCase for easier access in JS
-        el.id.replace(/-(\w)/g, (match, letter) => letter.toUpperCase()),
-        el
-    ])
-);
+// Initially empty, will be populated after the DOM is ready and visible
+export const UIElements = {};
 
-// Add specific references that might not be picked up by generic ID mapping
-UIElements.appContainer = document.getElementById('app-container'); // Ensure appContainer is mapped
-UIElements.mainHeader = document.getElementById('main-header');
-UIElements.unifiedGuideHeader = document.getElementById('unified-guide-header'); // NEW unified header
-UIElements.pageGuide = document.getElementById('page-guide'); // Ensure pageGuide is mapped
-UIElements.guideDateDisplay = document.getElementById('guide-date-display'); // Ensure date display is mapped
-UIElements.stickyCorner = document.querySelector('.sticky-corner'); // Reference to the sticky corner for channel column resize
-UIElements.channelColumnResizeHandle = document.getElementById('channel-column-resize-handle');
+/**
+ * Populates the UIElements object with references to DOM elements.
+ * This should be called after the main app container is visible.
+ */
+export const initializeUIElements = () => {
+    // Populate UIElements by querying all elements with an 'id' attribute
+    // and converting their kebab-case IDs to camelCase keys.
+    Object.assign(UIElements, Object.fromEntries(
+        [...document.querySelectorAll('[id]')].map(el => [
+            el.id.replace(/-(\w)/g, (match, letter) => letter.toUpperCase()),
+            el
+        ])
+    ));
 
-// NEW: Mobile menu elements
-UIElements.mobileMenuToggle = document.getElementById('mobile-menu-toggle');
-UIElements.mobileNavMenu = document.getElementById('mobile-nav-menu');
-UIElements.mobileMenuClose = document.getElementById('mobile-menu-close');
-UIElements.mobileNavGuide = document.getElementById('mobile-nav-guide');
-UIElements.mobileNavSettings = document.getElementById('mobile-nav-settings');
-UIElements.mobileNavLogoutBtn = document.getElementById('mobile-nav-logout-btn');
-UIElements.mobileMenuOverlay = document.getElementById('mobile-menu-overlay');
+    // Add specific references that might not be picked up by generic ID mapping
+    // or are critical and need direct assignment for clarity.
+    UIElements.appContainer = document.getElementById('app-container');
+    UIElements.mainHeader = document.getElementById('main-header');
+    UIElements.unifiedGuideHeader = document.getElementById('unified-guide-header');
+    UIElements.pageGuide = document.getElementById('page-guide');
+    UIElements.guideDateDisplay = document.getElementById('guide-date-display');
+    UIElements.stickyCorner = document.querySelector('.sticky-corner');
+    UIElements.channelColumnResizeHandle = document.getElementById('channel-column-resize-handle');
 
+    // Mobile menu elements
+    UIElements.mobileMenuToggle = document.getElementById('mobile-menu-toggle');
+    UIElements.mobileNavMenu = document.getElementById('mobile-nav-menu');
+    UIElements.mobileMenuClose = document.getElementById('mobile-menu-close');
+    UIElements.mobileNavGuide = document.getElementById('mobile-nav-guide');
+    UIElements.mobileNavSettings = document.getElementById('mobile-nav-settings');
+    UIElements.mobileNavLogoutBtn = document.getElementById('mobile-nav-logout-btn');
+    UIElements.mobileMenuOverlay = document.getElementById('mobile-menu-overlay');
 
-// No longer directly mapping prev-day-btn, now-btn, next-day-btn here
-// as they are dynamically inserted into the sticky-corner by guide.js and handled there.
-
-// Manually add resetFilterBtn if auto-mapping doesn't catch it
-UIElements.resetFilterBtn = document.getElementById('reset-filter-btn');
-
+    // Manually add resetFilterBtn if auto-mapping doesn't catch it
+    UIElements.resetFilterBtn = document.getElementById('reset-filter-btn');
+};
