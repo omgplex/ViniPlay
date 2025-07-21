@@ -5,20 +5,20 @@
  * Initializes the app by setting up authentication, event listeners, and loading initial data.
  */
 
-import { appState, guideState, UIElements, initializeUIElements } from './modules/state.js'; // Import initializeUIElements
+import { appState, guideState, UIElements, initializeUIElements } from './modules/state.js';
 import { apiFetch } from './modules/api.js';
 import { checkAuthStatus, setupAuthEventListeners } from './modules/auth.js';
 import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './modules/guide.js';
 import { setupPlayerEventListeners } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
-import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu } from './modules/ui.js'; // Import makeColumnResizable and new mobile menu functions
+import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu } from './modules/ui.js';
 
 /**
  * Initializes the main application after successful authentication.
  */
 export async function initMainApp() {
-    // NEW: 1. Ensure UIElements are populated after the DOM is ready and relevant elements are visible.
-    initializeUIElements();
+    // UIElements are now initialized at DOMContentLoaded, so no need to call it here.
+    // This function runs when the user is logged in and the main app is shown.
 
     // 1. Initialize IndexedDB for caching
     try {
@@ -38,11 +38,11 @@ export async function initMainApp() {
     try {
         const response = await apiFetch(`/api/config?t=${Date.now()}`);
         if (!response || !response.ok) throw new Error('Could not connect to the server.');
-        
+
         const config = await response.json();
         // Merge fetched settings into guideState.settings, preserving defaults
         Object.assign(guideState.settings, config.settings || {});
-        
+
         // Restore dimensions of resizable modals and column
         restoreDimensions();
 
@@ -70,7 +70,7 @@ export async function initMainApp() {
             UIElements.initialLoadingIndicator.classList.add('hidden');
             UIElements.noDataMessage.classList.remove('hidden');
         }
-        
+
         // Handle the initial route once the app is ready
         // This will also trigger the initial padding calculation for page-guide
         handleRouteChange();
@@ -143,8 +143,8 @@ function setupCoreEventListeners() {
     // Main navigation (Desktop tabs)
     UIElements.tabGuide?.addEventListener('click', () => switchTab('guide'));
     UIElements.tabSettings?.addEventListener('click', () => switchTab('settings'));
-    
-    // NEW: Mobile navigation (Hamburger menu and links)
+
+    // Mobile navigation (Hamburger menu and links)
     UIElements.mobileMenuToggle?.addEventListener('click', openMobileMenu);
     UIElements.mobileMenuClose?.addEventListener('click', closeMobileMenu);
     UIElements.mobileMenuOverlay?.addEventListener('click', closeMobileMenu); // Close when clicking overlay
@@ -191,6 +191,10 @@ function setupCoreEventListeners() {
 
 // --- App Start ---
 document.addEventListener('DOMContentLoaded', () => {
+    // Initialize UI elements as soon as the DOM is ready
+    // This ensures elements are available for initial auth checks and UI manipulations.
+    initializeUIElements();
+
     // Setup listeners for the initial auth forms first
     setupAuthEventListeners();
     // Then check the auth status to decide what to show
