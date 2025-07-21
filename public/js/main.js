@@ -11,7 +11,7 @@ import { checkAuthStatus, setupAuthEventListeners } from './modules/auth.js';
 import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './modules/guide.js';
 import { setupPlayerEventListeners } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
-import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable } from './modules/ui.js'; // Import makeColumnResizable
+import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu } from './modules/ui.js'; // Import makeColumnResizable and new mobile menu functions
 
 /**
  * Initializes the main application after successful authentication.
@@ -137,11 +137,25 @@ function restoreDimensions() {
  * Sets up core application event listeners (navigation, modals, etc.).
  */
 function setupCoreEventListeners() {
-    // Main navigation
-    // These now correctly target the tab buttons moved into the main-header
-    ['tabGuide', 'bottomNavGuide'].forEach(id => UIElements[id]?.addEventListener('click', () => switchTab('guide')));
-    ['tabSettings', 'bottomNavSettings'].forEach(id => UIElements[id]?.addEventListener('click', () => switchTab('settings')));
+    // Main navigation (Desktop tabs)
+    UIElements.tabGuide?.addEventListener('click', () => switchTab('guide'));
+    UIElements.tabSettings?.addEventListener('click', () => switchTab('settings'));
     
+    // NEW: Mobile navigation (Hamburger menu and links)
+    UIElements.mobileMenuToggle?.addEventListener('click', openMobileMenu);
+    UIElements.mobileMenuClose?.addEventListener('click', closeMobileMenu);
+    UIElements.mobileMenuOverlay?.addEventListener('click', closeMobileMenu); // Close when clicking overlay
+    UIElements.mobileNavGuide?.addEventListener('click', () => switchTab('guide'));
+    UIElements.mobileNavSettings?.addEventListener('click', () => switchTab('settings'));
+    UIElements.mobileNavLogoutBtn?.addEventListener('click', () => { // Logout button in mobile menu
+        // Trigger the existing logout functionality
+        const logoutButton = document.getElementById('logout-btn');
+        if (logoutButton) {
+            logoutButton.click();
+        }
+        closeMobileMenu();
+    });
+
     // Browser back/forward navigation
     window.addEventListener('popstate', handleRouteChange);
 
