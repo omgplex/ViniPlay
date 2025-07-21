@@ -5,7 +5,7 @@
  * Initializes the app by setting up authentication, event listeners, and loading initial data.
  */
 
-import { appState, guideState, UIElements } from './modules/state.js';
+import { appState, guideState, UIElements, initializeUIElements } from './modules/state.js'; // Import initializeUIElements
 import { apiFetch } from './modules/api.js';
 import { checkAuthStatus, setupAuthEventListeners } from './modules/auth.js';
 import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './modules/guide.js';
@@ -17,6 +17,9 @@ import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeM
  * Initializes the main application after successful authentication.
  */
 export async function initMainApp() {
+    // NEW: 1. Ensure UIElements are populated after the DOM is ready and relevant elements are visible.
+    initializeUIElements();
+
     // 1. Initialize IndexedDB for caching
     try {
         appState.db = await openDB();
