@@ -16,7 +16,7 @@
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #6b7280; }
         .tab-button.active { background-color: #3b82f6; color: white; }
-        .bottom-nav-btn.active { color: #3b82f6; }
+        .bottom-nav-btn.active { color: #3b82f6; } /* Kept for backward compatibility, will be removed by HTML */
         .programme-item { border-left: 3px solid #3b82f6; transition: all 0.2s; }
         .programme-item:hover { background-color: #374151; cursor: pointer; }
         html, body { height: 100%; overflow: hidden; } /* Ensure body doesn't scroll, let inner divs handle it */
@@ -310,6 +310,12 @@
         <!-- Header -->
         <header id="main-header" class="bg-gray-800 text-white p-4 shadow-md z-30 flex-shrink-0 flex items-center justify-between transition-transform duration-300 ease-out">
             <div class="flex items-center gap-3">
+                <!-- Hamburger menu icon for mobile -->
+                <button id="mobile-menu-toggle" class="lg:hidden text-gray-300 hover:text-white p-2 rounded-md transition-colors">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                    </svg>
+                </button>
                 <img src="https://i.imgur.com/rwa8SjI.png" alt="VINI PLAY Logo" class="h-8 w-8">
                 <h1 class="text-xl sm:text-2xl font-bold">VINI PLAY</h1>
             </div>
@@ -324,12 +330,6 @@
                 <button id="logout-btn" class="text-sm bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-md transition-colors">Logout</button>
             </div>
         </header>
-
-        <!-- Removed: Desktop Tabs bar (content moved to main-header) -->
-        <!-- <div id="desktop-tabs" class="hidden lg:flex border-b border-gray-700 bg-gray-800 flex-shrink-0 z-20 transition-transform duration-300 ease-out">
-            <button id="tab-guide" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700 active">TV Guide</button>
-            <button id="tab-settings" class="tab-button text-sm sm:text-base font-medium py-3 px-6 text-gray-300 hover:bg-gray-700">Settings</button>
-        </div> -->
 
         <!-- Main Content -->
         <main class="flex-grow flex flex-col overflow-hidden">
@@ -544,7 +544,8 @@
             </div>
         </main>
         
-        <!-- Bottom Navigation -->
+        <!-- Removed: Bottom Navigation (id="bottom-nav-guide" and id="bottom-nav-settings") -->
+        <!--
         <nav class="lg:hidden bg-gray-800 border-t border-gray-700 flex justify-around flex-shrink-0 z-20">
             <button id="bottom-nav-guide" class="bottom-nav-btn flex-1 p-3 text-gray-400 active">
                 <svg class="mx-auto h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
@@ -555,7 +556,31 @@
                 <span class="text-xs">Settings</span>
             </button>
         </nav>
+        -->
+
     </div>
+
+    <!-- Mobile Navigation Menu (Off-canvas/Overlay) -->
+    <div id="mobile-nav-menu" class="hidden fixed inset-y-0 left-0 w-64 bg-gray-900 border-r border-gray-700 z-50 flex-col py-6 px-4 transform -translate-x-full transition-transform duration-300 ease-in-out">
+        <div class="flex justify-between items-center mb-6">
+            <h2 class="text-xl font-bold text-white">Navigation</h2>
+            <button id="mobile-menu-close" class="text-gray-400 hover:text-white text-3xl leading-none font-bold">&times;</button>
+        </div>
+        <nav class="flex flex-col gap-4">
+            <button id="mobile-nav-guide" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors active">
+                <span class="flex items-center gap-2"><svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg> TV Guide</span>
+            </button>
+            <button id="mobile-nav-settings" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors">
+                <span class="flex items-center gap-2"><svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924-1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066 2.573c-.94-1.543.826 3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> Settings</span>
+            </button>
+        </nav>
+        <div class="mt-auto">
+            <button id="mobile-nav-logout-btn" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-md transition-colors">Logout</button>
+        </div>
+    </div>
+
+    <!-- Overlay for when mobile menu is open -->
+    <div id="mobile-menu-overlay" class="hidden fixed inset-0 bg-black/50 z-40"></div>
 
     <!-- Modals -->
     <div id="video-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
