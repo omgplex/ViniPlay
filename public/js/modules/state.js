@@ -23,7 +23,7 @@ export const guideState = {
     programs: {},
     settings: {
         // Add a default for channelColumnWidth
-        channelColumnWidth: window.innerWidth < 768 ? 64 : 180, // Default based on screen size
+        channelColumnWidth: window.innerWidth < 768 ? 64 : 200, // Default based on screen size, increased for more room
     }, // This will hold both GLOBAL and USER settings, merged.
     guideDurationHours: 48,
     hourWidthPixels: window.innerWidth < 768 ? 200 : 300,
