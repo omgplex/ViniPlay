@@ -71,6 +71,5 @@ export const initializeUIElements = () => {
     UIElements.mobileNavLogoutBtn = document.getElementById('mobile-nav-logout-btn');
     UIElements.mobileMenuOverlay = document.getElementById('mobile-menu-overlay');
 
-    // Manually add resetFilterBtn if auto-mapping doesn't catch it
-    UIElements.resetFilterBtn = document.getElementById('reset-filter-btn');
+    // Removed: UIElements.resetFilterBtn as the button is removed from HTML
 };
