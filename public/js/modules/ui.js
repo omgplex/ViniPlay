@@ -76,8 +76,7 @@ export const setButtonLoadingState = (buttonEl, isLoading, originalContent) => {
     const btnContentEl = buttonEl.querySelector('span'); // Assumes content is in a span
     if (btnContentEl) {
         btnContentEl.innerHTML = isLoading ?
-            // Added flex-none to the spinner SVG
-            `<svg class="animate-spin h-5 w-5 text-white flex-none" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span>Loading...</span>` :
+            `<svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" width="24" height="24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span>Loading...</span>` :
             originalContent;
     }
 };
@@ -154,7 +153,7 @@ export const makeColumnResizable = (handleEl, targetEl, minWidth, settingKey, cs
             e.preventDefault();
             startX = e.clientX;
             // Get the current value of the CSS variable or default to minWidth if not set
-            startWidth = parseInt(getComputedStyle(targetEl).getPropertyValue(cssVarVarName)) || minWidth;
+            startWidth = parseInt(getComputedStyle(targetEl).getPropertyValue(cssVarName)) || minWidth;
             
             const doResize = (e) => {
                 const newWidth = startWidth + (e.clientX - startX);
