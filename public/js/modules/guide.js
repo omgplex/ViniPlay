@@ -295,7 +295,7 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
 
 /**
  * Updates the position of the "now" line and program states (live, past).
- * @param {Date} guideStartUtc - The start time of the current guide view in UTC (midnight of current day).
+ * @param {Date} guideStartUtc - The start time of the current guide view in UTC.
  * @param {boolean} shouldScroll - If true, scrolls the timeline to the now line.
  */
 const updateNowLine = (guideStartUtc, shouldScroll = false) => {
@@ -308,18 +308,14 @@ const updateNowLine = (guideStartUtc, shouldScroll = false) => {
     const channelInfoColWidth = guideState.settings.channelColumnWidth;
 
     if (nowValue >= guideStartUtc.getTime() && nowValue <= guideEnd.getTime()) {
-        const leftOffsetInTimeline = ((nowValue - guideStartUtc.getTime()) / 3600000) * guideState.hourWidthPixels;
-        nowLineEl.style.left = `${channelInfoColWidth + leftOffsetInTimeline}px`;
+        const leftOffsetInScrollableArea = ((nowValue - guideStartUtc.getTime()) / 3600000) * guideState.hourWidthPixels;
+        nowLineEl.style.left = `${channelInfoColWidth + leftOffsetInScrollableArea}px`;
         nowLineEl.classList.remove('hidden');
-
         if (shouldScroll) {
-            // Calculate target scrollLeft to position 'now' relative to initialHoursBeforeNow
-            // This will ensure 0.5 hours (mobile) or 1 hour (desktop) are visible *before* the now line.
-            const targetScrollLeft = leftOffsetInTimeline - (guideState.initialHoursBeforeNow * guideState.hourWidthPixels);
-            
+            // Add a short delay to ensure the guide content has rendered before scrolling
             setTimeout(() => {
                 UIElements.guideContainer.scrollTo({
-                    left: targetScrollLeft,
+                    left: leftOffsetInScrollableArea - (UIElements.guideContainer.clientWidth / 4),
                     behavior: 'smooth'
                 });
             }, 100); // A 100ms delay is usually enough
