@@ -83,17 +83,17 @@ export function finalizeGuideLoad(isFirstLoad = false) {
                 const progStart = new Date(prog.start);
                 const progStop = new Date(prog.stop);
                 // Only include programs within the current guide view
-                if (progStop > guideStart && progStart < guideEnd) {
-                    allPrograms.push({
-                        ...prog,
-                        channel: {
-                            id: channel.id,
-                            name: channel.displayName || channel.name,
-                            logo: channel.logo,
-                            source: channel.source,
-                        }
-                    });
-                }
+                if (progStop < guideStart || progStart > guideEnd) return; // Use strict bounds
+
+                allPrograms.push({
+                    ...prog,
+                    channel: {
+                        id: channel.id,
+                        name: channel.displayName || channel.name,
+                        logo: channel.logo,
+                        source: channel.source,
+                    }
+                });
             });
         }
     }
@@ -133,7 +133,7 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
     // --- Static Header/Time Bar Setup (Done once per full render) ---
     const guideStart = new Date(guideState.currentDate);
     guideStart.setHours(0, 0, 0, 0);
-    // NEW: Create a stable UTC reference for midnight
+    // Create a stable UTC reference for midnight
     const guideStartUtc = new Date(Date.UTC(guideStart.getUTCFullYear(), guideStart.getUTCMonth(), guideStart.getUTCDate()));
     const timelineWidth = guideState.guideDurationHours * guideState.hourWidthPixels;
     UIElements.guideGrid.style.setProperty('--timeline-width', `${timelineWidth}px`);
@@ -312,11 +312,11 @@ const updateNowLine = (guideStartUtc, shouldScroll = false) => {
         nowLineEl.style.left = `${channelInfoColWidth + leftOffsetInScrollableArea}px`;
         nowLineEl.classList.remove('hidden');
         if (shouldScroll) {
-            // Add a short delay to ensure the guide content has rendered before scrolling
+            // Determine the number of hours to offset for past content based on screen width
+            const hoursPastOffset = window.innerWidth < 768 ? 1 : 2; // 1 hour for mobile, 2 hours for desktop
             setTimeout(() => {
                 UIElements.guideContainer.scrollTo({
-                    // Adjust this line to show 1 hour of past content
-                    left: leftOffsetInScrollableArea - guideState.hourWidthPixels, 
+                    left: leftOffsetInScrollableArea - (hoursPastOffset * guideState.hourWidthPixels), 
                     behavior: 'smooth'
                 });
             }, 100); // A 100ms delay is usually enough
