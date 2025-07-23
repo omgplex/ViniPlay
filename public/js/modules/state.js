@@ -25,8 +25,14 @@ export const guideState = {
         // Add a default for channelColumnWidth
         channelColumnWidth: window.innerWidth < 768 ? 64 : 180, // Default based on screen size
     }, // This will hold both GLOBAL and USER settings, merged.
-    guideDurationHours: 48,
-    hourWidthPixels: window.innerWidth < 768 ? 200 : 300,
+    guideDurationHours: 48, // Keep this large to allow scrolling for more data (e.g., 48 hours loaded)
+    // Adjust hour width for mobile: aiming for 1 hour visible on mobile, 2 hours on desktop
+    // This makes each hour segment wider on smaller screens, fitting fewer hours into the viewport.
+    hourWidthPixels: window.innerWidth < 768 ? Math.max(250, window.innerWidth * 0.9) : 300,
+    // This value controls how many hours *before* 'now' the guide will initially scroll to.
+    // For mobile (1 hour total visible): scroll to show 0.5 hours before 'now'.
+    // For desktop (2 hours total visible): scroll to show 1 hour before 'now'.
+    initialHoursBeforeNow: window.innerWidth < 768 ? 0.5 : 1,
     currentDate: new Date(),
     channelGroups: new Set(),
     channelSources: new Set(), // For the source filter
