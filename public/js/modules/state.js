@@ -26,9 +26,7 @@ export const guideState = {
         channelColumnWidth: window.innerWidth < 768 ? 64 : 180, // Default based on screen size
     }, // This will hold both GLOBAL and USER settings, merged.
     guideDurationHours: 48,
-    // This defines the visual width of one hour, not the scroll offset directly.
-    // It remains responsive based on screen width.
-    hourWidthPixels: window.innerWidth < 768 ? 200 : 300, 
+    hourWidthPixels: window.innerWidth < 768 ? 200 : 300,
     currentDate: new Date(),
     channelGroups: new Set(),
     channelSources: new Set(), // For the source filter
@@ -75,4 +73,3 @@ export const initializeUIElements = () => {
 
     // Removed: UIElements.resetFilterBtn as the button is removed from HTML
 };
-```
