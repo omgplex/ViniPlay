@@ -83,17 +83,17 @@ export function finalizeGuideLoad(isFirstLoad = false) {
                 const progStart = new Date(prog.start);
                 const progStop = new Date(prog.stop);
                 // Only include programs within the current guide view
-                if (progStop > guideStart && progStart < guideEnd) {
-                    allPrograms.push({
-                        ...prog,
-                        channel: {
-                            id: channel.id,
-                            name: channel.displayName || channel.name,
-                            logo: channel.logo,
-                            source: channel.source,
-                        }
-                    });
-                }
+                if (progStop < guideStart || progStart > guideEnd) return; // Corrected logic to filter out programs completely outside view
+                    
+                allPrograms.push({
+                    ...prog,
+                    channel: {
+                        id: channel.id,
+                        name: channel.displayName || channel.name,
+                        logo: channel.logo,
+                        source: channel.source,
+                    }
+                });
             });
         }
     }
@@ -133,7 +133,7 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
     // --- Static Header/Time Bar Setup (Done once per full render) ---
     const guideStart = new Date(guideState.currentDate);
     guideStart.setHours(0, 0, 0, 0);
-    // NEW: Create a stable UTC reference for midnight
+    // Create a stable UTC reference for midnight
     const guideStartUtc = new Date(Date.UTC(guideStart.getUTCFullYear(), guideStart.getUTCMonth(), guideStart.getUTCDate()));
     const timelineWidth = guideState.guideDurationHours * guideState.hourWidthPixels;
     UIElements.guideGrid.style.setProperty('--timeline-width', `${timelineWidth}px`);
@@ -314,16 +314,14 @@ const updateNowLine = (guideStartUtc, shouldScroll = false) => {
         if (shouldScroll) {
             // Add a short delay to ensure the guide content has rendered before scrolling
             setTimeout(() => {
-                const isMobile = window.innerWidth < 768; // Tailwind's 'sm' breakpoint is 640px, but 768px matches mobile styles for channel column width
+                const isMobile = window.innerWidth < 768; 
                 let scrollLeft;
 
                 if (isMobile) {
-                    // Refined calculation to center the NOW line visually, considering the fixed channel column
-                    // The NOW line's absolute position within the whole scrollable grid content is (channelInfoColWidth + leftOffsetInScrollableArea).
-                    // To center this in the view, we need to scroll such that this point is at the horizontal middle of the guideContainer's visible area.
+                    // Refined calculation to center the NOW line visually, accounting for the fixed channel column
                     scrollLeft = (channelInfoColWidth + leftOffsetInScrollableArea) - (UIElements.guideContainer.clientWidth / 2);
                 } else {
-                    // For desktop, keep the original behavior (now line to the left of center)
+                    // For desktop, position now line to the left of center, allowing to see upcoming programs
                     scrollLeft = leftOffsetInScrollableArea - (UIElements.guideContainer.clientWidth / 4);
                 }
                 
@@ -356,6 +354,7 @@ const updateNowLine = (guideStartUtc, shouldScroll = false) => {
         }
     });
 
+    // Schedule next update for the "now" line
     setTimeout(() => updateNowLine(guideStartUtc, false), 60000);
 };
 
@@ -665,4 +664,3 @@ export function setupGuideEventListeners() {
 
     UIElements.guideContainer.addEventListener('scroll', handleScrollHeader);
 }
-```
