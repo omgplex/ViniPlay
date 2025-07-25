@@ -218,10 +218,6 @@ export const addOrRemoveNotification = async (programDetails) => {
             createdAt: new Date().toISOString()
         };
 
-        // --- ADDED FOR DEBUGGING ---
-        console.log("Attempting to add notification with data:", newNotification);
-        // --- END ADDITION ---
-
         try {
             const response = await apiFetch('/api/notifications', {
                 method: 'POST',
