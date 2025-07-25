@@ -314,8 +314,19 @@ const updateNowLine = (guideStartUtc, shouldScroll = false) => {
         if (shouldScroll) {
             // Add a short delay to ensure the guide content has rendered before scrolling
             setTimeout(() => {
+                const isMobile = window.innerWidth < 768; // Tailwind's 'sm' breakpoint is 640px, but 768px matches mobile styles for channel column width
+                let scrollLeft;
+
+                if (isMobile) {
+                    // Center the "now" line for mobile screens
+                    scrollLeft = leftOffsetInScrollableArea - (UIElements.guideContainer.clientWidth / 2);
+                } else {
+                    // For desktop, keep the original behavior (now line to the left of center)
+                    scrollLeft = leftOffsetInScrollableArea - (UIElements.guideContainer.clientWidth / 4);
+                }
+                
                 UIElements.guideContainer.scrollTo({
-                    left: leftOffsetInScrollableArea - (UIElements.guideContainer.clientWidth / 4),
+                    left: Math.max(0, scrollLeft), // Ensure scroll position is not negative
                     behavior: 'smooth'
                 });
             }, 100); // A 100ms delay is usually enough
