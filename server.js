@@ -59,6 +59,20 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                 PRIMARY KEY (user_id, key)
             )`);
+            // NEW: Create notifications table
+            db.run(`CREATE TABLE IF NOT EXISTS notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                channelId TEXT NOT NULL,
+                channelName TEXT NOT NULL,
+                channelLogo TEXT,
+                programTitle TEXT NOT NULL,
+                programDesc TEXT,
+                programStart TEXT NOT NULL,
+                programStop TEXT NOT NULL,
+                notificationTime TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )`);
         });
     }
 });
@@ -121,7 +135,8 @@ function getSettings() {
             activeStreamProfileId: 'ffmpeg-default',
             searchScope: 'channels_programs',
             autoRefresh: 0,
-            timezoneOffset: Math.round(-(new Date().getTimezoneOffset() / 60))
+            timezoneOffset: Math.round(-(new Date().getTimezoneOffset() / 60)),
+            notificationLeadTime: 10 // NEW: Default notification lead time in minutes
         };
         fs.writeFileSync(SETTINGS_PATH, JSON.stringify(defaultSettings, null, 2));
         return defaultSettings;
@@ -131,10 +146,12 @@ function getSettings() {
         // Ensure defaults for sources if they are missing
         if (!settings.m3uSources) settings.m3uSources = [];
         if (!settings.epgSources) settings.epgSources = [];
+        // NEW: Ensure notificationLeadTime has a default if missing from existing settings file
+        if (settings.notificationLeadTime === undefined) settings.notificationLeadTime = 10;
         return settings;
     } catch (e) {
         console.error("Could not parse settings.json, returning default.", e);
-        return { m3uSources: [], epgSources: [] };
+        return { m3uSources: [], epgSources: [], notificationLeadTime: 10 }; // Return default for new field
     }
 }
 
@@ -697,7 +714,9 @@ app.post('/api/save/settings', requireAuth, async (req, res) => {
         const updatedSettings = { ...currentSettings, ...req.body };
 
         const userSpecificKeys = ['favorites', 'playerDimensions', 'programDetailsDimensions', 'recentChannels'];
-        userSpecificKeys.forEach(key => delete updatedSettings[key]);
+        // NEW: Add 'notificationLeadTime' to userSpecificKeys so it's only stored as user-specific
+        userSpecificKeys.push('notificationLeadTime');
+        userSpecificKeys.forEach(key => delete updatedSettings[key]); // Ensure these are not saved globally
 
         saveSettings(updatedSettings);
         
@@ -735,6 +754,57 @@ app.post('/api/user/settings', requireAuth, (req, res) => {
     });
 });
 
+// NEW: Notification API Endpoints
+app.post('/api/notifications', requireAuth, (req, res) => {
+    const { channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime } = req.body;
+
+    if (!channelId || !channelName || !programTitle || !programStart || !programStop || !notificationTime) {
+        return res.status(400).json({ error: 'Missing required notification fields.' });
+    }
+
+    db.run(`INSERT INTO notifications (user_id, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [req.session.userId, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime],
+        function (err) {
+            if (err) {
+                console.error('Error adding notification to database:', err);
+                return res.status(500).json({ error: 'Could not add notification.' });
+            }
+            res.json({ success: true, id: this.lastID });
+        }
+    );
+});
+
+app.get('/api/notifications', requireAuth, (req, res) => {
+    db.all(`SELECT * FROM notifications WHERE user_id = ? ORDER BY notificationTime ASC`,
+        [req.session.userId],
+        (err, rows) => {
+            if (err) {
+                console.error('Error fetching notifications from database:', err);
+                return res.status(500).json({ error: 'Could not retrieve notifications.' });
+            }
+            res.json(rows);
+        }
+    );
+});
+
+app.delete('/api/notifications/:id', requireAuth, (req, res) => {
+    const { id } = req.params;
+    db.run(`DELETE FROM notifications WHERE id = ? AND user_id = ?`,
+        [id, req.session.userId],
+        function (err) {
+            if (err) {
+                console.error('Error deleting notification from database:', err);
+                return res.status(500).json({ error: 'Could not delete notification.' });
+            }
+            if (this.changes === 0) {
+                return res.status(404).json({ error: 'Notification not found or unauthorized.' });
+            }
+            res.json({ success: true });
+        }
+    );
+});
+
 
 app.delete('/api/data', requireAuth, (req, res) => {
     try {
@@ -751,6 +821,11 @@ app.delete('/api/data', requireAuth, (req, res) => {
         db.run(`DELETE FROM user_settings WHERE user_id = ?`, [req.session.userId], (err) => {
             if (err) console.error("Error clearing user settings from DB:", err);
         });
+        // NEW: Clear user-specific notifications
+        db.run(`DELETE FROM notifications WHERE user_id = ?`, [req.session.userId], (err) => {
+            if (err) console.error("Error clearing user notifications from DB:", err);
+        });
+
         res.json({ success: true, message: 'All data has been cleared.' });
     } catch (error) {
         console.error("Error clearing data:", error);
