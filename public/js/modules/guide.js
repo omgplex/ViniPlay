@@ -318,8 +318,15 @@ const updateNowLine = (guideStartUtc, shouldScroll = false) => {
                 let scrollLeft;
 
                 if (isMobile) {
+                    debugger; // Breakpoint for debugging
+                    console.log('--- Mobile Scroll Debug ---');
+                    console.log('window.innerWidth:', window.innerWidth);
+                    console.log('UIElements.guideContainer.clientWidth:', UIElements.guideContainer.clientWidth);
+                    console.log('guideState.settings.channelColumnWidth:', guideState.settings.channelColumnWidth);
+                    console.log('leftOffsetInScrollableArea:', leftOffsetInScrollableArea);
                     // Center the "now" line for mobile screens
                     scrollLeft = leftOffsetInScrollableArea - (UIElements.guideContainer.clientWidth / 2);
+                    console.log('calculated scrollLeft (mobile):', scrollLeft);
                 } else {
                     // For desktop, keep the original behavior (now line to the left of center)
                     scrollLeft = leftOffsetInScrollableArea - (UIElements.guideContainer.clientWidth / 4);
