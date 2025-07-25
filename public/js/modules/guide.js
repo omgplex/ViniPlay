@@ -11,7 +11,7 @@ import { saveUserSetting } from './api.js';
 import { parseM3U } from './utils.js';
 import { playChannel } from './player.js';
 import { showNotification, openModal, closeModal } from './ui.js';
-import { addOrRemoveNotification, findNotificationForProgram } from './notification.js'; // NEW: Import notification functions
+import { addOrRemoveNotification, findNotificationForProgram } from './notification.js'; // Import notification functions
 
 // --- Virtualization Constants ---
 const ROW_HEIGHT = 96; // Height in pixels of a single channel row (.channel-info + .timeline-row)
@@ -241,11 +241,15 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
                 const isLive = now >= progStart && now < progStop;
                 const progressWidth = isLive ? ((now - progStart) / durationMs) * 100 : 0;
                 
-                // NEW: Check if this program has an active notification
-                const hasNotification = findNotificationForProgram(prog, channel.id);
-                const notificationClass = hasNotification ? 'has-notification' : '';
+                // NEW: Determine if a notification is set for this program
+                const notificationSet = findNotificationForProgram({ 
+                    title: prog.title, 
+                    start: prog.start, 
+                    stop: prog.stop 
+                }, channel.id);
+                const notificationClass = notificationSet ? 'has-notification' : '';
 
-                programsHTML += `<div class="programme-item absolute top-1 bottom-1 bg-gray-800 rounded-md p-2 overflow-hidden flex flex-col justify-center z-5 ${isLive ? 'live' : ''} ${progStop < now ? 'past' : ''} ${notificationClass}" style="left:${left}px; width:${Math.max(0, width - 2)}px" data-channel-url="${channel.url}" data-channel-id="${channel.id}" data-channel-name="${channelName}" data-prog-title="${prog.title}" data-prog-desc="${prog.desc}" data-prog-start="${progStart.toISOString()}" data-prog-stop="${progStop.toISOString()}" data-prog-id="${prog.title}-${progStart.toISOString()}-${progStop.toISOString()}"><div class="programme-progress" style="width:${progressWidth}%"></div><p class="prog-title text-white font-semibold truncate relative z-10">${prog.title}</p><p class="prog-time text-gray-400 truncate relative z-10">${progStart.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p></div>`;
+                programsHTML += `<div class="programme-item absolute top-1 bottom-1 bg-gray-800 rounded-md p-2 overflow-hidden flex flex-col justify-center z-5 ${isLive ? 'live' : ''} ${progStop < now ? 'past' : ''} ${notificationClass}" style="left:${left}px; width:${Math.max(0, width - 2)}px" data-channel-url="${channel.url}" data-channel-id="${channel.id}" data-channel-name="${channelName}" data-prog-title="${prog.title}" data-prog-desc="${prog.desc}" data-prog-start="${progStart.toISOString()}" data-prog-stop="${progStop.toISOString()}" data-prog-id="${channel.id}-${progStart.toISOString()}-${progStop.toISOString()}"><div class="programme-progress" style="width:${progressWidth}%"></div><p class="prog-title text-white font-semibold truncate relative z-10">${prog.title}</p><p class="prog-time text-gray-400 truncate relative z-10">${progStart.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p></div>`;
             });
             const timelineRowHTML = `<div class="timeline-row" style="width: ${timelineWidth}px;">${programsHTML}</div>`;
 
@@ -571,71 +575,46 @@ export function setupGuideEventListeners() {
 
         if (progItem) {
             // Populate and show the program details modal
-            const channelId = progItem.dataset.channelId;
-            const programData = {
-                title: progItem.dataset.progTitle,
-                desc: progItem.dataset.progDesc,
-                start: progItem.dataset.progStart,
-                stop: progItem.dataset.progStop,
-                channelId: channelId,
-                programId: progItem.dataset.progId,
-            };
-
-            const channelData = guideState.channels.find(c => c.id === channelId);
-            const channelName = channelData ? (channelData.displayName || channelData.name) : 'Unknown Channel';
-            const channelLogo = channelData ? channelData.logo : '';
-            const channelUrl = channelData ? channelData.url : '';
-
-            UIElements.detailsTitle.textContent = programData.title;
-            const progStart = new Date(programData.start);
-            const progStop = new Date(programData.stop);
+            UIElements.detailsTitle.textContent = progItem.dataset.progTitle;
+            const progStart = new Date(progItem.dataset.progStart);
+            const progStop = new Date(progItem.dataset.progStop);
             UIElements.detailsTime.textContent = `${progStart.toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})}`;
-            UIElements.detailsDesc.textContent = programData.desc || "No description available.";
+            UIElements.detailsDesc.textContent = progItem.dataset.progDesc || "No description available.";
             
             UIElements.detailsPlayBtn.onclick = () => {
-                playChannel(channelUrl, channelName, channelId);
+                playChannel(progItem.dataset.channelUrl, `${progItem.dataset.channelName}`, progItem.dataset.channelId);
                 closeModal(UIElements.programDetailsModal);
             };
 
-            // NEW: Notification button logic
-            const now = new Date();
-            const programStartTime = new Date(programData.start).getTime();
-            const isProgramInFuture = programStartTime > now.getTime();
-            const notification = findNotificationForProgram(programData, channelId);
+            // Prepare programDetails for notification module
+            const programDetailsForNotification = {
+                channelId: progItem.dataset.channelId,
+                channelName: progItem.dataset.channelName,
+                channelLogo: guideState.channels.find(c => c.id === progItem.dataset.channelId)?.logo || '', // Fetch logo
+                programTitle: progItem.dataset.progTitle,
+                programStart: progItem.dataset.progStart,
+                programStop: progItem.dataset.progStop,
+                programDesc: progItem.dataset.progDesc,
+                programId: progItem.dataset.progId, // This will now correctly pick up the data-prog-id
+            };
 
-            if (isProgramInFuture) {
-                UIElements.programDetailsNotifyBtn.classList.remove('hidden');
-                UIElements.programDetailsNotifyBtn.textContent = notification ? 'Notification Set' : 'Notify Me';
-                UIElements.programDetailsNotifyBtn.disabled = !notification && Notification.permission === 'denied'; // Disable if notif already denied
-                UIElements.programDetailsNotifyBtn.classList.toggle('bg-yellow-600', !notification);
-                UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-yellow-700', !notification);
-                UIElements.programDetailsNotifyBtn.classList.toggle('bg-gray-600', !!notification);
-                UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-gray-500', !!notification);
+            // Update Notify Me button state and attach handler
+            const notifyMeBtn = document.getElementById('details-notify-btn'); // Assuming this ID exists in index.html
+            const existingNotification = findNotificationForProgram(programDetailsForNotification, programDetailsForNotification.channelId);
 
-                UIElements.programDetailsNotifyBtn.onclick = async () => {
-                    await addOrRemoveNotification({
-                        id: notification ? notification.id : null, // Pass existing ID if updating/removing
-                        channelId: programData.channelId,
-                        channelName: channelName,
-                        channelLogo: channelLogo,
-                        programTitle: programData.title,
-                        programStart: programData.start,
-                        programStop: programData.stop,
-                        programDesc: programData.desc,
-                        programId: programData.programId // Unique ID for program within channel
-                    });
-                    // Re-render button state after action
-                    const updatedNotification = findNotificationForProgram(programData, channelId);
-                    UIElements.programDetailsNotifyBtn.textContent = updatedNotification ? 'Notification Set' : 'Notify Me';
-                    UIElements.programDetailsNotifyBtn.classList.toggle('bg-yellow-600', !updatedNotification);
-                    UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-yellow-700', !updatedNotification);
-                    UIElements.programDetailsNotifyBtn.classList.toggle('bg-gray-600', !!updatedNotification);
-                    UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-gray-500', !!updatedNotification);
-                    // Also re-render the guide to update the visual indicator
-                    handleSearchAndFilter(false); 
-                };
-            } else {
-                UIElements.programDetailsNotifyBtn.classList.add('hidden');
+            if (notifyMeBtn) {
+                if (existingNotification) {
+                    notifyMeBtn.textContent = 'Notification Set';
+                    notifyMeBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+                    notifyMeBtn.classList.add('bg-gray-600', 'hover:bg-gray-500');
+                    notifyMeBtn.disabled = false; // Allow removal
+                } else {
+                    notifyMeBtn.textContent = 'Notify Me';
+                    notifyMeBtn.classList.remove('bg-gray-600', 'hover:bg-gray-500');
+                    notifyMeBtn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+                    notifyMeBtn.disabled = false;
+                }
+                notifyMeBtn.onclick = () => addOrRemoveNotification(programDetailsForNotification);
             }
 
             openModal(UIElements.programDetailsModal);
@@ -679,7 +658,7 @@ export function setupGuideEventListeners() {
              }
 
             setTimeout(() => {
-                const programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programItem.dataset.progStart}"][data-channel-id="${programItem.dataset.channelId}"]`);
+                const programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programItem.dataset.progStart}"]`);
                 if(programElement) {
                     const scrollLeft = programElement.offsetLeft - (UIElements.guideContainer.clientWidth / 4);
                     UIElements.guideContainer.scrollTo({ left: scrollLeft, behavior: 'smooth' });
