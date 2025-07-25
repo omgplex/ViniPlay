@@ -113,8 +113,8 @@ function getSettings() {
             epgSources: [],
             userAgents: [{ id: `default-ua-${Date.now()}`, name: 'ViniPlay Default', value: 'VLC/3.0.20 (Linux; x86_64)', isDefault: true }],
             streamProfiles: [
-                // Modified FFmpeg command: Transcodes audio to AAC for better browser compatibility
-                { id: 'ffmpeg-default', name: 'ffmpeg (Built in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v copy -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: true },
+                // MODIFIED FFmpeg command: Forces re-encoding of both video and audio
+                { id: 'ffmpeg-default', name: 'ffmpeg (Built in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: true },
                 { id: 'redirect-default', name: 'Redirect (Built in)', command: 'redirect', isDefault: true }
             ],
             activeUserAgentId: `default-ua-${Date.now()}`,
@@ -785,7 +785,7 @@ app.get('/stream', requireAuth, (req, res) => {
     const args = (commandTemplate.match(/(?:[^\s"]+|"[^"]*")+/g) || []).map(arg => arg.replace(/^"|"$/g, ''));
 
     const ffmpeg = spawn('ffmpeg', args);
-    res.setHeader('Content-Type', 'video/mp2t');
+    res.setHeader('Content-Type', 'video/mp2t'); // Output container is MPEG-TS
     ffmpeg.stdout.pipe(res);
     
     // Log stderr for debugging
