@@ -113,7 +113,8 @@ function getSettings() {
             epgSources: [],
             userAgents: [{ id: `default-ua-${Date.now()}`, name: 'ViniPlay Default', value: 'VLC/3.0.20 (Linux; x86_64)', isDefault: true }],
             streamProfiles: [
-                { id: 'ffmpeg-default', name: 'ffmpeg (Built in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c copy -f mpegts pipe:1', isDefault: true },
+                // Modified FFmpeg command: Transcodes audio to AAC for better browser compatibility
+                { id: 'ffmpeg-default', name: 'ffmpeg (Built in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v copy -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: true },
                 { id: 'redirect-default', name: 'Redirect (Built in)', command: 'redirect', isDefault: true }
             ],
             activeUserAgentId: `default-ua-${Date.now()}`,
