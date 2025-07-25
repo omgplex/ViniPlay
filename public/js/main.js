@@ -71,9 +71,9 @@ export async function initMainApp() {
             UIElements.initialLoadingIndicator.classList.add('hidden');
             UIElements.noDataMessage.classList.remove('hidden');
         }
-
-        // NEW: Load and schedule notifications after main config/guide data is ready
-        await loadAndScheduleNotifications(); // Ensure notifications are loaded and timers set up
+        
+        // NEW: Load and schedule notifications after settings are loaded
+        await loadAndScheduleNotifications();
 
         // Handle the initial route once the app is ready
         // This will also trigger the initial padding calculation for page-guide
@@ -146,22 +146,16 @@ function restoreDimensions() {
 function setupCoreEventListeners() {
     // Main navigation (Desktop tabs)
     UIElements.tabGuide?.addEventListener('click', () => switchTab('guide'));
+    UIElements.tabNotifications?.addEventListener('click', () => switchTab('notifications')); // NEW
     UIElements.tabSettings?.addEventListener('click', () => switchTab('settings'));
-    UIElements.tabNotifications?.addEventListener('click', () => { // NEW: Notifications tab click
-        switchTab('notifications');
-        renderNotifications(); // Ensure notifications list is rendered when tab is opened
-    });
 
     // Mobile navigation (Hamburger menu and links)
     UIElements.mobileMenuToggle?.addEventListener('click', openMobileMenu);
     UIElements.mobileMenuClose?.addEventListener('click', closeMobileMenu);
     UIElements.mobileMenuOverlay?.addEventListener('click', closeMobileMenu); // Close when clicking overlay
     UIElements.mobileNavGuide?.addEventListener('click', () => switchTab('guide'));
+    UIElements.mobileNavNotifications?.addEventListener('click', () => switchTab('notifications')); // NEW
     UIElements.mobileNavSettings?.addEventListener('click', () => switchTab('settings'));
-    UIElements.mobileNavNotifications?.addEventListener('click', () => { // NEW: Mobile notifications tab
-        switchTab('notifications');
-        renderNotifications(); // Render list when mobile tab is opened
-    });
     UIElements.mobileNavLogoutBtn?.addEventListener('click', () => { // Logout button in mobile menu
         // Trigger the existing logout functionality
         const logoutButton = document.getElementById('logout-btn');
