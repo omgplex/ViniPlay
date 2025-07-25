@@ -71,3 +71,68 @@ export async function saveGlobalSetting(settingObject) {
         return null;
     }
 }
+
+// NEW: Notification API functions
+
+/**
+ * Adds a program notification to the backend.
+ * @param {object} notificationData - Object containing notification details.
+ * @returns {Promise<object|null>} - The added notification object with its ID, or null on failure.
+ */
+export async function addProgramNotification(notificationData) {
+    const res = await apiFetch('/api/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(notificationData)
+    });
+    if (!res) return null;
+
+    const data = await res.json();
+    if (res.ok && data.success) {
+        return { id: data.id, ...notificationData };
+    } else {
+        console.error('Failed to add notification:', data.error);
+        showNotification(data.error || 'Could not add notification.', true);
+        return null;
+    }
+}
+
+/**
+ * Fetches all program notifications for the current user from the backend.
+ * @returns {Promise<Array<object>>} - An array of notification objects, or empty array on failure.
+ */
+export async function getProgramNotifications() {
+    const res = await apiFetch('/api/notifications');
+    if (!res) return [];
+
+    const data = await res.json();
+    if (res.ok) {
+        return data;
+    } else {
+        console.error('Failed to get notifications:', data.error);
+        showNotification(data.error || 'Could not retrieve notifications.', true);
+        return [];
+    }
+}
+
+/**
+ * Deletes a program notification from the backend.
+ * @param {number} notificationId - The ID of the notification to delete.
+ * @returns {Promise<boolean>} - True on success, false on failure.
+ */
+export async function deleteProgramNotification(notificationId) {
+    const res = await apiFetch(`/api/notifications/${notificationId}`, {
+        method: 'DELETE',
+    });
+    if (!res) return false;
+
+    const data = await res.json();
+    if (res.ok && data.success) {
+        showNotification('Notification removed.');
+        return true;
+    } else {
+        console.error('Failed to delete notification:', data.error);
+        showNotification(data.error || 'Could not remove notification.', true);
+        return false;
+    }
+}
