@@ -11,7 +11,7 @@ import { saveUserSetting } from './api.js';
 import { parseM3U } from './utils.js';
 import { playChannel } from './player.js';
 import { showNotification, openModal, closeModal } from './ui.js';
-import { addOrRemoveNotification, findNotificationForProgram } from './notification.js'; // Import notification functions
+import { addOrRemoveNotification, findNotificationForProgram } from './modules/notification.js'; // Import notification functions
 
 // --- Virtualization Constants ---
 const ROW_HEIGHT = 96; // Height in pixels of a single channel row (.channel-info + .timeline-row)
@@ -241,7 +241,7 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
                 const isLive = now >= progStart && now < progStop;
                 const progressWidth = isLive ? ((now - progStart) / durationMs) * 100 : 0;
                 
-                // NEW: Determine if a notification is set for this program
+                // Determine if a notification is set for this program
                 const notificationSet = findNotificationForProgram({ 
                     title: prog.title, 
                     start: prog.start, 
@@ -595,7 +595,7 @@ export function setupGuideEventListeners() {
                 programStart: progItem.dataset.progStart,
                 programStop: progItem.dataset.progStop,
                 programDesc: progItem.dataset.progDesc,
-                programId: progItem.dataset.progId, // This will now correctly pick up the data-prog-id
+                programId: progItem.dataset.progId,
             };
 
             // Update Notify Me button state and attach handler
@@ -612,7 +612,10 @@ export function setupGuideEventListeners() {
                     notifyMeBtn.textContent = 'Notify Me';
                     notifyMeBtn.classList.remove('bg-gray-600', 'hover:bg-gray-500');
                     notifyMeBtn.classList.add('bg-blue-600', 'hover:bg-blue-700');
-                    notifyMeBtn.disabled = false;
+                    // Check if program is in the past to disable 'Notify Me'
+                    const now = new Date();
+                    const programStartTime = new Date(programDetailsForNotification.programStart);
+                    notifyMeBtn.disabled = programStartTime <= now;
                 }
                 notifyMeBtn.onclick = () => addOrRemoveNotification(programDetailsForNotification);
             }
