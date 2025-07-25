@@ -6,6 +6,7 @@
 
 import { UIElements, appState, guideState } from './state.js';
 import { refreshUserList, updateUIFromSettings } from './settings.js';
+import { renderNotifications } from './notification.js'; // NEW: Import renderNotifications
 
 let confirmCallback = null;
 
@@ -221,26 +222,32 @@ export const closeMobileMenu = () => {
 export const handleRouteChange = () => {
     const path = window.location.pathname;
     const isGuide = path.startsWith('/tvguide') || path === '/';
+    const isNotifications = path.startsWith('/notifications');
+    const isSettings = path.startsWith('/settings');
 
     // Close mobile menu if it's open when navigating
     closeMobileMenu();
 
     // Toggle active state for desktop navigation buttons
     UIElements.tabGuide?.classList.toggle('active', isGuide);
-    UIElements.tabSettings?.classList.toggle('active', !isGuide);
-    // Toggle active state for new mobile navigation buttons
+    UIElements.tabNotifications?.classList.toggle('active', isNotifications);
+    UIElements.tabSettings?.classList.toggle('active', isSettings);
+    
+    // Toggle active state for mobile navigation buttons
     UIElements.mobileNavGuide?.classList.toggle('active', isGuide);
-    UIElements.mobileNavSettings?.classList.toggle('active', !isGuide);
+    UIElements.mobileNavNotifications?.classList.toggle('active', isNotifications);
+    UIElements.mobileNavSettings?.classList.toggle('active', isSettings);
 
 
     // Show/hide the relevant page content
     UIElements.pageGuide.classList.toggle('hidden', !isGuide);
     UIElements.pageGuide.classList.toggle('flex', isGuide);
-    UIElements.pageSettings.classList.toggle('hidden', isGuide);
-    UIElements.pageSettings.classList.toggle('flex', !isGuide);
+    UIElements.pageNotifications.classList.toggle('hidden', !isNotifications);
+    UIElements.pageNotifications.classList.toggle('flex', isNotifications);
+    UIElements.pageSettings.classList.toggle('hidden', !isSettings);
+    UIElements.pageSettings.classList.toggle('flex', isSettings);
     
     // Manage header visibility based on the active tab
-    // Ensure UIElements.appContainer is correctly mapped in state.js
     const appContainer = UIElements.appContainer; 
 
     // When navigating to guide, ensure headers are uncollapsed and set initial padding
@@ -256,19 +263,21 @@ export const handleRouteChange = () => {
             UIElements.guideContainer.scrollTop = 0;
         }
     } else {
-        // If navigating to settings, ensure main header is fully visible (by removing collapsed class)
+        // If navigating to other pages, ensure main header is fully visible (by removing collapsed class)
         if (appContainer) {
             appContainer.classList.remove('header-collapsed');
         }
         // Ensure page-guide padding is reset when leaving guide page
-        // No need to set padding here, as guide.js logic only applies to the guide page.
-        // If a padding is needed for settings, it should be managed directly within page-settings.
         UIElements.pageGuide.style.paddingTop = `0px`; 
 
         // If navigating to the settings page, refresh relevant data
-        updateUIFromSettings();
-        if (appState.currentUser?.isAdmin) {
-            refreshUserList();
+        if (isSettings) {
+            updateUIFromSettings();
+            if (appState.currentUser?.isAdmin) {
+                refreshUserList();
+            }
+        } else if (isNotifications) {
+            renderNotifications(); // NEW: Render notifications when navigating to the notifications page
         }
     }
 };
@@ -286,10 +295,17 @@ export const navigate = (path) => {
 };
 
 /**
- * Switches between the 'Guide' and 'Settings' tabs.
- * @param {string} activeTab - The tab to switch to ('guide' or 'settings').
+ * Switches between the 'Guide', 'Notifications' and 'Settings' tabs.
+ * @param {string} activeTab - The tab to switch to ('guide', 'notifications', or 'settings').
  */
 export const switchTab = (activeTab) => {
-    const newPath = activeTab === 'guide' ? '/tvguide' : '/settings';
+    let newPath;
+    if (activeTab === 'guide') {
+        newPath = '/tvguide';
+    } else if (activeTab === 'notifications') {
+        newPath = '/notifications';
+    } else {
+        newPath = '/settings';
+    }
     navigate(newPath);
 };
