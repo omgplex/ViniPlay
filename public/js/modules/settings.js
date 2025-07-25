@@ -5,7 +5,7 @@
  */
 
 import { appState, guideState, UIElements } from './state.js';
-import { apiFetch, saveGlobalSetting } from './api.js';
+import { apiFetch, saveGlobalSetting, saveUserSetting } from './api.js'; // Added saveUserSetting
 import { showNotification, openModal, closeModal, showConfirm, setButtonLoadingState } from './ui.js';
 import { handleGuideLoad } from './guide.js';
 import { navigate } from './ui.js';
@@ -81,11 +81,15 @@ export const updateUIFromSettings = () => {
     settings.timezoneOffset = settings.timezoneOffset ?? Math.round(-(new Date().getTimezoneOffset() / 60));
     settings.autoRefresh = settings.autoRefresh || 0;
     settings.searchScope = settings.searchScope || 'channels_programs';
+    // NEW: Ensure notificationLeadTime has a default value
+    settings.notificationLeadTime = settings.notificationLeadTime ?? 10; 
 
-    // Update dropdowns
+    // Update dropdowns and inputs
     UIElements.timezoneOffsetSelect.value = settings.timezoneOffset;
     UIElements.autoRefreshSelect.value = settings.autoRefresh;
     UIElements.searchScopeSelect.value = settings.searchScope;
+    // NEW: Set value for notification lead time input
+    UIElements.notificationLeadTimeInput.value = settings.notificationLeadTime;
 
     // Render tables
     renderSourceTable('m3u');
@@ -185,7 +189,7 @@ const openSourceEditor = (sourceType, source = null) => {
     UIElements.sourceEditorTypeBtnUrl.classList.toggle('bg-blue-600', !isFile);
     UIElements.sourceEditorTypeBtnFile.classList.toggle('bg-blue-600', isFile);
     UIElements.sourceEditorUrlContainer.classList.toggle('hidden', isFile);
-    UIElements.sourceEditorFileContainer.classList.toggle('hidden', !isFile);
+    UIElements.sourceEditorFileContainer.classList.add('hidden');
 
     if (source) {
         if (source.type === 'url') UIElements.sourceEditorUrl.value = source.path;
@@ -384,6 +388,16 @@ export function setupSettingsEventListeners() {
     UIElements.autoRefreshSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { autoRefresh: parseInt(e.target.value, 10) }));
     UIElements.timezoneOffsetSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { timezoneOffset: parseInt(e.target.value, 10) }));
     UIElements.searchScopeSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { searchScope: e.target.value }));
+    // NEW: Event listener for notification lead time
+    UIElements.notificationLeadTimeInput.addEventListener('change', async (e) => {
+        const value = parseInt(e.target.value, 10);
+        if (isNaN(value) || value < 1) {
+            showNotification('Notification lead time must be a positive number.', true);
+            e.target.value = guideState.settings.notificationLeadTime; // Revert to current setting
+            return;
+        }
+        await saveSettingAndNotify(saveGlobalSetting, { notificationLeadTime: value });
+    });
 
     // --- Player Settings ---
     UIElements.addUserAgentBtn.addEventListener('click', () => openEditorModal('userAgent'));
