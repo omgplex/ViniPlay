@@ -61,7 +61,7 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
             )`);
             // The ALTER TABLE statement below might cause a 'duplicate column name' error
             // on subsequent runs if the column already exists, but it's generally safe
-            // to leave if the CREATE TABLE IF NOT EXISTS below handles new installs.
+            // to leave if the CREATE TABLE IF NOT EXISTS below handles new installations.
             // The primary issue user reported ("near ON") is not from this part.
             db.run(`ALTER TABLE notifications ADD COLUMN programId TEXT;`, (err) => {
                 if (err && !err.message.includes('duplicate column name')) {
@@ -685,7 +685,7 @@ app.put('/api/sources/:sourceType/:id', requireAuth, (req, res) => {
 app.delete('/api/sources/:sourceType/:id', requireAuth, (req, res) => {
     const { sourceType, id } = req.params;
     
-    const settings = getGettings();
+    const settings = getSettings(); // Corrected typo here
     let sourceList = sourceType === 'm3u' ? settings.m3uSources : settings.epgSources;
     const source = sourceList.find(s => s.id === id);
     
