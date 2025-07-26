@@ -833,7 +833,21 @@ app.get('/api/notifications', requireAuth, (req, res) => {
                 console.error('Error fetching notifications from database:', err);
                 return res.status(500).json({ error: 'Could not retrieve notifications.' });
             }
-            res.json(rows);
+            // FIX: Map 'notificationTime' from DB to 'scheduledTime' for consistency with frontend
+            const notifications = rows.map(row => ({
+                id: row.id,
+                userId: row.user_id,
+                channelId: row.channelId,
+                channelName: row.channelName,
+                channelLogo: row.channelLogo,
+                programTitle: row.programTitle,
+                programDesc: row.programDesc,
+                programStart: row.programStart,
+                programStop: row.programStop,
+                scheduledTime: row.notificationTime, // <--- THE KEY FIX IS HERE
+                programId: row.programId
+            }));
+            res.json(notifications);
         }
     );
 });
@@ -946,3 +960,4 @@ app.listen(port, () => {
     // Initial setup for EPG refresh
     scheduleEpgRefresh();
 });
+```
