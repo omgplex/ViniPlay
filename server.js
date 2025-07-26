@@ -549,7 +549,7 @@ app.get('/api/config', requireAuth, (req, res) => {
             res.json(config);
         });
 
-    } catch (error) {
+    } = catch (error) {
         console.error("Error reading config:", error);
         res.status(500).json({ error: "Could not load configuration from server." });
     }
@@ -771,18 +771,19 @@ app.post('/api/notifications', requireAuth, (req, res) => {
     // Add this console.log to see the raw request body on the server side
     console.log('[SERVER] Received notification payload:', req.body);
 
-    // Include programId in the destructuring
-    const { channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime, programId } = req.body;
+    // Destructure `scheduledTime` from req.body instead of `notificationTime`
+    const { channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, scheduledTime, programId } = req.body;
 
-    // Validate required fields, including programId
-    if (!channelId || !channelName || !programTitle || !programStart || !programStop || !notificationTime || !programId) {
-        console.error('[SERVER] Missing required notification fields. Received:', { channelId, channelName, programTitle, programStart, programStop, notificationTime, programId });
+    // Validate required fields, using `scheduledTime` for the check
+    if (!channelId || !channelName || !programTitle || !programStart || !programStop || !scheduledTime || !programId) {
+        // Log the received values for debugging
+        console.error('[SERVER] Missing required notification fields. Received:', { channelId, channelName, programTitle, programStart, programStop, scheduledTime, programId });
         return res.status(400).json({ error: 'Missing required notification fields.' });
     }
 
     db.run(`INSERT INTO notifications (user_id, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime, programId)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [req.session.userId, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime, programId],
+        [req.session.userId, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, scheduledTime, programId], // Use scheduledTime here
         function (err) {
             if (err) {
                 console.error('Error adding notification to database:', err);
