@@ -242,7 +242,7 @@ async function processAndMergeSources() {
                 let line = lines[i].trim();
                 if (line.startsWith('#EXTINF:')) {
                     const tvgIdMatch = line.match(/tvg-id="([^"]*)"/);
-                    const tvgId = tvgIdMatch ? tvgIdMatch[1] : `no-id-${Math.random()}`;
+                    const tvgId = tvgIdMatch ? tvgId[1] : `no-id-${Math.random()}`;
                     const uniqueChannelId = `${source.id}_${tvgId}`;
 
                     const commaIndex = line.lastIndexOf(',');
@@ -549,7 +549,7 @@ app.get('/api/config', requireAuth, (req, res) => {
             res.json(config);
         });
 
-    } = catch (error) {
+    } catch (error) { // CORRECTED: Removed `=` sign here
         console.error("Error reading config:", error);
         res.status(500).json({ error: "Could not load configuration from server." });
     }
@@ -756,7 +756,7 @@ app.post('/api/user/settings', requireAuth, (req, res) => {
     
     const valueJson = JSON.stringify(value);
     
-    db.run(`INSERT INTO user_settings (user_id, key, value) VALUES (?, ?, ?)
+    db.run(`INSERT INTO user_settings (user_id, key, value)
             ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value;`, [req.session.userId, key, valueJson], (err) => {
         if (err) {
             console.error('Error saving user setting to database:', err);
