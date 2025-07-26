@@ -63,15 +63,6 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
             // on subsequent runs if the column already exists, but it's generally safe
             // to leave if the CREATE TABLE IF NOT EXISTS below handles new installations.
             // The primary issue user reported ("near ON") is not from this part.
-            db.run(`ALTER TABLE notifications ADD COLUMN programId TEXT;`, (err) => {
-                if (err && !err.message.includes('duplicate column name')) {
-                    console.error("Error attempting to add programId column to notifications table:", err.message);
-                } else if (!err) {
-                    console.log("Added programId column to notifications table successfully (if it didn't exist).");
-                }
-            });
-            // Ensure the notifications table is created if it doesn't exist.
-            // This also ensures 'programId' is part of the schema for new installations.
             db.run(`CREATE TABLE IF NOT EXISTS notifications (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -85,7 +76,22 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 notificationTime TEXT NOT NULL,
                 programId TEXT NOT NULL, -- New column for unique program identifier, set to NOT NULL for new entries
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            )`);
+            )`, (err) => {
+                // Only run ALTER TABLE if CREATE TABLE didn't just happen or if it explicitly fails on duplicate
+                if (err && err.message.includes('table notifications already exists')) {
+                    db.run(`ALTER TABLE notifications ADD COLUMN programId TEXT;`, (alterErr) => {
+                        if (alterErr && !alterErr.message.includes('duplicate column name')) {
+                            console.error("Error attempting to add programId column to notifications table:", alterErr.message);
+                        } else if (!alterErr) {
+                            console.log("Added programId column to notifications table successfully (if it didn't exist).");
+                        }
+                    });
+                } else if (err) {
+                     console.error("Error creating notifications table:", err.message);
+                } else {
+                    console.log("Notifications table created successfully.");
+                }
+            });
         });
     }
 });
@@ -685,7 +691,7 @@ app.put('/api/sources/:sourceType/:id', requireAuth, (req, res) => {
 app.delete('/api/sources/:sourceType/:id', requireAuth, (req, res) => {
     const { sourceType, id } = req.params;
     
-    const settings = getSettings(); // Corrected typo here
+    const settings = getSettings();
     let sourceList = sourceType === 'm3u' ? settings.m3uSources : settings.epgSources;
     const source = sourceList.find(s => s.id === id);
     
@@ -709,7 +715,8 @@ app.post('/api/process-sources', requireAuth, async (req, res) => {
     try {
         const result = await processAndMergeSources();
         res.json(result);
-    } catch (error) {
+    }
+    catch (error) {
         console.error("Error during manual source processing:", error);
         res.status(500).json({ error: 'Failed to process sources.' });
     }
@@ -762,7 +769,7 @@ app.post('/api/user/settings', requireAuth, (req, res) => {
     db.run(
         `UPDATE user_settings SET value = ? WHERE user_id = ? AND key = ?`,
         [valueJson, userId, key],
-        function (err) {
+        function (err) { // This is the callback for the UPDATE db.run
             if (err) {
                 console.error('Error updating user setting:', err);
                 return res.status(500).json({ error: 'Could not save user setting.' });
@@ -784,7 +791,7 @@ app.post('/api/user/settings', requireAuth, (req, res) => {
             } else {
                 res.json({ success: true });
             }
-        }
+        } // The previously missing closing brace for the UPDATE db.run callback
     );
 });
 // --- FIX END ---
@@ -939,4 +946,3 @@ app.listen(port, () => {
     // Initial setup for EPG refresh
     scheduleEpgRefresh();
 });
-```
