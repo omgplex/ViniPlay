@@ -41,7 +41,7 @@ export const requestNotificationPermission = async () => {
 
 /**
  * Schedules a single browser notification.
- * @param {object} notification - The notification object from the backend.
+ * @param {object} notification - The notification object from the backend (or compiled on frontend).
  */
 const scheduleBrowserNotification = (notification) => {
     // Clear any existing timer for this notification to prevent duplicates
@@ -50,6 +50,12 @@ const scheduleBrowserNotification = (notification) => {
     const now = new Date();
     const notificationTime = new Date(notification.scheduledTime);
     const delay = notificationTime.getTime() - now.getTime();
+
+    // Ensure notificationTime is a valid date before proceeding
+    if (isNaN(delay)) {
+        console.warn(`[Notifications] Cannot schedule notification: Invalid scheduled time for "${notification.programTitle || notification.id}".`);
+        return; // Exit if the date is invalid
+    }
 
     if (delay > 0) {
         console.log(`[Notifications] Scheduling notification for "${notification.programTitle}" in ${delay / 1000} seconds.`);
@@ -63,16 +69,12 @@ const scheduleBrowserNotification = (notification) => {
         }, delay);
         scheduledNotificationTimers.set(notification.id, timeoutId);
     } else {
-        console.warn(`[Notifications] Notification for "${notification.programTitle}" is in the past or too soon to schedule.`);
+        console.warn(`[Notifications] Notification for "${notification.programTitle || notification.id}" is in the past or too soon to schedule. Not scheduling.`);
         // If it's in the past, remove it from local state to clean up.
+        // Also remove if it was too soon (delay <= 0)
         guideState.userNotifications = guideState.userNotifications.filter(n => n.id !== notification.id);
         renderNotifications();
         handleSearchAndFilter(false);
-        // Optionally send it immediately if it was just slightly in the past but still relevant (e.g., within 1-2 mins)
-        // const gracePeriod = 120 * 1000; // 2 minutes
-        // if (Math.abs(delay) < gracePeriod) {
-        //     sendNotification(notification);
-        // }
     }
 };
 
@@ -103,7 +105,8 @@ const sendNotification = (notification) => {
             data: {
                 notificationId: notification.id,
                 channelId: notification.channelId,
-                programStart: notification.programStart
+                programStart: notification.programStart,
+                programId: notification.programId // Pass programId for navigation
             }
         };
 
@@ -112,8 +115,8 @@ const sendNotification = (notification) => {
         notif.onclick = (event) => {
             event.preventDefault(); // Prevent the browser from focusing the current tab
             window.focus(); // Bring the current window to focus
-            const { channelId, programStart } = notif.data;
-            navigateToProgramInGuide(channelId, programStart);
+            const { channelId, programStart, programId } = notif.data; // Retrieve programId
+            navigateToProgramInGuide(channelId, programStart, programId); // Pass programId
             notif.close(); // Close the notification after click
         };
     } else {
@@ -147,6 +150,7 @@ export const loadAndScheduleNotifications = async () => {
             scheduledNotificationTimers.clear();
 
             notifications.forEach(notif => {
+                // The backend now returns complete notification objects, so we can use them directly
                 scheduleBrowserNotification(notif);
             });
             renderNotifications(); // Render notification list immediately
@@ -204,6 +208,7 @@ export const addOrRemoveNotification = async (programDetails) => {
              return;
         }
 
+        // Construct the full notification object to be sent and used locally
         const newNotification = {
             channelId: programDetails.channelId,
             channelName: programDetails.channelName,
@@ -226,10 +231,17 @@ export const addOrRemoveNotification = async (programDetails) => {
             });
 
             if (response && response.ok) {
-                const addedNotification = await response.json();
-                guideState.userNotifications.push(addedNotification);
-                scheduleBrowserNotification(addedNotification);
-                showNotification(`Notification set for "${addedNotification.programTitle}"!`);
+                const responseData = await response.json(); // This contains { success: true, id: newId }
+                
+                // Add the ID from the server response to the full notification object
+                newNotification.id = responseData.id; 
+
+                // Update local state with the complete notification object
+                guideState.userNotifications.push(newNotification);
+                // Schedule notification using the complete object
+                scheduleBrowserNotification(newNotification);
+                
+                showNotification(`Notification set for "${newNotification.programTitle}"!`);
             } else {
                 const errorData = await response.json();
                 showNotification(`Failed to add notification: ${errorData.error}`, true);
@@ -305,12 +317,16 @@ export const renderNotifications = () => {
     // Filter out past notifications and sort by scheduled time
     const now = new Date();
     const upcomingNotifications = guideState.userNotifications
-        .filter(n => new Date(n.scheduledTime).getTime() > now.getTime() - (5 * 60 * 1000)) // Keep notifications that were scheduled for up to 5 mins ago in case of slight delay
+        // Filter out notifications that were scheduled more than 5 minutes ago (grace period)
+        .filter(n => new Date(n.scheduledTime).getTime() > (now.getTime() - (5 * 60 * 1000))) 
         .sort((a, b) => new Date(a.scheduledTime) - new Date(b.scheduledTime));
 
     if (upcomingNotifications.length === 0) {
-        notificationListEl.innerHTML = `<p class="text-center text-gray-500 py-4">No upcoming notifications.</p>`;
+        UIElements.noNotificationsMessage.classList.remove('hidden'); // Show "no notifications" message
+        notificationListEl.innerHTML = ``; // Clear the list
         return;
+    } else {
+        UIElements.noNotificationsMessage.classList.add('hidden'); // Hide "no notifications" message
     }
 
     notificationListEl.innerHTML = upcomingNotifications.map(notif => {
