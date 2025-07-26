@@ -733,7 +733,7 @@ app.post('/api/save/settings', requireAuth, async (req, res) => {
         const updatedSettings = { ...currentSettings, ...req.body };
 
         const userSpecificKeys = ['favorites', 'playerDimensions', 'programDetailsDimensions', 'recentChannels'];
-        // NEW: Add 'notificationLeadTime' to userSpecificKeys so it's only stored as user-specific
+        // Add 'notificationLeadTime' to userSpecificKeys so it's only stored as user-specific
         userSpecificKeys.push('notificationLeadTime');
         userSpecificKeys.forEach(key => delete updatedSettings[key]); // Ensure these are not saved globally
 
@@ -757,7 +757,6 @@ app.post('/api/save/settings', requireAuth, async (req, res) => {
     }
 });
 
-// --- FIX START: Changed UPSERT logic for user_settings to be more compatible with SQLite ---
 app.post('/api/user/settings', requireAuth, (req, res) => {
     const { key, value } = req.body;
     if (!key) return res.status(400).json({ error: 'A setting key is required.' });
@@ -791,12 +790,11 @@ app.post('/api/user/settings', requireAuth, (req, res) => {
             } else {
                 res.json({ success: true });
             }
-        } // The previously missing closing brace for the UPDATE db.run callback
+        }
     );
 });
-// --- FIX END ---
 
-// NEW: Notification API Endpoints
+// Notification API Endpoints
 app.post('/api/notifications', requireAuth, (req, res) => {
     // Add this console.log to see the raw request body on the server side
     console.log('[SERVER] Received notification payload:', req.body);
@@ -885,7 +883,7 @@ app.delete('/api/data', requireAuth, (req, res) => {
         db.run(`DELETE FROM user_settings WHERE user_id = ?`, [req.session.userId], (err) => {
             if (err) console.error("Error clearing user settings from DB:", err);
         });
-        // NEW: Clear user-specific notifications
+        // Clear user-specific notifications
         db.run(`DELETE FROM notifications WHERE user_id = ?`, [req.session.userId], (err) => {
             if (err) console.error("Error clearing user notifications from DB:", err);
         });
