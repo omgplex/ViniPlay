@@ -59,9 +59,18 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                 PRIMARY KEY (user_id, key)
             )`);
-            // NEW: Drop the notifications table if it exists (Option 1)
-            db.run(`DROP TABLE IF EXISTS notifications;`);
-            // NEW: Create notifications table with programId column
+            // Option 2: Attempt to add programId column if it doesn't exist.
+            // SQLite's ALTER TABLE ADD COLUMN does not support IF NOT EXISTS.
+            // This will log an error if the column already exists, but won't crash the server.
+            db.run(`ALTER TABLE notifications ADD COLUMN programId TEXT;`, (err) => {
+                if (err && !err.message.includes('duplicate column name')) {
+                    console.error("Error attempting to add programId column to notifications table:", err.message);
+                } else if (!err) {
+                    console.log("Added programId column to notifications table successfully (if it didn't exist).");
+                }
+            });
+            // Ensure the notifications table is created if it doesn't exist.
+            // This also ensures 'programId' is part of the schema for new installations.
             db.run(`CREATE TABLE IF NOT EXISTS notifications (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -73,7 +82,7 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 programStart TEXT NOT NULL,
                 programStop TEXT NOT NULL,
                 notificationTime TEXT NOT NULL,
-                programId TEXT NOT NULL, -- New column for unique program identifier
+                programId TEXT NOT NULL, -- New column for unique program identifier, set to NOT NULL for new entries
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )`);
         });
