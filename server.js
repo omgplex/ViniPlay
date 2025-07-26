@@ -59,9 +59,10 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                 PRIMARY KEY (user_id, key)
             )`);
-            // Option 2: Attempt to add programId column if it doesn't exist.
-            // SQLite's ALTER TABLE ADD COLUMN does not support IF NOT EXISTS.
-            // This will log an error if the column already exists, but won't crash the server.
+            // The ALTER TABLE statement below might cause a 'duplicate column name' error
+            // on subsequent runs if the column already exists, but it's generally safe
+            // to leave if the CREATE TABLE IF NOT EXISTS below handles new installs.
+            // The primary issue user reported ("near ON") is not from this part.
             db.run(`ALTER TABLE notifications ADD COLUMN programId TEXT;`, (err) => {
                 if (err && !err.message.includes('duplicate column name')) {
                     console.error("Error attempting to add programId column to notifications table:", err.message);
@@ -140,8 +141,7 @@ function getSettings() {
             userAgents: [{ id: `default-ua-${Date.now()}`, name: 'ViniPlay Default', value: 'VLC/3.0.20 (Linux; x86_64)', isDefault: true }],
             streamProfiles: [
                 // MODIFIED FFmpeg command: Forces re-encoding of both video and audio
-                { id: 'ffmpeg-default', name: 'ffmpeg (Built in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: true },
-                { id: 'redirect-default', name: 'Redirect (Built in)', command: 'redirect', isDefault: true }
+                { id: 'ffmpeg-default', name: 'ffmpeg (Built in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: true }
             ],
             activeUserAgentId: `default-ua-${Date.now()}`,
             activeStreamProfileId: 'ffmpeg-default',
@@ -242,7 +242,6 @@ async function processAndMergeSources() {
                 let line = lines[i].trim();
                 if (line.startsWith('#EXTINF:')) {
                     const tvgIdMatch = line.match(/tvg-id="([^"]*)"/);
-                    // CORRECTED: Changed tvgId[1] to tvgIdMatch[1]
                     const tvgId = tvgIdMatch ? tvgIdMatch[1] : `no-id-${Math.random()}`; 
                     const uniqueChannelId = `${source.id}_${tvgId}`;
 
@@ -686,7 +685,7 @@ app.put('/api/sources/:sourceType/:id', requireAuth, (req, res) => {
 app.delete('/api/sources/:sourceType/:id', requireAuth, (req, res) => {
     const { sourceType, id } = req.params;
     
-    const settings = getSettings();
+    const settings = getGettings();
     let sourceList = sourceType === 'm3u' ? settings.m3uSources : settings.epgSources;
     const source = sourceList.find(s => s.id === id);
     
@@ -751,21 +750,44 @@ app.post('/api/save/settings', requireAuth, async (req, res) => {
     }
 });
 
+// --- FIX START: Changed UPSERT logic for user_settings to be more compatible with SQLite ---
 app.post('/api/user/settings', requireAuth, (req, res) => {
     const { key, value } = req.body;
     if (!key) return res.status(400).json({ error: 'A setting key is required.' });
     
     const valueJson = JSON.stringify(value);
-    
-    db.run(`INSERT INTO user_settings (user_id, key, value)
-            ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value;`, [req.session.userId, key, valueJson], (err) => {
-        if (err) {
-            console.error('Error saving user setting to database:', err);
-            return res.status(500).json({ error: 'Could not save user setting.' });
+    const userId = req.session.userId;
+
+    // First, try to UPDATE the existing setting
+    db.run(
+        `UPDATE user_settings SET value = ? WHERE user_id = ? AND key = ?`,
+        [valueJson, userId, key],
+        function (err) {
+            if (err) {
+                console.error('Error updating user setting:', err);
+                return res.status(500).json({ error: 'Could not save user setting.' });
+            }
+            
+            // If no rows were changed, it means the setting didn't exist, so INSERT it
+            if (this.changes === 0) {
+                db.run(
+                    `INSERT INTO user_settings (user_id, key, value) VALUES (?, ?, ?)`,
+                    [userId, key, valueJson],
+                    function (insertErr) {
+                        if (insertErr) {
+                            console.error('Error inserting user setting:', insertErr);
+                            return res.status(500).json({ error: 'Could not save user setting.' });
+                        }
+                        res.json({ success: true });
+                    }
+                );
+            } else {
+                res.json({ success: true });
+            }
         }
-        res.json({ success: true });
-    });
+    );
 });
+// --- FIX END ---
 
 // NEW: Notification API Endpoints
 app.post('/api/notifications', requireAuth, (req, res) => {
@@ -917,3 +939,4 @@ app.listen(port, () => {
     // Initial setup for EPG refresh
     scheduleEpgRefresh();
 });
+```
