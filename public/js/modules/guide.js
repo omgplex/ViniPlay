@@ -93,7 +93,9 @@ export function finalizeGuideLoad(isFirstLoad = false) {
                         name: channel.displayName || channel.name,
                         logo: channel.logo,
                         source: channel.source,
-                    }
+                    },
+                    // Ensure a programId is generated for programs in the search index
+                    programId: `${channel.id}-${progStart.toISOString()}-${progStop.toISOString()}`
                 });
             });
         }
@@ -241,11 +243,20 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
                 const isLive = now >= progStart && now < progStop;
                 const progressWidth = isLive ? ((now - progStart) / durationMs) * 100 : 0;
                 
+                // Construct the unique programId using channel.id, program start, and program stop
+                const uniqueProgramId = `${channel.id}-${progStart.toISOString()}-${progStop.toISOString()}`;
+
                 // NEW: Check if this program has an active notification
-                const hasNotification = findNotificationForProgram(prog, channel.id);
+                const hasNotification = findNotificationForProgram({
+                    programId: uniqueProgramId, // Pass the unique programId for lookup
+                    title: prog.title, // Also pass title, start, stop for fallback in findNotificationForProgram
+                    start: prog.start,
+                    stop: prog.stop
+                }, channel.id);
                 const notificationClass = hasNotification ? 'has-notification' : '';
 
-                programsHTML += `<div class="programme-item absolute top-1 bottom-1 bg-gray-800 rounded-md p-2 overflow-hidden flex flex-col justify-center z-5 ${isLive ? 'live' : ''} ${progStop < now ? 'past' : ''} ${notificationClass}" style="left:${left}px; width:${Math.max(0, width - 2)}px" data-channel-url="${channel.url}" data-channel-id="${channel.id}" data-channel-name="${channelName}" data-prog-title="${prog.title}" data-prog-desc="${prog.desc}" data-prog-start="${progStart.toISOString()}" data-prog-stop="${progStop.toISOString()}" data-prog-id="${prog.title}-${progStart.toISOString()}-${progStop.toISOString()}"><div class="programme-progress" style="width:${progressWidth}%"></div><p class="prog-title text-white font-semibold truncate relative z-10">${prog.title}</p><p class="prog-time text-gray-400 truncate relative z-10">${progStart.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p></div>`;
+                // Added data-prog-id attribute as requested
+                programsHTML += `<div class="programme-item absolute top-1 bottom-1 bg-gray-800 rounded-md p-2 overflow-hidden flex flex-col justify-center z-5 ${isLive ? 'live' : ''} ${progStop < now ? 'past' : ''} ${notificationClass}" style="left:${left}px; width:${Math.max(0, width - 2)}px" data-channel-url="${channel.url}" data-channel-id="${channel.id}" data-channel-name="${channelName}" data-prog-title="${prog.title}" data-prog-desc="${prog.desc}" data-prog-start="${progStart.toISOString()}" data-prog-stop="${progStop.toISOString()}" data-prog-id="${uniqueProgramId}"><div class="programme-progress" style="width:${progressWidth}%"></div><p class="prog-title text-white font-semibold truncate relative z-10">${prog.title}</p><p class="prog-time text-gray-400 truncate relative z-10">${progStart.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p></div>`;
             });
             const timelineRowHTML = `<div class="timeline-row" style="width: ${timelineWidth}px;">${programsHTML}</div>`;
 
@@ -578,7 +589,7 @@ export function setupGuideEventListeners() {
                 start: progItem.dataset.progStart,
                 stop: progItem.dataset.progStop,
                 channelId: channelId,
-                programId: progItem.dataset.progId,
+                programId: progItem.dataset.progId, // This now correctly retrieves the unique ID
             };
 
             const channelData = guideState.channels.find(c => c.id === channelId);
@@ -601,6 +612,8 @@ export function setupGuideEventListeners() {
             const now = new Date();
             const programStopTime = new Date(programData.stop).getTime();
             const isProgramRelevantForNotification = programStopTime > now.getTime();
+            
+            // Pass programData object directly to findNotificationForProgram
             const notification = findNotificationForProgram(programData, channelId);
 
             if (isProgramRelevantForNotification) {
