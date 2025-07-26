@@ -59,7 +59,9 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                 PRIMARY KEY (user_id, key)
             )`);
-            // NEW: Create notifications table
+            // NEW: Drop the notifications table if it exists (Option 1)
+            db.run(`DROP TABLE IF EXISTS notifications;`);
+            // NEW: Create notifications table with programId column
             db.run(`CREATE TABLE IF NOT EXISTS notifications (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -71,6 +73,7 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 programStart TEXT NOT NULL,
                 programStop TEXT NOT NULL,
                 notificationTime TEXT NOT NULL,
+                programId TEXT NOT NULL, -- New column for unique program identifier
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )`);
         });
@@ -756,15 +759,17 @@ app.post('/api/user/settings', requireAuth, (req, res) => {
 
 // NEW: Notification API Endpoints
 app.post('/api/notifications', requireAuth, (req, res) => {
-    const { channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime } = req.body;
+    // Include programId in the destructuring
+    const { channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime, programId } = req.body;
 
-    if (!channelId || !channelName || !programTitle || !programStart || !programStop || !notificationTime) {
+    // Validate required fields, including programId
+    if (!channelId || !channelName || !programTitle || !programStart || !programStop || !notificationTime || !programId) {
         return res.status(400).json({ error: 'Missing required notification fields.' });
     }
 
-    db.run(`INSERT INTO notifications (user_id, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [req.session.userId, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime],
+    db.run(`INSERT INTO notifications (user_id, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime, programId)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [req.session.userId, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime, programId],
         function (err) {
             if (err) {
                 console.error('Error adding notification to database:', err);
@@ -776,7 +781,8 @@ app.post('/api/notifications', requireAuth, (req, res) => {
 });
 
 app.get('/api/notifications', requireAuth, (req, res) => {
-    db.all(`SELECT * FROM notifications WHERE user_id = ? ORDER BY notificationTime ASC`,
+    // Select all columns including programId
+    db.all(`SELECT id, user_id, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime, programId FROM notifications WHERE user_id = ? ORDER BY notificationTime ASC`,
         [req.session.userId],
         (err, rows) => {
             if (err) {
