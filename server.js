@@ -733,7 +733,7 @@ app.post('/api/save/settings', requireAuth, async (req, res) => {
         const updatedSettings = { ...currentSettings, ...req.body };
 
         const userSpecificKeys = ['favorites', 'playerDimensions', 'programDetailsDimensions', 'recentChannels'];
-        // Add 'notificationLeadTime' to userSpecificKeys so it's only stored as user-specific
+        // NEW: Add 'notificationLeadTime' to userSpecificKeys so it's only stored as user-specific
         userSpecificKeys.push('notificationLeadTime');
         userSpecificKeys.forEach(key => delete updatedSettings[key]); // Ensure these are not saved globally
 
@@ -757,6 +757,7 @@ app.post('/api/save/settings', requireAuth, async (req, res) => {
     }
 });
 
+// --- FIX START: Changed UPSERT logic for user_settings to be more compatible with SQLite ---
 app.post('/api/user/settings', requireAuth, (req, res) => {
     const { key, value } = req.body;
     if (!key) return res.status(400).json({ error: 'A setting key is required.' });
@@ -790,11 +791,12 @@ app.post('/api/user/settings', requireAuth, (req, res) => {
             } else {
                 res.json({ success: true });
             }
-        }
+        } // The previously missing closing brace for the UPDATE db.run callback
     );
 });
+// --- FIX END ---
 
-// Notification API Endpoints
+// NEW: Notification API Endpoints
 app.post('/api/notifications', requireAuth, (req, res) => {
     // Add this console.log to see the raw request body on the server side
     console.log('[SERVER] Received notification payload:', req.body);
@@ -831,21 +833,7 @@ app.get('/api/notifications', requireAuth, (req, res) => {
                 console.error('Error fetching notifications from database:', err);
                 return res.status(500).json({ error: 'Could not retrieve notifications.' });
             }
-            // FIX: Map 'notificationTime' from DB to 'scheduledTime' for consistency with frontend
-            const notifications = rows.map(row => ({
-                id: row.id,
-                userId: row.user_id,
-                channelId: row.channelId,
-                channelName: row.channelName,
-                channelLogo: row.channelLogo,
-                programTitle: row.programTitle,
-                programDesc: row.programDesc,
-                programStart: row.programStart,
-                programStop: row.programStop,
-                scheduledTime: row.notificationTime, // <--- THE KEY FIX IS HERE
-                programId: row.programId
-            }));
-            res.json(notifications);
+            res.json(rows);
         }
     );
 });
@@ -883,7 +871,7 @@ app.delete('/api/data', requireAuth, (req, res) => {
         db.run(`DELETE FROM user_settings WHERE user_id = ?`, [req.session.userId], (err) => {
             if (err) console.error("Error clearing user settings from DB:", err);
         });
-        // Clear user-specific notifications
+        // NEW: Clear user-specific notifications
         db.run(`DELETE FROM notifications WHERE user_id = ?`, [req.session.userId], (err) => {
             if (err) console.error("Error clearing user notifications from DB:", err);
         });
@@ -958,4 +946,3 @@ app.listen(port, () => {
     // Initial setup for EPG refresh
     scheduleEpgRefresh();
 });
-```
