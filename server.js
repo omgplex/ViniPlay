@@ -768,11 +768,15 @@ app.post('/api/user/settings', requireAuth, (req, res) => {
 
 // NEW: Notification API Endpoints
 app.post('/api/notifications', requireAuth, (req, res) => {
+    // Add this console.log to see the raw request body on the server side
+    console.log('[SERVER] Received notification payload:', req.body);
+
     // Include programId in the destructuring
     const { channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime, programId } = req.body;
 
     // Validate required fields, including programId
     if (!channelId || !channelName || !programTitle || !programStart || !programStop || !notificationTime || !programId) {
+        console.error('[SERVER] Missing required notification fields. Received:', { channelId, channelName, programTitle, programStart, programStop, notificationTime, programId });
         return res.status(400).json({ error: 'Missing required notification fields.' });
     }
 
