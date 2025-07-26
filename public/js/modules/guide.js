@@ -334,7 +334,7 @@ const updateNowLine = (guideStartUtc, shouldScroll = false) => {
                     left: Math.max(0, scrollLeft), // Ensure scroll position is not negative
                     behavior: 'smooth'
                 });
-            }, 100); // A 100ms delay is usually enough
+            }, 500); // Increased delay for better rendering stability
         }        
     } else {
         nowLineEl.classList.add('hidden');
@@ -597,13 +597,13 @@ export function setupGuideEventListeners() {
                 closeModal(UIElements.programDetailsModal);
             };
 
-            // NEW: Notification button logic
+            // NEW: Notification button logic - Show button if program is not yet finished
             const now = new Date();
-            const programStartTime = new Date(programData.start).getTime();
-            const isProgramInFuture = programStartTime > now.getTime();
+            const programStopTime = new Date(programData.stop).getTime();
+            const isProgramRelevantForNotification = programStopTime > now.getTime();
             const notification = findNotificationForProgram(programData, channelId);
 
-            if (isProgramInFuture) {
+            if (isProgramRelevantForNotification) {
                 UIElements.programDetailsNotifyBtn.classList.remove('hidden');
                 UIElements.programDetailsNotifyBtn.textContent = notification ? 'Notification Set' : 'Notify Me';
                 UIElements.programDetailsNotifyBtn.disabled = !notification && Notification.permission === 'denied'; // Disable if notif already denied
