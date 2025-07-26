@@ -212,7 +212,7 @@ export const addOrRemoveNotification = async (programDetails) => {
             programStart: programDetails.programStart,
             programStop: programDetails.programStop,
             programDesc: programDetails.programDesc,
-            programId: programDetails.programId,
+            programId: programDetails.programId, // Make sure programId is included here
             notificationLeadTime: notificationLeadTime,
             scheduledTime: scheduledTime.toISOString(),
             createdAt: new Date().toISOString()
@@ -273,13 +273,20 @@ export const deleteProgramNotification = async (notificationId) => {
 
 /**
  * Checks if a given program has an active notification set.
- * @param {object} program - The program object with title, start, stop.
+ * @param {object} program - The program object with programId, title, start, stop.
  * @param {string} channelId - The ID of the channel the program belongs to.
  * @returns {object|null} The notification object if found, otherwise null.
  */
 export const findNotificationForProgram = (program, channelId) => {
-    // We need a stable identifier for a program. Using title + start + stop is usually reliable.
-    const programIdentifier = `${program.title}-${program.start}-${program.stop}`;
+    // Prefer using the unique programId for reliable lookup
+    if (program.programId) {
+        return guideState.userNotifications.find(n =>
+            n.channelId === channelId &&
+            n.programId === program.programId
+        );
+    }
+    // Fallback to older identification methods if programId is not present
+    // This part might not be needed once all programs have programId
     return guideState.userNotifications.find(n => 
         n.channelId === channelId &&
         n.programTitle === program.title &&
@@ -321,7 +328,7 @@ export const renderNotifications = () => {
                     <p class="text-blue-400 text-xs mt-1">Notification at ${formattedNotificationTime} (${notif.notificationLeadTime} mins before)</p>
                 </div>
                 <div class="flex items-center gap-2 flex-shrink-0 ml-4">
-                    <button class="action-btn view-program-btn p-2 rounded-full hover:bg-gray-700" title="View in TV Guide" data-channel-id="${notif.channelId}" data-program-start="${notif.programStart}">
+                    <button class="action-btn view-program-btn p-2 rounded-full hover:bg-gray-700" title="View in TV Guide" data-channel-id="${notif.channelId}" data-program-start="${notif.programStart}" data-program-id="${notif.programId}">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400 hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.555-4.555A.5.5 0 0120 6v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h10l-4 4"></path><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v7a1 1 0 001 1h7"></path></svg>
                     </button>
                     <button class="action-btn delete-notification-btn p-2 rounded-full hover:bg-red-900" title="Delete Notification" data-notification-id="${notif.id}">
@@ -367,7 +374,8 @@ const handleNotificationListClick = (e) => {
     } else if (viewBtn) {
         const channelId = viewBtn.dataset.channelId;
         const programStart = viewBtn.dataset.programStart;
-        navigateToProgramInGuide(channelId, programStart);
+        const programId = viewBtn.dataset.programId; // Get programId from data attribute
+        navigateToProgramInGuide(channelId, programStart, programId); // Pass programId
     }
 };
 
@@ -376,8 +384,9 @@ const handleNotificationListClick = (e) => {
  * Navigates to the TV Guide page and attempts to scroll to and highlight a specific program.
  * @param {string} channelId - The ID of the channel.
  * @param {string} programStart - The ISO string start time of the program.
+ * @param {string} [programId] - The unique ID of the program (optional, for more precise scrolling).
  */
-export const navigateToProgramInGuide = (channelId, programStart) => {
+export const navigateToProgramInGuide = (channelId, programStart, programId = null) => {
     navigate('/tvguide'); // Switch to the TV Guide tab first
 
     // Use a timeout to ensure the guide has rendered before attempting to scroll/highlight
@@ -394,7 +403,16 @@ export const navigateToProgramInGuide = (channelId, programStart) => {
         }
 
         setTimeout(() => {
-            const programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programStart}"][data-channel-id="${channelId}"]`);
+            let programElement;
+            if (programId) {
+                // Try to find using the unique programId first
+                programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-id="${programId}"][data-channel-id="${channelId}"]`);
+            }
+            if (!programElement) {
+                // Fallback to channelId and programStart if programId not found or not provided
+                programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programStart}"][data-channel-id="${channelId}"]`);
+            }
+
             if(programElement) {
                 const scrollLeft = programElement.offsetLeft - (UIElements.guideContainer.clientWidth / 4);
                 UIElements.guideContainer.scrollTo({ left: scrollLeft, behavior: 'smooth' });
