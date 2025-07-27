@@ -85,6 +85,7 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                 PRIMARY KEY (user_id, key)
             )`);
+            // NEW: Added status and triggeredAt columns to the notifications table
             db.run(`CREATE TABLE IF NOT EXISTS notifications (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -97,6 +98,8 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 programStop TEXT NOT NULL,
                 notificationTime TEXT NOT NULL,
                 programId TEXT NOT NULL,
+                status TEXT DEFAULT 'pending', -- NEW: 'pending', 'sent', 'expired'
+                triggeredAt TEXT,              -- NEW: Timestamp when notification was sent/expired
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )`);
             db.run(`CREATE TABLE IF NOT EXISTS push_subscriptions (
@@ -843,8 +846,9 @@ app.post('/api/notifications', requireAuth, (req, res) => {
         return res.status(400).json({ error: 'Missing required notification fields.' });
     }
 
-    db.run(`INSERT INTO notifications (user_id, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime, programId)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    // NEW: Insert with 'pending' status
+    db.run(`INSERT INTO notifications (user_id, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime, programId, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
         [req.session.userId, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, scheduledTime, programId],
         function (err) {
             if (err) {
@@ -857,7 +861,11 @@ app.post('/api/notifications', requireAuth, (req, res) => {
 });
 
 app.get('/api/notifications', requireAuth, (req, res) => {
-    db.all(`SELECT id, user_id, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime as scheduledTime, programId FROM notifications WHERE user_id = ? ORDER BY notificationTime ASC`,
+    // NEW: Fetch all notifications, the frontend will filter 'upcoming' vs 'past/expired'
+    db.all(`SELECT id, user_id, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime as scheduledTime, programId, status, triggeredAt
+            FROM notifications
+            WHERE user_id = ?
+            ORDER BY notificationTime DESC`, // Ordered by notification time (newest first for 'past' section)
         [req.session.userId],
         (err, rows) => {
             if (err) {
@@ -898,6 +906,7 @@ app.delete('/api/data', requireAuth, (req, res) => {
         }
         
         db.run(`DELETE FROM user_settings WHERE user_id = ?`, [req.session.userId]);
+        // Also clear all notifications for the user upon full data clear
         db.run(`DELETE FROM notifications WHERE user_id = ?`, [req.session.userId]);
         db.run(`DELETE FROM push_subscriptions WHERE user_id = ?`, [req.session.userId]);
 
@@ -957,8 +966,9 @@ app.get('/stream', requireAuth, (req, res) => {
 async function checkAndSendNotifications() {
     try {
         const now = new Date();
+        // NEW: Select only pending notifications where notificationTime is due
         const dueNotifications = await new Promise((resolve, reject) => {
-            db.all("SELECT * FROM notifications WHERE notificationTime <= ?", [now.toISOString()], (err, rows) => {
+            db.all("SELECT * FROM notifications WHERE status = 'pending' AND notificationTime <= ?", [now.toISOString()], (err, rows) => {
                 if (err) reject(err);
                 else resolve(rows);
             });
@@ -969,6 +979,16 @@ async function checkAndSendNotifications() {
         }
 
         for (const notification of dueNotifications) {
+            // NEW: Check if the program has already ended
+            if (new Date(notification.programStop).getTime() <= now.getTime()) {
+                // Program has ended, mark notification as 'expired'
+                db.run("UPDATE notifications SET status = 'expired', triggeredAt = ? WHERE id = ?", [now.toISOString(), notification.id], (err) => {
+                    if (err) console.error(`[Push] Error marking notification ${notification.id} as expired:`, err);
+                });
+                console.log(`[Push] Notification for "${notification.programTitle}" (${notification.id}) expired. Program already ended.`);
+                continue; // Skip sending this notification
+            }
+
             const subscriptions = await new Promise((resolve, reject) => {
                 db.all("SELECT * FROM push_subscriptions WHERE user_id = ?", [notification.user_id], (err, rows) => {
                     if (err) reject(err);
@@ -981,7 +1001,7 @@ async function checkAndSendNotifications() {
                 body: `Starts at ${new Date(notification.programStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} on ${notification.channelName}`,
                 icon: notification.channelLogo || 'https://i.imgur.com/rwa8SjI.png',
                 data: {
-                    url: `/tvguide?channelId=${notification.channelId}&programId=${notification.programId}`
+                    url: `/tvguide?channelId=${notification.channelId}&programId=${notification.programId}` // NEW: Include programId
                 }
             });
 
@@ -992,7 +1012,13 @@ async function checkAndSendNotifications() {
                 };
 
                 return webpush.sendNotification(pushSubscription, payload)
-                    .then(() => console.log(`[Push] Notification sent to endpoint: ${sub.endpoint}`))
+                    .then(() => {
+                        console.log(`[Push] Notification sent to endpoint: ${sub.endpoint}`);
+                        // NEW: Mark notification as 'sent' after successful delivery
+                        db.run("UPDATE notifications SET status = 'sent', triggeredAt = ? WHERE id = ?", [now.toISOString(), notification.id], (err) => {
+                            if (err) console.error(`[Push] Error updating notification ${notification.id} status to sent:`, err);
+                        });
+                    })
                     .catch(error => {
                         if (error.statusCode === 410) {
                             console.log(`[Push] Subscription expired or invalid. Deleting endpoint: ${sub.endpoint}`);
@@ -1005,9 +1031,8 @@ async function checkAndSendNotifications() {
 
             await Promise.all(sendPromises);
 
-            db.run("DELETE FROM notifications WHERE id = ?", [notification.id], (err) => {
-                if(err) console.error(`[Push] Error deleting sent notification ${notification.id}:`, err);
-            });
+            // Removed original DELETE FROM notifications WHERE id = ?
+            // Now handled by UPDATE status
         }
     } catch (error) {
         console.error('[Push] Error in checkAndSendNotifications:', error);
@@ -1036,4 +1061,4 @@ app.listen(port, () => {
     notificationCheckInterval = setInterval(checkAndSendNotifications, 60000);
     console.log('[Push] Notification checker started. Will check for due notifications every minute.');
 });
-
+```
