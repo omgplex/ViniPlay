@@ -1,215 +1,132 @@
 /**
  * notification.js
- * * Manages client-side browser notifications for upcoming programs.
- * Handles permission requests, scheduling, display, and interaction with backend API.
+ * Manages client-side logic for push notifications.
+ * Handles subscribing/unsubscribing and interacts with the backend API.
  */
 
-import { apiFetch } from './api.js';
-import { showNotification, navigate, showConfirm } from './ui.js';
-import { UIElements, guideState } from './state.js';
-import { handleSearchAndFilter } from './guide.js'; // To re-render guide for visual indicators
+import { showNotification, showConfirm, navigate } from './ui.js';
+import { UIElements, guideState, appState } from './state.js';
+import { handleSearchAndFilter } from './guide.js';
+import { getVapidKey, subscribeToPush, addProgramNotification, getProgramNotifications, deleteProgramNotification, unsubscribeFromPush } from './api.js';
 
-// Store scheduled notification timers
-const scheduledNotificationTimers = new Map(); // Map<notification.id, setTimeoutId>
+let isSubscribed = false;
 
 /**
- * Requests notification permission from the browser.
- * @returns {Promise<string>} The permission status ('granted', 'denied', or 'default').
+ * Converts a URL-safe base64 string to a Uint8Array.
+ * This is needed for the VAPID public key.
+ * @param {string} base64String
+ * @returns {Uint8Array}
  */
-export const requestNotificationPermission = async () => {
-    if (!('Notification' in window)) {
-        showNotification("This browser does not support desktop notifications.", true);
-        return 'unsupported';
+function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
     }
-
-    if (Notification.permission === 'granted') {
-        return 'granted';
-    } else if (Notification.permission === 'denied') {
-        showNotification("Notification permission denied. Please enable it in your browser settings.", true);
-        return 'denied';
-    } else {
-        // Ask for permission
-        const permission = await Notification.requestPermission();
-        if (permission === 'granted') {
-            showNotification("Notification permission granted!");
-        } else {
-            showNotification("Notification permission denied.", true);
-        }
-        return permission;
-    }
-};
+    return outputArray;
+}
 
 /**
- * Schedules a single browser notification.
- * @param {object} notification - The notification object from the backend (or compiled on frontend).
+ * Subscribes the user to push notifications.
  */
-const scheduleBrowserNotification = (notification) => {
-    // Clear any existing timer for this notification to prevent duplicates
-    cancelBrowserNotification(notification.id);
-
-    const now = new Date();
-    const notificationTime = new Date(notification.scheduledTime);
-    const delay = notificationTime.getTime() - now.getTime();
-
-    // Ensure notificationTime is a valid date before proceeding
-    if (isNaN(delay)) {
-        console.warn(`[Notifications] Cannot schedule notification: Invalid scheduled time for "${notification.programTitle || notification.id}".`);
-        return; // Exit if the date is invalid
-    }
-
-    if (delay > 0) {
-        console.log(`[Notifications] Scheduling notification for "${notification.programTitle}" in ${delay / 1000} seconds.`);
-        const timeoutId = setTimeout(() => {
-            sendNotification(notification);
-            // After sending, remove from local state and re-render
-            guideState.userNotifications = guideState.userNotifications.filter(n => n.id !== notification.id);
-            renderNotifications();
-            handleSearchAndFilter(false); // Re-render guide to remove visual indicator
-            scheduledNotificationTimers.delete(notification.id);
-        }, delay);
-        scheduledNotificationTimers.set(notification.id, timeoutId);
-    } else {
-        console.warn(`[Notifications] Notification for "${notification.programTitle || notification.id}" is in the past or too soon to schedule. Not scheduling.`);
-        // If it's in the past, remove it from local state to clean up.
-        // Also remove if it was too soon (delay <= 0)
-        guideState.userNotifications = guideState.userNotifications.filter(n => n.id !== notification.id);
-        renderNotifications();
-        handleSearchAndFilter(false);
-    }
-};
-
-/**
- * Cancels a scheduled browser notification timer.
- * @param {string} notificationId - The ID of the notification to cancel.
- */
-const cancelBrowserNotification = (notificationId) => {
-    const timeoutId = scheduledNotificationTimers.get(notificationId);
-    if (timeoutId) {
-        clearTimeout(timeoutId);
-        scheduledNotificationTimers.delete(notificationId);
-        console.log(`[Notifications] Canceled scheduled browser notification for ID: ${notificationId}`);
-    }
-};
-
-/**
- * Displays a desktop notification.
- * @param {object} notification - The notification object.
- */
-const sendNotification = (notification) => {
-    if (Notification.permission === 'granted') {
-        const programStartTime = new Date(notification.programStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        const programStopTime = new Date(notification.programStop).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        const options = {
-            body: `${notification.programTitle}\n${programStartTime} - ${programStopTime} on ${notification.channelName}\n${notification.programDesc || 'No description available.'}`,
-            icon: notification.channelLogo || 'https://placehold.co/48x48/1f2937/d1d5db?text=?;&font=Inter',
-            data: {
-                notificationId: notification.id,
-                channelId: notification.channelId,
-                programStart: notification.programStart,
-                programId: notification.programId // Pass programId for navigation
-            }
-        };
-
-        const notif = new Notification(`Upcoming: ${notification.programTitle}`, options);
-
-        notif.onclick = (event) => {
-            event.preventDefault(); // Prevent the browser from focusing the current tab
-            window.focus(); // Bring the current window to focus
-            const { channelId, programStart, programId } = notif.data; // Retrieve programId
-            navigateToProgramInGuide(channelId, programStart, programId); // Pass programId
-            notif.close(); // Close the notification after click
-        };
-    } else {
-        console.warn('Notification permission not granted, cannot send notification.');
-    }
-};
-
-/**
- * Loads all active notifications from the backend and schedules them.
- */
-export const loadAndScheduleNotifications = async () => {
-    const permissionStatus = await requestNotificationPermission();
-    if (permissionStatus !== 'granted') {
-        console.warn('Notifications will not be scheduled due to permission issues.');
-        // If permission is denied, clear any pending notifications in state as they can't be delivered
-        guideState.userNotifications = [];
-        renderNotifications(); // Clear list
-        handleSearchAndFilter(false); // Update guide indicators
+export async function subscribeUserToPush() {
+    if (!appState.swRegistration) {
+        console.warn('Service worker not registered yet. Cannot subscribe.');
         return;
     }
 
     try {
-        const response = await apiFetch('/api/notifications');
-        if (response && response.ok) {
-            const notifications = await response.json();
-            guideState.userNotifications = notifications;
-            console.log(`[Notifications] Loaded ${notifications.length} notifications from server.`);
-            
-            // Clear all existing timeouts before scheduling new ones
-            scheduledNotificationTimers.forEach(timeoutId => clearTimeout(timeoutId));
-            scheduledNotificationTimers.clear();
+        const subscription = await appState.swRegistration.pushManager.getSubscription();
+        isSubscribed = !(subscription === null);
 
-            notifications.forEach(notif => {
-                // The backend now returns complete notification objects, so we can use them directly
-                scheduleBrowserNotification(notif);
-            });
-            renderNotifications(); // Render notification list immediately
-            handleSearchAndFilter(false); // Update guide with indicators
+        if (isSubscribed) {
+            console.log('User IS subscribed.');
         } else {
-            showNotification('Failed to load notifications.', true);
+            console.log('User is NOT subscribed.');
+            // Get VAPID key from server
+            const vapidPublicKey = await getVapidKey();
+            if (!vapidPublicKey) {
+                showNotification('Could not get notification key from server.', true);
+                return;
+            }
+            const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
+
+            // Subscribe the user
+            const newSubscription = await appState.swRegistration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: applicationServerKey
+            });
+
+            console.log('User is subscribed:', newSubscription);
+            // Send subscription to the backend
+            await subscribeToPush(newSubscription);
+            isSubscribed = true;
         }
     } catch (error) {
-        console.error('Error loading and scheduling notifications:', error);
+        console.error('Failed to subscribe the user: ', error);
+        showNotification('Failed to set up notifications.', true);
+    }
+}
+
+
+/**
+ * Loads all active notifications from the backend to display in the UI.
+ * This no longer schedules anything on the client.
+ */
+export const loadAndScheduleNotifications = async () => {
+    try {
+        const notifications = await getProgramNotifications();
+        guideState.userNotifications = notifications;
+        console.log(`[Notifications] Loaded ${notifications.length} scheduled notifications from server.`);
+        
+        renderNotifications();
+        handleSearchAndFilter(false); // Update guide with indicators
+    } catch (error) {
+        console.error('Error loading notifications:', error);
         showNotification('An error occurred loading notifications.', true);
     }
 };
 
 /**
- * Adds or removes a program notification.
+ * Adds or removes a program notification by calling the backend.
  * @param {object} programDetails - Details of the program.
- * @param {string} programDetails.channelId
- * @param {string} programDetails.channelName
- * @param {string} programDetails.channelLogo
- * @param {string} programDetails.programTitle
- * @param {string} programDetails.programStart - ISO string
- * @param {string} programDetails.programStop - ISO string
- * @param {string} programDetails.programDesc
- * @param {string} programDetails.programId - Unique ID for program within channel
- * @param {string} [programDetails.id] - Existing notification ID if removing.
  */
 export const addOrRemoveNotification = async (programDetails) => {
     const existingNotification = findNotificationForProgram(programDetails, programDetails.channelId);
     
     if (existingNotification) {
-        // If notification exists, confirm and then delete it
         showConfirm(
             'Remove Notification?',
             `Are you sure you want to remove the notification for "${programDetails.programTitle}"?`,
             async () => {
-                await deleteProgramNotification(existingNotification.id);
-                showNotification(`Notification for "${programDetails.programTitle}" removed.`);
+                const success = await deleteProgramNotification(existingNotification.id);
+                if (success) {
+                    guideState.userNotifications = guideState.userNotifications.filter(n => n.id !== existingNotification.id);
+                    renderNotifications();
+                    handleSearchAndFilter(false);
+                }
             }
         );
     } else {
-        // If no notification exists, add a new one
-        const permission = await requestNotificationPermission();
-        if (permission !== 'granted') {
-            showNotification('Notification permission required to set notifications.', true);
-            return;
-        }
-
-        const notificationLeadTime = guideState.settings.notificationLeadTime || 10; // Default to 10 minutes
-        const programStartTime = new Date(programDetails.programStart);
-        const scheduledTime = new Date(programStartTime.getTime() - notificationLeadTime * 60 * 1000);
-        
-        const now = new Date();
-        if (scheduledTime.getTime() <= now.getTime()) {
-             showNotification(`Cannot set notification for past or immediate program.`, true);
+        if (!isSubscribed) {
+             showNotification('Please enable notifications for this site to receive alerts.', true);
+             // You could trigger the subscription flow here if you want
+             // await subscribeUserToPush();
              return;
         }
 
-        // Construct the full notification object to be sent and used locally
-        const newNotification = {
+        const notificationLeadTime = guideState.settings.notificationLeadTime || 10;
+        const programStartTime = new Date(programDetails.programStart);
+        const scheduledTime = new Date(programStartTime.getTime() - notificationLeadTime * 60 * 1000);
+        
+        if (scheduledTime <= new Date()) {
+             showNotification(`Cannot set notification for a program that is starting soon or has passed.`, true);
+             return;
+        }
+
+        const newNotificationData = {
             channelId: programDetails.channelId,
             channelName: programDetails.channelName,
             channelLogo: programDetails.channelLogo,
@@ -217,93 +134,31 @@ export const addOrRemoveNotification = async (programDetails) => {
             programStart: programDetails.programStart,
             programStop: programDetails.programStop,
             programDesc: programDetails.programDesc,
-            programId: programDetails.programId, // Make sure programId is included here
+            programId: programDetails.programId,
             notificationLeadTime: notificationLeadTime,
-            scheduledTime: scheduledTime.toISOString(),
-            createdAt: new Date().toISOString()
+            scheduledTime: scheduledTime.toISOString()
         };
 
-        try {
-            const response = await apiFetch('/api/notifications', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(newNotification)
-            });
-
-            if (response && response.ok) {
-                const responseData = await response.json(); // This contains { success: true, id: newId }
-                
-                // Add the ID from the server response to the full notification object
-                newNotification.id = responseData.id; 
-
-                // Update local state with the complete notification object
-                guideState.userNotifications.push(newNotification);
-                // Schedule notification using the complete object
-                scheduleBrowserNotification(newNotification);
-                
-                showNotification(`Notification set for "${newNotification.programTitle}"!`);
-            } else {
-                const errorData = await response.json();
-                showNotification(`Failed to add notification: ${errorData.error}`, true);
-            }
-        } catch (error) {
-            console.error('Error adding notification:', error);
-            showNotification('An error occurred while setting notification.', true);
+        const addedNotification = await addProgramNotification(newNotificationData);
+        if (addedNotification) {
+            guideState.userNotifications.push(addedNotification);
+            renderNotifications();
+            handleSearchAndFilter(false);
+            showNotification(`Notification set for "${addedNotification.programTitle}"!`);
         }
     }
-    // Always re-render notifications list and guide indicators after any action
-    renderNotifications();
-    handleSearchAndFilter(false);
 };
 
 /**
- * Deletes a program notification by its ID.
- * @param {string} notificationId - The ID of the notification to delete.
- */
-export const deleteProgramNotification = async (notificationId) => {
-    try {
-        const response = await apiFetch(`/api/notifications/${notificationId}`, {
-            method: 'DELETE'
-        });
-
-        if (response && response.ok) {
-            // Remove from local state and cancel browser timer
-            guideState.userNotifications = guideState.userNotifications.filter(n => n.id !== notificationId);
-            cancelBrowserNotification(notificationId);
-            showNotification('Notification removed successfully.');
-        } else {
-            const errorData = await response.json();
-            showNotification(`Failed to delete notification: ${errorData.error}`, true);
-        }
-    } catch (error) {
-        console.error('Error deleting notification:', error);
-        showNotification('An error occurred while removing notification.', true);
-    }
-    renderNotifications(); // Re-render notification list
-    handleSearchAndFilter(false); // Update guide indicators
-};
-
-/**
- * Checks if a given program has an active notification set.
- * @param {object} program - The program object with programId, title, start, stop.
+ * Checks if a given program has an active notification scheduled.
+ * @param {object} program - The program object.
  * @param {string} channelId - The ID of the channel the program belongs to.
  * @returns {object|null} The notification object if found, otherwise null.
  */
 export const findNotificationForProgram = (program, channelId) => {
-    // Prefer using the unique programId for reliable lookup
-    if (program.programId) {
-        return guideState.userNotifications.find(n =>
-            n.channelId === channelId &&
-            n.programId === program.programId
-        );
-    }
-    // Fallback to older identification methods if programId is not present
-    // This part might not be needed once all programs have programId
-    return guideState.userNotifications.find(n => 
+    return guideState.userNotifications.find(n =>
         n.channelId === channelId &&
-        n.programTitle === program.title &&
-        n.programStart === program.start &&
-        n.programStop === program.stop
+        n.programId === program.programId
     );
 };
 
@@ -314,20 +169,12 @@ export const renderNotifications = () => {
     const notificationListEl = UIElements.notificationsList;
     if (!notificationListEl) return;
 
-    // Filter out past notifications and sort by scheduled time
     const now = new Date();
     const upcomingNotifications = guideState.userNotifications
-        // Filter out notifications that were scheduled more than 5 minutes ago (grace period)
-        .filter(n => new Date(n.scheduledTime).getTime() > (now.getTime() - (5 * 60 * 1000))) 
+        .filter(n => new Date(n.scheduledTime).getTime() > now.getTime()) 
         .sort((a, b) => new Date(a.scheduledTime) - new Date(b.scheduledTime));
 
-    if (upcomingNotifications.length === 0) {
-        UIElements.noNotificationsMessage.classList.remove('hidden'); // Show "no notifications" message
-        notificationListEl.innerHTML = ``; // Clear the list
-        return;
-    } else {
-        UIElements.noNotificationsMessage.classList.add('hidden'); // Hide "no notifications" message
-    }
+    UIElements.noNotificationsMessage.classList.toggle('hidden', upcomingNotifications.length > 0);
 
     notificationListEl.innerHTML = upcomingNotifications.map(notif => {
         const programStartTime = new Date(notif.programStart);
@@ -341,7 +188,7 @@ export const renderNotifications = () => {
                 <div class="flex-grow">
                     <p class="font-semibold text-white text-md">${notif.programTitle}</p>
                     <p class="text-gray-400 text-sm">${notif.channelName} • ${formattedProgramTime}</p>
-                    <p class="text-blue-400 text-xs mt-1">Notification at ${formattedNotificationTime} (${notif.notificationLeadTime} mins before)</p>
+                    <p class="text-blue-400 text-xs mt-1">Will be notified at ${formattedNotificationTime} (${notif.notificationLeadTime} mins before)</p>
                 </div>
                 <div class="flex items-center gap-2 flex-shrink-0 ml-4">
                     <button class="action-btn view-program-btn p-2 rounded-full hover:bg-gray-700" title="View in TV Guide" data-channel-id="${notif.channelId}" data-program-start="${notif.programStart}" data-program-id="${notif.programId}">
@@ -355,7 +202,6 @@ export const renderNotifications = () => {
         `;
     }).join('');
 
-    // Attach event listeners for the rendered notifications
     setupNotificationListEventListeners();
 };
 
@@ -363,9 +209,7 @@ export const renderNotifications = () => {
  * Sets up event listeners for the dynamically rendered notification list.
  */
 const setupNotificationListEventListeners = () => {
-    // Clear previous listeners to avoid duplicates
     UIElements.notificationsList.removeEventListener('click', handleNotificationListClick);
-    // Add the new listener
     UIElements.notificationsList.addEventListener('click', handleNotificationListClick);
 };
 
@@ -379,33 +223,39 @@ const handleNotificationListClick = (e) => {
 
     if (deleteBtn) {
         const notificationId = deleteBtn.dataset.notificationId;
-        const notification = guideState.userNotifications.find(n => n.id === notificationId);
+        const notification = guideState.userNotifications.find(n => n.id == notificationId);
         if (notification) {
             showConfirm(
                 'Delete Notification?',
                 `Are you sure you want to delete the notification for "${notification.programTitle}"?`,
-                () => deleteProgramNotification(notificationId)
+                async () => {
+                    const success = await deleteProgramNotification(notificationId);
+                    if (success) {
+                        guideState.userNotifications = guideState.userNotifications.filter(n => n.id != notificationId);
+                        renderNotifications();
+                        handleSearchAndFilter(false);
+                    }
+                }
             );
         }
     } else if (viewBtn) {
         const channelId = viewBtn.dataset.channelId;
         const programStart = viewBtn.dataset.programStart;
-        const programId = viewBtn.dataset.programId; // Get programId from data attribute
-        navigateToProgramInGuide(channelId, programStart, programId); // Pass programId
+        const programId = viewBtn.dataset.programId;
+        navigateToProgramInGuide(channelId, programStart, programId);
     }
 };
 
 
 /**
  * Navigates to the TV Guide page and attempts to scroll to and highlight a specific program.
- * @param {string} channelId - The ID of the channel.
- * @param {string} programStart - The ISO string start time of the program.
- * @param {string} [programId] - The unique ID of the program (optional, for more precise scrolling).
+ * @param {string} channelId
+ * @param {string} programStart
+ * @param {string} [programId]
  */
 export const navigateToProgramInGuide = (channelId, programStart, programId = null) => {
-    navigate('/tvguide'); // Switch to the TV Guide tab first
+    navigate('/tvguide');
 
-    // Use a timeout to ensure the guide has rendered before attempting to scroll/highlight
     setTimeout(() => {
         const progStart = new Date(programStart);
         const guideStart = new Date(guideState.currentDate);
@@ -414,18 +264,15 @@ export const navigateToProgramInGuide = (channelId, programStart, programId = nu
         const dateDiff = Math.floor((progStart - guideStart) / (1000 * 60 * 60 * 24));
         if (dateDiff !== 0) {
             guideState.currentDate.setDate(guideState.currentDate.getDate() + dateDiff);
-            // Re-call handleSearchAndFilter to re-render the guide for the correct date
             handleSearchAndFilter();
         }
 
         setTimeout(() => {
             let programElement;
             if (programId) {
-                // Try to find using the unique programId first
                 programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-id="${programId}"][data-channel-id="${channelId}"]`);
             }
             if (!programElement) {
-                // Fallback to channelId and programStart if programId not found or not provided
                 programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programStart}"][data-channel-id="${channelId}"]`);
             }
 
@@ -439,6 +286,6 @@ export const navigateToProgramInGuide = (channelId, programStart, programId = nu
             } else {
                 showNotification("Could not find program in current guide view.", false, 4000);
             }
-        }, 300); // Give a bit more time for the guide to render after potential date change
-    }, 100); // Initial delay to ensure page switch is complete
+        }, 300);
+    }, 100);
 };
