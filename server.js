@@ -17,26 +17,52 @@ const bcrypt = require('bcrypt');
 const sqlite3 = require('sqlite3').verbose();
 const SQLiteStore = require('connect-sqlite3')(session);
 const xmlJS = require('xml-js');
+const webpush = require('web-push');
 
 const app = express();
 const port = 8998;
 const saltRounds = 10;
 let epgRefreshTimeout = null;
+let notificationCheckInterval = null;
 
 // --- Configuration ---
 const DATA_DIR = '/data';
-const SOURCES_DIR = path.join(DATA_DIR, 'sources'); // NEW: Directory for uploaded files
+const VAPID_KEYS_PATH = path.join(DATA_DIR, 'vapid.json');
+const SOURCES_DIR = path.join(DATA_DIR, 'sources');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const DB_PATH = path.join(DATA_DIR, 'viniplay.db');
-const MERGED_M3U_PATH = path.join(DATA_DIR, 'playlist.m3u'); // For the final merged M3U
-const MERGED_EPG_JSON_PATH = path.join(DATA_DIR, 'epg.json'); // For the final merged EPG
+const MERGED_M3U_PATH = path.join(DATA_DIR, 'playlist.m3u');
+const MERGED_EPG_JSON_PATH = path.join(DATA_DIR, 'epg.json');
 const SETTINGS_PATH = path.join(DATA_DIR, 'settings.json');
+
+
+// --- Automatic VAPID Key Generation ---
+let vapidKeys = {};
+try {
+    if (fs.existsSync(VAPID_KEYS_PATH)) {
+        console.log('[Push] Loading existing VAPID keys...');
+        vapidKeys = JSON.parse(fs.readFileSync(VAPID_KEYS_PATH, 'utf-8'));
+    } else {
+        console.log('[Push] VAPID keys not found. Generating new keys...');
+        vapidKeys = webpush.generateVAPIDKeys();
+        fs.writeFileSync(VAPID_KEYS_PATH, JSON.stringify(vapidKeys, null, 2));
+        console.log('[Push] New VAPID keys generated and saved.');
+    }
+    // Configure web-push with the loaded/generated keys
+    webpush.setVapidDetails(
+        'mailto:example@example.com', // This can be a placeholder
+        vapidKeys.publicKey,
+        vapidKeys.privateKey
+    );
+} catch (error) {
+    console.error('[Push] FATAL: Could not load or generate VAPID keys.', error);
+}
 
 
 // Ensure the data and public directories exist.
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true });
-if (!fs.existsSync(SOURCES_DIR)) fs.mkdirSync(SOURCES_DIR, { recursive: true }); // NEW
+if (!fs.existsSync(SOURCES_DIR)) fs.mkdirSync(SOURCES_DIR, { recursive: true });
 
 
 // --- Database Setup ---
@@ -59,10 +85,6 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                 PRIMARY KEY (user_id, key)
             )`);
-            // The ALTER TABLE statement below might cause a 'duplicate column name' error
-            // on subsequent runs if the column already exists, but it's generally safe
-            // to leave if the CREATE TABLE IF NOT EXISTS below handles new installations.
-            // The primary issue user reported ("near ON") is not from this part.
             db.run(`CREATE TABLE IF NOT EXISTS notifications (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -74,24 +96,17 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 programStart TEXT NOT NULL,
                 programStop TEXT NOT NULL,
                 notificationTime TEXT NOT NULL,
-                programId TEXT NOT NULL, -- New column for unique program identifier, set to NOT NULL for new entries
+                programId TEXT NOT NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            )`, (err) => {
-                // Only run ALTER TABLE if CREATE TABLE didn't just happen or if it explicitly fails on duplicate
-                if (err && err.message.includes('table notifications already exists')) {
-                    db.run(`ALTER TABLE notifications ADD COLUMN programId TEXT;`, (alterErr) => {
-                        if (alterErr && !alterErr.message.includes('duplicate column name')) {
-                            console.error("Error attempting to add programId column to notifications table:", alterErr.message);
-                        } else if (!alterErr) {
-                            console.log("Added programId column to notifications table successfully (if it didn't exist).");
-                        }
-                    });
-                } else if (err) {
-                     console.error("Error creating notifications table:", err.message);
-                } else {
-                    console.log("Notifications table created successfully.");
-                }
-            });
+            )`);
+            db.run(`CREATE TABLE IF NOT EXISTS push_subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                endpoint TEXT UNIQUE NOT NULL,
+                p256dh TEXT NOT NULL,
+                auth TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )`);
         });
     }
 });
@@ -101,7 +116,6 @@ app.use(express.static(PUBLIC_DIR));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Session Middleware using secure secret from .env
 app.use(
   session({
     store: new SQLiteStore({
@@ -109,11 +123,11 @@ app.use(
         dir: DATA_DIR,
         table: 'sessions'
     }),
-    secret: process.env.SESSION_SECRET || 'fallback-secret-key',
+    secret: process.env.SESSION_SECRET || 'fallback-secret-key-for-dev',
     resave: false,
     saveUninitialized: false,
     cookie: {
-        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+        maxAge: 30 * 24 * 60 * 60 * 1000,
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production'
     },
@@ -140,13 +154,11 @@ const requireAdmin = (req, res, next) => {
 // --- Helper Functions ---
 function getSettings() {
     if (!fs.existsSync(SETTINGS_PATH)) {
-        // Create default settings if file doesn't exist
         const defaultSettings = {
             m3uSources: [],
             epgSources: [],
             userAgents: [{ id: `default-ua-${Date.now()}`, name: 'ViniPlay Default', value: 'VLC/3.0.20 (Linux; x86_64)', isDefault: true }],
             streamProfiles: [
-                // MODIFIED FFmpeg command: Forces re-encoding of both video and audio
                 { id: 'ffmpeg-default', name: 'ffmpeg (Built in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: true }
             ],
             activeUserAgentId: `default-ua-${Date.now()}`,
@@ -154,22 +166,20 @@ function getSettings() {
             searchScope: 'channels_programs',
             autoRefresh: 0,
             timezoneOffset: Math.round(-(new Date().getTimezoneOffset() / 60)),
-            notificationLeadTime: 10 // NEW: Default notification lead time in minutes
+            notificationLeadTime: 10
         };
         fs.writeFileSync(SETTINGS_PATH, JSON.stringify(defaultSettings, null, 2));
         return defaultSettings;
     }
     try {
         const settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
-        // Ensure defaults for sources if they are missing
         if (!settings.m3uSources) settings.m3uSources = [];
         if (!settings.epgSources) settings.epgSources = [];
-        // NEW: Ensure notificationLeadTime has a default if missing from existing settings file
         if (settings.notificationLeadTime === undefined) settings.notificationLeadTime = 10;
         return settings;
     } catch (e) {
         console.error("Could not parse settings.json, returning default.", e);
-        return { m3uSources: [], epgSources: [], notificationLeadTime: 10 }; // Return default for new field
+        return { m3uSources: [], epgSources: [], notificationLeadTime: 10 };
     }
 }
 
@@ -222,7 +232,6 @@ async function processAndMergeSources() {
     const settings = getSettings();
     console.log('[PROCESS] Starting to process and merge all active sources.');
 
-    // --- Merge M3U Sources ---
     let mergedM3uContent = '#EXTM3U\n';
     const activeM3uSources = settings.m3uSources.filter(s => s.isActive);
     for (const source of activeM3uSources) {
@@ -241,7 +250,6 @@ async function processAndMergeSources() {
                 content = await fetchUrlContent(source.path);
             }
 
-            // --- FIXED: Tagging logic ---
             const lines = content.split('\n');
             let processedContent = '';
             for (let i = 0; i < lines.length; i++) {
@@ -285,7 +293,6 @@ async function processAndMergeSources() {
     fs.writeFileSync(MERGED_M3U_PATH, mergedM3uContent);
     console.log(`[M3U] Finished merging ${activeM3uSources.length} M3U sources.`);
 
-    // --- Merge EPG Sources ---
     const mergedProgramData = {};
     const timezoneOffset = settings.timezoneOffset || 0;
     const activeEpgSources = settings.epgSources.filter(s => s.isActive);
@@ -309,7 +316,7 @@ async function processAndMergeSources() {
                 }
             } else if (source.type === 'url') {
                 xmlString = await fetchUrlContent(source.path);
-                fs.writeFileSync(epgFilePath, xmlString); // Cache it
+                fs.writeFileSync(epgFilePath, xmlString);
             }
 
             const epgJson = xmlJS.xml2js(xmlString, { compact: true });
@@ -348,14 +355,13 @@ async function processAndMergeSources() {
         }
          source.lastUpdated = new Date().toISOString();
     }
-     // Sort programs by start time for each channel
     for (const channelId in mergedProgramData) {
         mergedProgramData[channelId].sort((a, b) => new Date(a.start) - new Date(b.start));
     }
     fs.writeFileSync(MERGED_EPG_JSON_PATH, JSON.stringify(mergedProgramData));
     console.log(`[EPG] Finished merging and parsing ${activeEpgSources.length} EPG sources.`);
     
-    saveSettings(settings); // Save updated statuses
+    saveSettings(settings);
     return { success: true, message: 'Sources merged successfully.'};
 }
 
@@ -381,12 +387,11 @@ const scheduleEpgRefresh = () => {
                 }
             }
             await processAndMergeSources();
-            scheduleEpgRefresh(); // Reschedule for the next interval
+            scheduleEpgRefresh();
             
         }, refreshHours * 3600 * 1000);
     }
 };
-
 
 // --- Authentication API Endpoints ---
 app.get('/api/auth/needs-setup', (req, res) => {
@@ -487,20 +492,19 @@ app.put('/api/users/:id', requireAdmin, (req, res) => {
                 if (err) return res.status(500).json({ error: 'Error hashing password' });
                 db.run("UPDATE users SET username = ?, password = ?, isAdmin = ? WHERE id = ?", [username, hash, isAdmin ? 1 : 0, id], (err) => {
                     if (err) return res.status(500).json({ error: err.message });
-                    if (req.session.userId == id) req.session.isAdmin = isAdmin; // Update session if self
+                    if (req.session.userId == id) req.session.isAdmin = isAdmin;
                     res.json({ success: true });
                 });
             });
         } else {
             db.run("UPDATE users SET username = ?, isAdmin = ? WHERE id = ?", [username, isAdmin ? 1 : 0, id], (err) => {
                 if (err) return res.status(500).json({ error: err.message });
-                 if (req.session.userId == id) req.session.isAdmin = isAdmin; // Update session if self
+                 if (req.session.userId == id) req.session.isAdmin = isAdmin;
                 res.json({ success: true });
             });
         }
     };
     
-    // Prevent last admin from removing their own admin rights
     if (req.session.userId == id && !isAdmin) {
          db.get("SELECT COUNT(*) as count FROM users WHERE isAdmin = 1", [], (err, row) => {
             if (err || row.count <= 1) {
@@ -532,10 +536,8 @@ app.get('/api/config', requireAuth, (req, res) => {
         config.settings = globalSettings;
 
         if (fs.existsSync(MERGED_M3U_PATH)) config.m3uContent = fs.readFileSync(MERGED_M3U_PATH, 'utf-8');
-        // Return parsed EPG JSON, not the raw XML
         if (fs.existsSync(MERGED_EPG_JSON_PATH)) config.epgContent = JSON.parse(fs.readFileSync(MERGED_EPG_JSON_PATH, 'utf-8'));
         
-        // Load user-specific settings from the database and merge them
         db.all(`SELECT key, value FROM user_settings WHERE user_id = ?`, [req.session.userId], (err, rows) => {
             if (err) {
                 console.error("Error fetching user settings:", err);
@@ -561,7 +563,6 @@ app.get('/api/config', requireAuth, (req, res) => {
     }
 });
 
-// --- REFACTORED SOURCE MANAGEMENT ---
 
 const upload = multer({
     storage: multer.diskStorage({
@@ -572,7 +573,7 @@ const upload = multer({
     })
 });
 
-// --- FIXED: Handles both CREATE and UPDATE for sources ---
+
 app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, res) => {
     const { sourceType, name, url, isActive, id } = req.body;
 
@@ -584,7 +585,7 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
     const settings = getSettings();
     const sourceList = sourceType === 'm3u' ? settings.m3uSources : settings.epgSources;
 
-    if (id) { // --- UPDATE LOGIC ---
+    if (id) {
         const sourceIndex = sourceList.findIndex(s => s.id === id);
         if (sourceIndex === -1) {
             if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
@@ -596,27 +597,24 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
         sourceToUpdate.isActive = isActive === 'true';
         sourceToUpdate.lastUpdated = new Date().toISOString();
 
-        if (req.file) { // A new file was uploaded for an existing source
-            // Delete the old file if it exists
+        if (req.file) { 
             if (sourceToUpdate.type === 'file' && fs.existsSync(sourceToUpdate.path)) {
                 try {
                     fs.unlinkSync(sourceToUpdate.path);
                 } catch (e) { console.error("Could not delete old source file:", e); }
             }
 
-            // Rename the newly uploaded temp file to its permanent name
             const extension = sourceType === 'm3u' ? '.m3u' : '.xml';
             const newPath = path.join(SOURCES_DIR, `${sourceType}_${id}${extension}`);
             try {
                 fs.renameSync(req.file.path, newPath);
                 sourceToUpdate.path = newPath;
-                sourceToUpdate.type = 'file'; // Change type in case it was a URL before
+                sourceToUpdate.type = 'file';
             } catch (e) {
                 console.error('Error renaming updated source file:', e);
                 return res.status(500).json({ error: 'Could not save updated file.' });
             }
-        } else if (url) { // A URL was provided for an existing source
-            // If the source was a file, delete the old file
+        } else if (url) {
             if (sourceToUpdate.type === 'file' && fs.existsSync(sourceToUpdate.path)) {
                 try {
                     fs.unlinkSync(sourceToUpdate.path);
@@ -629,7 +627,7 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
         saveSettings(settings);
         res.json({ success: true, message: 'Source updated successfully.', settings });
 
-    } else { // --- CREATE LOGIC ---
+    } else { 
         const newSource = {
             id: `src-${Date.now()}`,
             name,
@@ -732,19 +730,15 @@ app.post('/api/save/settings', requireAuth, async (req, res) => {
 
         const updatedSettings = { ...currentSettings, ...req.body };
 
-        const userSpecificKeys = ['favorites', 'playerDimensions', 'programDetailsDimensions', 'recentChannels'];
-        // NEW: Add 'notificationLeadTime' to userSpecificKeys so it's only stored as user-specific
-        userSpecificKeys.push('notificationLeadTime');
-        userSpecificKeys.forEach(key => delete updatedSettings[key]); // Ensure these are not saved globally
+        const userSpecificKeys = ['favorites', 'playerDimensions', 'programDetailsDimensions', 'recentChannels', 'notificationLeadTime'];
+        userSpecificKeys.forEach(key => delete updatedSettings[key]);
 
         saveSettings(updatedSettings);
         
-        // If timezone changed, re-process sources
         if (updatedSettings.timezoneOffset !== oldTimezone) {
             console.log("Timezone changed, re-processing sources.");
             await processAndMergeSources();
         }
-        // If auto-refresh setting changed, update the scheduler
         if (updatedSettings.autoRefresh !== oldRefresh) {
             console.log("Auto-refresh setting changed, rescheduling.");
             scheduleEpgRefresh();
@@ -757,7 +751,6 @@ app.post('/api/save/settings', requireAuth, async (req, res) => {
     }
 });
 
-// --- FIX START: Changed UPSERT logic for user_settings to be more compatible with SQLite ---
 app.post('/api/user/settings', requireAuth, (req, res) => {
     const { key, value } = req.body;
     if (!key) return res.status(400).json({ error: 'A setting key is required.' });
@@ -765,22 +758,20 @@ app.post('/api/user/settings', requireAuth, (req, res) => {
     const valueJson = JSON.stringify(value);
     const userId = req.session.userId;
 
-    // First, try to UPDATE the existing setting
     db.run(
         `UPDATE user_settings SET value = ? WHERE user_id = ? AND key = ?`,
         [valueJson, userId, key],
-        function (err) { // This is the callback for the UPDATE db.run
+        function (err) {
             if (err) {
                 console.error('Error updating user setting:', err);
                 return res.status(500).json({ error: 'Could not save user setting.' });
             }
             
-            // If no rows were changed, it means the setting didn't exist, so INSERT it
             if (this.changes === 0) {
                 db.run(
                     `INSERT INTO user_settings (user_id, key, value) VALUES (?, ?, ?)`,
                     [userId, key, valueJson],
-                    function (insertErr) {
+                    (insertErr) => {
                         if (insertErr) {
                             console.error('Error inserting user setting:', insertErr);
                             return res.status(500).json({ error: 'Could not save user setting.' });
@@ -794,39 +785,78 @@ app.post('/api/user/settings', requireAuth, (req, res) => {
         }
     );
 });
-// --- FIX END ---
 
-// NEW: Notification API Endpoints
+// --- Notification Endpoints ---
+
+app.get('/api/notifications/vapid-public-key', requireAuth, (req, res) => {
+    if (!vapidKeys.publicKey) {
+        return res.status(500).json({ error: 'VAPID public key not available on the server.' });
+    }
+    res.send(vapidKeys.publicKey);
+});
+
+app.post('/api/notifications/subscribe', requireAuth, (req, res) => {
+    const subscription = req.body;
+    const userId = req.session.userId;
+
+    if (!subscription || !subscription.endpoint) {
+        return res.status(400).json({ error: 'Invalid subscription object.' });
+    }
+
+    const { endpoint, keys: { p256dh, auth } } = subscription;
+
+    db.run(
+        `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) VALUES (?, ?, ?, ?)
+         ON CONFLICT(endpoint) DO UPDATE SET user_id=excluded.user_id`,
+        [userId, endpoint, p256dh, auth],
+        function(err) {
+            if (err) {
+                console.error('Error saving push subscription:', err);
+                return res.status(500).json({ error: 'Could not save subscription.' });
+            }
+            console.log(`[Push] User ${userId} subscribed with endpoint: ${endpoint}`);
+            res.status(201).json({ success: true });
+        }
+    );
+});
+
+app.post('/api/notifications/unsubscribe', requireAuth, (req, res) => {
+    const { endpoint } = req.body;
+    if (!endpoint) {
+        return res.status(400).json({ error: 'Endpoint is required to unsubscribe.' });
+    }
+
+    db.run("DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?", [endpoint, req.session.userId], (err) => {
+        if (err) {
+            console.error('Error deleting push subscription:', err);
+            return res.status(500).json({ error: 'Could not unsubscribe.' });
+        }
+        console.log(`[Push] User ${req.session.userId} unsubscribed from endpoint: ${endpoint}`);
+        res.json({ success: true });
+    });
+});
+
 app.post('/api/notifications', requireAuth, (req, res) => {
-    // Add this console.log to see the raw request body on the server side
-    console.log('[SERVER] Received notification payload:', req.body);
-
-    // Destructure `scheduledTime` from req.body instead of `notificationTime`
     const { channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, scheduledTime, programId } = req.body;
 
-    // Validate required fields, using `scheduledTime` for the check
-    if (!channelId || !channelName || !programTitle || !programStart || !programStop || !scheduledTime || !programId) {
-        // Log the received values for debugging
-        console.error('[SERVER] Missing required notification fields. Received:', { channelId, channelName, programTitle, programStart, programStop, scheduledTime, programId });
+    if (!channelId || !programTitle || !programStart || !scheduledTime || !programId) {
         return res.status(400).json({ error: 'Missing required notification fields.' });
     }
 
     db.run(`INSERT INTO notifications (user_id, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime, programId)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [req.session.userId, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, scheduledTime, programId], // Use scheduledTime here
+        [req.session.userId, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, scheduledTime, programId],
         function (err) {
             if (err) {
                 console.error('Error adding notification to database:', err);
                 return res.status(500).json({ error: 'Could not add notification.' });
             }
-            res.json({ success: true, id: this.lastID });
+            res.status(201).json({ success: true, id: this.lastID });
         }
     );
 });
 
-// --- FIX START ---
 app.get('/api/notifications', requireAuth, (req, res) => {
-    // Select all columns, aliasing notificationTime to scheduledTime so the frontend receives the expected property name.
     db.all(`SELECT id, user_id, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime as scheduledTime, programId FROM notifications WHERE user_id = ? ORDER BY notificationTime ASC`,
         [req.session.userId],
         (err, rows) => {
@@ -834,12 +864,10 @@ app.get('/api/notifications', requireAuth, (req, res) => {
                 console.error('Error fetching notifications from database:', err);
                 return res.status(500).json({ error: 'Could not retrieve notifications.' });
             }
-            // The 'rows' object will now contain 'scheduledTime' instead of 'notificationTime', which the frontend expects.
             res.json(rows);
         }
     );
 });
-// --- FIX END ---
 
 app.delete('/api/notifications/:id', requireAuth, (req, res) => {
     const { id } = req.params;
@@ -861,23 +889,17 @@ app.delete('/api/notifications/:id', requireAuth, (req, res) => {
 
 app.delete('/api/data', requireAuth, (req, res) => {
     try {
-        // Delete merged files
         [MERGED_M3U_PATH, MERGED_EPG_JSON_PATH, SETTINGS_PATH].forEach(file => {
             if (fs.existsSync(file)) fs.unlinkSync(file);
         });
-        // Delete individual source files
         if(fs.existsSync(SOURCES_DIR)) {
             fs.rmSync(SOURCES_DIR, { recursive: true, force: true });
-            fs.mkdirSync(SOURCES_DIR, { recursive: true }); // Recreate empty dir
+            fs.mkdirSync(SOURCES_DIR, { recursive: true });
         }
         
-        db.run(`DELETE FROM user_settings WHERE user_id = ?`, [req.session.userId], (err) => {
-            if (err) console.error("Error clearing user settings from DB:", err);
-        });
-        // NEW: Clear user-specific notifications
-        db.run(`DELETE FROM notifications WHERE user_id = ?`, [req.session.userId], (err) => {
-            if (err) console.error("Error clearing user notifications from DB:", err);
-        });
+        db.run(`DELETE FROM user_settings WHERE user_id = ?`, [req.session.userId]);
+        db.run(`DELETE FROM notifications WHERE user_id = ?`, [req.session.userId]);
+        db.run(`DELETE FROM push_subscriptions WHERE user_id = ?`, [req.session.userId]);
 
         res.json({ success: true, message: 'All data has been cleared.' });
     } catch (error) {
@@ -913,10 +935,9 @@ app.get('/stream', requireAuth, (req, res) => {
     const args = (commandTemplate.match(/(?:[^\s"]+|"[^"]*")+/g) || []).map(arg => arg.replace(/^"|"$/g, ''));
 
     const ffmpeg = spawn('ffmpeg', args);
-    res.setHeader('Content-Type', 'video/mp2t'); // Output container is MPEG-TS
+    res.setHeader('Content-Type', 'video/mp2t');
     ffmpeg.stdout.pipe(res);
     
-    // Log stderr for debugging
     ffmpeg.stderr.on('data', (data) => {
         console.error(`[FFMPEG_ERROR] ${streamUrl}: ${data}`);
     });
@@ -932,6 +953,68 @@ app.get('/stream', requireAuth, (req, res) => {
     });
 });
 
+
+async function checkAndSendNotifications() {
+    try {
+        const now = new Date();
+        const dueNotifications = await new Promise((resolve, reject) => {
+            db.all("SELECT * FROM notifications WHERE notificationTime <= ?", [now.toISOString()], (err, rows) => {
+                if (err) reject(err);
+                else resolve(rows);
+            });
+        });
+
+        if (dueNotifications.length > 0) {
+            console.log(`[Push] Found ${dueNotifications.length} due notifications to send.`);
+        }
+
+        for (const notification of dueNotifications) {
+            const subscriptions = await new Promise((resolve, reject) => {
+                db.all("SELECT * FROM push_subscriptions WHERE user_id = ?", [notification.user_id], (err, rows) => {
+                    if (err) reject(err);
+                    else resolve(rows);
+                });
+            });
+
+            const payload = JSON.stringify({
+                title: `Upcoming: ${notification.programTitle}`,
+                body: `Starts at ${new Date(notification.programStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} on ${notification.channelName}`,
+                icon: notification.channelLogo || 'https://i.imgur.com/rwa8SjI.png',
+                data: {
+                    url: `/tvguide?channelId=${notification.channelId}&programId=${notification.programId}`
+                }
+            });
+
+            const sendPromises = subscriptions.map(sub => {
+                const pushSubscription = {
+                    endpoint: sub.endpoint,
+                    keys: { p256dh: sub.p256dh, auth: sub.auth }
+                };
+
+                return webpush.sendNotification(pushSubscription, payload)
+                    .then(() => console.log(`[Push] Notification sent to endpoint: ${sub.endpoint}`))
+                    .catch(error => {
+                        if (error.statusCode === 410) {
+                            console.log(`[Push] Subscription expired or invalid. Deleting endpoint: ${sub.endpoint}`);
+                            db.run("DELETE FROM push_subscriptions WHERE endpoint = ?", [sub.endpoint]);
+                        } else {
+                            console.error(`[Push] Error sending notification to ${sub.endpoint}:`, error.statusCode, error.body);
+                        }
+                    });
+            });
+
+            await Promise.all(sendPromises);
+
+            db.run("DELETE FROM notifications WHERE id = ?", [notification.id], (err) => {
+                if(err) console.error(`[Push] Error deleting sent notification ${notification.id}:`, err);
+            });
+        }
+    } catch (error) {
+        console.error('[Push] Error in checkAndSendNotifications:', error);
+    }
+}
+
+
 // --- Main Route Handling ---
 app.get('*', (req, res) => {
     const pathToFile = path.join(PUBLIC_DIR, req.path);
@@ -946,6 +1029,11 @@ app.listen(port, () => {
     console.log(`VINI PLAY server listening at http://localhost:${port}`);
     console.log(`Data is stored in the host directory mapped to ${DATA_DIR}`);
     console.log(`Serving frontend from: ${PUBLIC_DIR}`);
-    // Initial setup for EPG refresh
+
     scheduleEpgRefresh();
+
+    if (notificationCheckInterval) clearInterval(notificationCheckInterval);
+    notificationCheckInterval = setInterval(checkAndSendNotifications, 60000);
+    console.log('[Push] Notification checker started. Will check for due notifications every minute.');
 });
+
