@@ -6,7 +6,7 @@
 
 import { UIElements, appState, guideState } from './state.js';
 import { refreshUserList, updateUIFromSettings } from './settings.js';
-import { renderNotifications } from './notification.js'; // NEW: Import renderNotifications
+import { renderNotifications } from './notification.js';
 
 let confirmCallback = null;
 
@@ -277,7 +277,8 @@ export const handleRouteChange = () => {
                 refreshUserList();
             }
         } else if (isNotifications) {
-            renderNotifications(); // NEW: Render notifications when navigating to the notifications page
+            // NEW: Render notifications when navigating to the notifications page
+            renderNotifications(); 
         }
     }
 };
