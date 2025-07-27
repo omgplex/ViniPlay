@@ -35,6 +35,7 @@ const MERGED_M3U_PATH = path.join(DATA_DIR, 'playlist.m3u');
 const MERGED_EPG_JSON_PATH = path.join(DATA_DIR, 'epg.json');
 const SETTINGS_PATH = path.join(DATA_DIR, 'settings.json');
 
+console.log(`[INIT] Application starting. Data directory: ${DATA_DIR}, Public directory: ${PUBLIC_DIR}`);
 
 // --- Automatic VAPID Key Generation ---
 let vapidKeys = {};
@@ -60,32 +61,52 @@ try {
 
 
 // Ensure the data and public directories exist.
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true });
-if (!fs.existsSync(SOURCES_DIR)) fs.mkdirSync(SOURCES_DIR, { recursive: true });
+try {
+    if (!fs.existsSync(DATA_DIR)) {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+        console.log(`[INIT] Created data directory: ${DATA_DIR}`);
+    }
+    if (!fs.existsSync(PUBLIC_DIR)) {
+        fs.mkdirSync(PUBLIC_DIR, { recursive: true });
+        console.log(`[INIT] Created public directory: ${PUBLIC_DIR}`);
+    }
+    if (!fs.existsSync(SOURCES_DIR)) {
+        fs.mkdirSync(SOURCES_DIR, { recursive: true });
+        console.log(`[INIT] Created sources directory: ${SOURCES_DIR}`);
+    }
+} catch (mkdirError) {
+    console.error(`[INIT] FATAL: Failed to create necessary directories: ${mkdirError.message}`);
+    process.exit(1); // Exit if cannot create essential directories
+}
 
 
 // --- Database Setup ---
 const db = new sqlite3.Database(DB_PATH, (err) => {
     if (err) {
-        console.error("Error opening database:", err.message);
+        console.error("[DB] Error opening database:", err.message);
+        process.exit(1); // Exit if database cannot be opened
     } else {
-        console.log("Connected to the SQLite database.");
+        console.log("[DB] Connected to the SQLite database.");
         db.serialize(() => {
             db.run(`CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE,
                 password TEXT,
                 isAdmin INTEGER DEFAULT 0
-            )`);
+            )`, (createErr) => {
+                if (createErr) console.error("[DB] Error creating 'users' table:", createErr.message);
+                else console.log("[DB] 'users' table checked/created.");
+            });
             db.run(`CREATE TABLE IF NOT EXISTS user_settings (
                 user_id INTEGER NOT NULL,
                 key TEXT NOT NULL,
                 value TEXT,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                 PRIMARY KEY (user_id, key)
-            )`);
-            // NEW: Added status and triggeredAt columns to the notifications table
+            )`, (createErr) => {
+                if (createErr) console.error("[DB] Error creating 'user_settings' table:", createErr.message);
+                else console.log("[DB] 'user_settings' table checked/created.");
+            });
             db.run(`CREATE TABLE IF NOT EXISTS notifications (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -101,7 +122,10 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 status TEXT DEFAULT 'pending', -- NEW: 'pending', 'sent', 'expired'
                 triggeredAt TEXT,              -- NEW: Timestamp when notification was sent/expired
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            )`);
+            )`, (createErr) => {
+                if (createErr) console.error("[DB] Error creating 'notifications' table:", createErr.message);
+                else console.log("[DB] 'notifications' table checked/created.");
+            });
             db.run(`CREATE TABLE IF NOT EXISTS push_subscriptions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -109,7 +133,10 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 p256dh TEXT NOT NULL,
                 auth TEXT NOT NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            )`);
+            )`, (createErr) => {
+                if (createErr) console.error("[DB] Error creating 'push_subscriptions' table:", createErr.message);
+                else console.log("[DB] 'push_subscriptions' table checked/created.");
+            });
         });
     }
 });
@@ -119,6 +146,14 @@ app.use(express.static(PUBLIC_DIR));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
+// Log session secret status
+const sessionSecret = process.env.SESSION_SECRET;
+if (!sessionSecret || sessionSecret === 'fallback-secret-key-for-dev' || sessionSecret === 'replace_this_with_a_very_long_random_and_secret_string') {
+    console.warn('[SECURITY] Using a weak or default SESSION_SECRET. Please set a strong, random value in your .env file!');
+} else {
+    console.log('[SECURITY] SESSION_SECRET is configured.');
+}
+
 app.use(
   session({
     store: new SQLiteStore({
@@ -126,13 +161,13 @@ app.use(
         dir: DATA_DIR,
         table: 'sessions'
     }),
-    secret: process.env.SESSION_SECRET || 'fallback-secret-key-for-dev',
+    secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: {
         maxAge: 30 * 24 * 60 * 60 * 1000,
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production'
+        secure: process.env.NODE_ENV === 'production' // Use secure cookies in production
     },
   })
 );
@@ -140,23 +175,29 @@ app.use(
 // --- Authentication Middleware ---
 const requireAuth = (req, res, next) => {
     if (req.session && req.session.userId) {
+        console.log(`[AUTH] User ${req.session.username} (ID: ${req.session.userId}) authenticated for ${req.path}`);
         return next();
     } else {
+        console.warn(`[AUTH] Authentication required for ${req.path}. Session invalid or missing.`);
         return res.status(401).json({ error: 'Authentication required.' });
     }
 };
 
 const requireAdmin = (req, res, next) => {
     if (req.session && req.session.isAdmin) {
+        console.log(`[AUTH] Admin user ${req.session.username} (ID: ${req.session.userId}) authorized for ${req.path}`);
         return next();
     } else {
+        console.warn(`[AUTH] Admin privileges required for ${req.path}. User is not admin or session invalid.`);
         return res.status(403).json({ error: 'Administrator privileges required.' });
     }
 };
 
 // --- Helper Functions ---
 function getSettings() {
+    console.log('[SETTINGS] Attempting to load settings...');
     if (!fs.existsSync(SETTINGS_PATH)) {
+        console.log('[SETTINGS] settings.json not found, creating default settings.');
         const defaultSettings = {
             m3uSources: [],
             epgSources: [],
@@ -171,17 +212,25 @@ function getSettings() {
             timezoneOffset: Math.round(-(new Date().getTimezoneOffset() / 60)),
             notificationLeadTime: 10
         };
-        fs.writeFileSync(SETTINGS_PATH, JSON.stringify(defaultSettings, null, 2));
+        try {
+            fs.writeFileSync(SETTINGS_PATH, JSON.stringify(defaultSettings, null, 2));
+            console.log('[SETTINGS] Default settings created and saved.');
+        } catch (writeErr) {
+            console.error('[SETTINGS] Error saving default settings:', writeErr);
+        }
         return defaultSettings;
     }
     try {
         const settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
+        // Ensure defaults for new settings if existing file doesn't have them
         if (!settings.m3uSources) settings.m3uSources = [];
         if (!settings.epgSources) settings.epgSources = [];
         if (settings.notificationLeadTime === undefined) settings.notificationLeadTime = 10;
+        console.log('[SETTINGS] Settings loaded successfully.');
         return settings;
     } catch (e) {
-        console.error("Could not parse settings.json, returning default.", e);
+        console.error("[SETTINGS] Could not parse settings.json, returning default. Error:", e.message);
+        // Fallback to minimal defaults if file is corrupted
         return { m3uSources: [], epgSources: [], notificationLeadTime: 10 };
     }
 }
@@ -189,26 +238,36 @@ function getSettings() {
 function saveSettings(settings) {
     try {
         fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
+        console.log('[SETTINGS] Settings saved successfully.');
     } catch (e) {
-        console.error("Error saving settings:", e);
+        console.error("[SETTINGS] Error saving settings:", e);
     }
 }
 
 function fetchUrlContent(url) {
     return new Promise((resolve, reject) => {
         const protocol = url.startsWith('https') ? https : http;
+        console.log(`[FETCH] Attempting to fetch URL content: ${url}`);
         protocol.get(url, (res) => {
             if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                console.log(`[FETCH] Redirecting to: ${res.headers.location}`);
                 return fetchUrlContent(new URL(res.headers.location, url).href).then(resolve, reject);
             }
             if (res.statusCode !== 200) {
+                console.error(`[FETCH] Failed to fetch ${url}: Status Code ${res.statusCode}`);
                 return reject(new Error(`Failed to fetch: Status Code ${res.statusCode}`));
             }
             let data = '';
             res.setEncoding('utf8');
             res.on('data', (chunk) => { data += chunk; });
-            res.on('end', () => resolve(data));
-        }).on('error', (err) => reject(err));
+            res.on('end', () => {
+                console.log(`[FETCH] Successfully fetched content from: ${url}`);
+                resolve(data);
+            });
+        }).on('error', (err) => {
+            console.error(`[FETCH] Network error fetching ${url}: ${err.message}`);
+            reject(err);
+        });
     });
 }
 
@@ -216,7 +275,10 @@ function fetchUrlContent(url) {
 // --- EPG Parsing and Caching Logic ---
 const parseEpgTime = (timeStr, offsetHours = 0) => {
     const match = timeStr.match(/(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s*(([+-])(\d{2})(\d{2}))?/);
-    if (!match) return new Date();
+    if (!match) {
+        console.warn(`[EPG_PARSE] Invalid time format encountered: ${timeStr}`);
+        return new Date(); // Return current date as fallback for invalid format
+    }
     
     const [ , year, month, day, hours, minutes, seconds, , sign, tzHours, tzMinutes] = match;
     let date;
@@ -232,21 +294,30 @@ const parseEpgTime = (timeStr, offsetHours = 0) => {
 };
 
 async function processAndMergeSources() {
-    const settings = getSettings();
     console.log('[PROCESS] Starting to process and merge all active sources.');
+    const settings = getSettings(); // Re-fetch latest settings
 
     let mergedM3uContent = '#EXTM3U\n';
     const activeM3uSources = settings.m3uSources.filter(s => s.isActive);
+    if (activeM3uSources.length === 0) {
+        console.log('[PROCESS] No active M3U sources found.');
+    }
+
     for (const source of activeM3uSources) {
-        console.log(`[M3U] Processing: ${source.name}`);
+        console.log(`[M3U] Processing source: "${source.name}" (ID: ${source.id}, Type: ${source.type}, Path: ${source.path})`);
         try {
             let content = '';
+            let sourcePathForLog = source.path; // Use original path for logging
+
             if (source.type === 'file') {
-                const sourceFilePath = path.join(SOURCES_DIR, path.basename(source.path));
+                const sourceFilePath = path.join(SOURCES_DIR, path.basename(source.path)); // Use basename for safety
                 if (fs.existsSync(sourceFilePath)) {
                     content = fs.readFileSync(sourceFilePath, 'utf-8');
+                    sourcePathForLog = sourceFilePath;
                 } else {
-                    console.error(`[M3U] File not found for source "${source.name}": ${sourceFilePath}`);
+                    console.error(`[M3U] File not found for source "${source.name}": ${sourceFilePath}. Skipping.`);
+                    source.status = 'Error';
+                    source.statusMessage = 'File not found.';
                     continue;
                 }
             } else if (source.type === 'url') {
@@ -285,52 +356,74 @@ async function processAndMergeSources() {
             mergedM3uContent += processedContent.replace(/#EXTM3U/i, '') + '\n';
             source.status = 'Success';
             source.statusMessage = 'Processed successfully.';
+            console.log(`[M3U] Source "${source.name}" processed successfully from ${sourcePathForLog}.`);
 
         } catch (error) {
-            console.error(`[M3U] Failed to process source "${source.name}":`, error.message);
+            console.error(`[M3U] Failed to process source "${source.name}" from ${source.path}:`, error.message);
             source.status = 'Error';
-            source.statusMessage = 'Processing failed.';
+            source.statusMessage = `Processing failed: ${error.message.substring(0, 100)}...`; // Truncate error
         }
         source.lastUpdated = new Date().toISOString();
     }
-    fs.writeFileSync(MERGED_M3U_PATH, mergedM3uContent);
-    console.log(`[M3U] Finished merging ${activeM3uSources.length} M3U sources.`);
+    try {
+        fs.writeFileSync(MERGED_M3U_PATH, mergedM3uContent);
+        console.log(`[M3U] Merged M3U content saved to ${MERGED_M3U_PATH}.`);
+    } catch (writeErr) {
+        console.error(`[M3U] Error writing merged M3U file: ${writeErr.message}`);
+    }
+
 
     const mergedProgramData = {};
     const timezoneOffset = settings.timezoneOffset || 0;
     const activeEpgSources = settings.epgSources.filter(s => s.isActive);
+    if (activeEpgSources.length === 0) {
+        console.log('[PROCESS] No active EPG sources found.');
+    }
 
     for (const source of activeEpgSources) {
-        console.log(`[EPG] Processing: ${source.name}`);
+        console.log(`[EPG] Processing source: "${source.name}" (ID: ${source.id}, Type: ${source.type}, Path: ${source.path})`);
         try {
             let xmlString = '';
-            const epgFilePath = path.join(SOURCES_DIR, `epg_${source.id}.xml`);
+            let epgFilePath = path.join(SOURCES_DIR, `epg_${source.id}.xml`); // Standardized EPG file path
+
             if (source.type === 'file') {
-                if (fs.existsSync(epgFilePath)) {
-                    xmlString = fs.readFileSync(epgFilePath, 'utf-8');
+                // For file types, the source.path should already be the saved file path in SOURCES_DIR
+                if (fs.existsSync(source.path)) {
+                    xmlString = fs.readFileSync(source.path, 'utf-8');
+                    epgFilePath = source.path; // Use the actual path for logging
                 } else {
-                     const oldPath = path.join(SOURCES_DIR, path.basename(source.path));
-                     if (fs.existsSync(oldPath)) {
-                        xmlString = fs.readFileSync(oldPath, 'utf-8');
-                     } else {
-                        console.error(`[EPG] File not found for source "${source.name}": ${epgFilePath}`);
-                        continue;
-                     }
+                    console.error(`[EPG] File not found for source "${source.name}": ${source.path}. Skipping.`);
+                    source.status = 'Error';
+                    source.statusMessage = 'File not found.';
+                    continue;
                 }
             } else if (source.type === 'url') {
                 xmlString = await fetchUrlContent(source.path);
-                fs.writeFileSync(epgFilePath, xmlString);
+                try {
+                    fs.writeFileSync(epgFilePath, xmlString);
+                    console.log(`[EPG] Downloaded EPG for "${source.name}" saved to ${epgFilePath}.`);
+                } catch (writeErr) {
+                    console.error(`[EPG] Error saving EPG file from URL for "${source.name}": ${writeErr.message}`);
+                }
             }
 
             const epgJson = xmlJS.xml2js(xmlString, { compact: true });
             const programs = epgJson.tv && epgJson.tv.programme ? [].concat(epgJson.tv.programme) : [];
 
+            if (programs.length === 0) {
+                console.warn(`[EPG] No programs found in EPG source "${source.name}". Check XML structure.`);
+            }
+
+            // Iterate over all M3U sources to ensure correct channel ID mapping
+            const m3uSourceProviders = settings.m3uSources.filter(m3u => m3u.isActive);
+
             for (const prog of programs) {
                 const originalChannelId = prog._attributes?.channel;
-                if (!originalChannelId) continue;
+                if (!originalChannelId) {
+                    console.warn(`[EPG] Program without channel ID found in "${source.name}". Skipping.`);
+                    continue;
+                }
                 
-                const m3uSourceProviders = settings.m3uSources.filter(m3u => m3u.isActive);
-
                 for(const m3uSource of m3uSourceProviders) {
                     const uniqueChannelId = `${m3uSource.id}_${originalChannelId}`;
 
@@ -351,20 +444,27 @@ async function processAndMergeSources() {
             }
             source.status = 'Success';
             source.statusMessage = 'Processed successfully.';
+            console.log(`[EPG] Source "${source.name}" processed successfully from ${source.path}.`);
+
         } catch (error) {
-            console.error(`[EPG] Failed to process source "${source.name}":`, error.message);
+            console.error(`[EPG] Failed to process source "${source.name}" from ${source.path}:`, error.message);
             source.status = 'Error';
-            source.statusMessage = 'Processing failed.';
+            source.statusMessage = `Processing failed: ${error.message.substring(0, 100)}...`; // Truncate error
         }
          source.lastUpdated = new Date().toISOString();
     }
     for (const channelId in mergedProgramData) {
         mergedProgramData[channelId].sort((a, b) => new Date(a.start) - new Date(b.start));
     }
-    fs.writeFileSync(MERGED_EPG_JSON_PATH, JSON.stringify(mergedProgramData));
-    console.log(`[EPG] Finished merging and parsing ${activeEpgSources.length} EPG sources.`);
+    try {
+        fs.writeFileSync(MERGED_EPG_JSON_PATH, JSON.stringify(mergedProgramData));
+        console.log(`[EPG] Merged EPG JSON content saved to ${MERGED_EPG_JSON_PATH}.`);
+    } catch (writeErr) {
+        console.error(`[EPG] Error writing merged EPG JSON file: ${writeErr.message}`);
+    }
     
-    saveSettings(settings);
+    saveSettings(settings); // Save settings with updated status and lastUpdated for sources
+    console.log('[PROCESS] Finished processing and merging all active sources.');
     return { success: true, message: 'Sources merged successfully.'};
 }
 
@@ -375,72 +475,114 @@ const scheduleEpgRefresh = () => {
     const refreshHours = parseInt(settings.autoRefresh, 10);
     
     if (refreshHours > 0) {
-        console.log(`[EPG] Scheduling EPG refresh every ${refreshHours} hours.`);
+        console.log(`[EPG_REFRESH] Scheduling EPG refresh every ${refreshHours} hours.`);
         epgRefreshTimeout = setTimeout(async () => {
-            console.log('[EPG] Triggering scheduled EPG refresh...');
+            console.log('[EPG_REFRESH] Triggering scheduled EPG refresh...');
             const activeEpgUrlSources = settings.epgSources.filter(s => s.isActive && s.type === 'url');
+            if (activeEpgUrlSources.length === 0) {
+                console.log('[EPG_REFRESH] No active URL-based EPG sources to refresh. Skipping download phase.');
+            }
             for(const source of activeEpgUrlSources) {
                 try {
-                    console.log(`[EPG] Refreshing ${source.name} from ${source.path}`);
+                    console.log(`[EPG_REFRESH] Refreshing ${source.name} from ${source.path}`);
                     const content = await fetchUrlContent(source.path);
                     const epgFilePath = path.join(SOURCES_DIR, `epg_${source.id}.xml`);
                     fs.writeFileSync(epgFilePath, content);
+                    console.log(`[EPG_REFRESH] EPG for ${source.name} updated.`);
                 } catch(error) {
-                     console.error(`[EPG] Scheduled refresh for ${source.name} failed:`, error.message);
+                     console.error(`[EPG_REFRESH] Scheduled refresh for ${source.name} failed:`, error.message);
                 }
             }
-            await processAndMergeSources();
-            scheduleEpgRefresh();
+            await processAndMergeSources(); // Re-process all sources (including refreshed ones)
+            scheduleEpgRefresh(); // Reschedule for next interval
             
         }, refreshHours * 3600 * 1000);
+    } else {
+        console.log('[EPG_REFRESH] EPG auto-refresh is disabled.');
     }
 };
 
 // --- Authentication API Endpoints ---
 app.get('/api/auth/needs-setup', (req, res) => {
+    console.log('[AUTH_API] Received request for /api/auth/needs-setup');
     db.get("SELECT COUNT(*) as count FROM users WHERE isAdmin = 1", [], (err, row) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ needsSetup: row.count === 0 });
+        if (err) {
+            console.error('[AUTH_API] Error checking admin user count:', err.message);
+            return res.status(500).json({ error: err.message });
+        }
+        const needsSetup = row.count === 0;
+        console.log(`[AUTH_API] Admin user count: ${row.count}. Needs setup: ${needsSetup}`);
+        res.json({ needsSetup });
     });
 });
 
 app.post('/api/auth/setup-admin', (req, res) => {
+    console.log('[AUTH_API] Received request for /api/auth/setup-admin');
     db.get("SELECT COUNT(*) as count FROM users", [], (err, row) => {
-        if (err) return res.status(500).json({ error: err.message });
-        if (row.count > 0) return res.status(403).json({ error: "Setup has already been completed." });
+        if (err) {
+            console.error('[AUTH_API] Error checking user count during admin setup:', err.message);
+            return res.status(500).json({ error: err.message });
+        }
+        if (row.count > 0) {
+            console.warn('[AUTH_API] Setup attempted but users already exist. Denying setup.');
+            return res.status(403).json({ error: "Setup has already been completed." });
+        }
         
         const { username, password } = req.body;
-        if (!username || !password) return res.status(400).json({ error: "Username and password are required." });
+        if (!username || !password) {
+            console.warn('[AUTH_API] Admin setup failed: Username and/or password missing.');
+            return res.status(400).json({ error: "Username and password are required." });
+        }
 
         bcrypt.hash(password, saltRounds, (err, hash) => {
-            if (err) return res.status(500).json({ error: 'Error hashing password.' });
+            if (err) {
+                console.error('[AUTH_API] Error hashing password during admin setup:', err);
+                return res.status(500).json({ error: 'Error hashing password.' });
+            }
             db.run("INSERT INTO users (username, password, isAdmin) VALUES (?, ?, 1)", [username, hash], function(err) {
-                if (err) return res.status(500).json({ error: err.message });
+                if (err) {
+                    console.error('[AUTH_API] Error inserting admin user:', err.message);
+                    return res.status(500).json({ error: err.message });
+                }
                 req.session.userId = this.lastID;
                 req.session.username = username;
                 req.session.isAdmin = true;
-                res.json({ success: true, user: { username: req.session.username, isAdmin: req.session.isAdmin } }); // Corrected to use session values
+                console.log(`[AUTH_API] Admin user "${username}" created successfully (ID: ${this.lastID}). Session set.`);
+                res.json({ success: true, user: { username: req.session.username, isAdmin: req.session.isAdmin } });
             });
         });
     });
 });
 
 app.post('/api/auth/login', (req, res) => {
+    console.log('[AUTH_API] Received request for /api/auth/login');
     const { username, password } = req.body;
     db.get("SELECT * FROM users WHERE username = ?", [username], (err, user) => {
-        if (err) return res.status(500).json({ error: err.message });
-        if (!user) return res.status(401).json({ error: "Invalid username or password." });
+        if (err) {
+            console.error('[AUTH_API] Error querying user during login:', err.message);
+            return res.status(500).json({ error: err.message });
+        }
+        if (!user) {
+            console.warn(`[AUTH_API] Login failed for username "${username}": User not found.`);
+            return res.status(401).json({ error: "Invalid username or password." });
+        }
         
         bcrypt.compare(password, user.password, (err, result) => {
+            if (err) {
+                console.error('[AUTH_API] Error comparing password hash:', err);
+                return res.status(500).json({ error: 'Authentication error.' });
+            }
             if (result) {
                 req.session.userId = user.id;
                 req.session.username = user.username;
                 req.session.isAdmin = user.isAdmin === 1;
+                console.log(`[AUTH_API] User "${username}" (ID: ${user.id}) logged in successfully. Session set.`);
                 res.json({
                     success: true,
                     user: { username: user.username, isAdmin: user.isAdmin === 1 }
                 });
             } else {
+                console.warn(`[AUTH_API] Login failed for username "${username}": Incorrect password.`);
                 res.status(401).json({ error: "Invalid username or password." });
             }
         });
@@ -448,17 +590,26 @@ app.post('/api/auth/login', (req, res) => {
 });
 
 app.post('/api/auth/logout', (req, res) => {
+    console.log('[AUTH_API] Received request for /api/auth/logout');
+    const username = req.session.username || 'unknown';
     req.session.destroy(err => {
-        if (err) return res.status(500).json({ error: 'Could not log out.' });
+        if (err) {
+            console.error(`[AUTH_API] Error destroying session for user ${username}:`, err);
+            return res.status(500).json({ error: 'Could not log out.' });
+        }
         res.clearCookie('connect.sid');
+        console.log(`[AUTH_API] User ${username} logged out. Session destroyed.`);
         res.json({ success: true });
     });
 });
 
 app.get('/api/auth/status', (req, res) => {
+    console.log('[AUTH_API] Received request for /api/auth/status');
     if (req.session && req.session.userId) {
+        console.log(`[AUTH_API] User ${req.session.username} (ID: ${req.session.userId}) is logged in.`);
         res.json({ isLoggedIn: true, user: { username: req.session.username, isAdmin: req.session.isAdmin } });
     } else {
+        console.log('[AUTH_API] No active session found. User is not logged in.');
         res.json({ isLoggedIn: false });
     }
 });
@@ -466,20 +617,36 @@ app.get('/api/auth/status', (req, res) => {
 
 // --- User Management API Endpoints (Admin only) ---
 app.get('/api/users', requireAdmin, (req, res) => {
+    console.log('[USER_API] Fetching all users.');
     db.all("SELECT id, username, isAdmin FROM users ORDER BY username", [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
+        if (err) {
+            console.error('[USER_API] Error fetching users:', err.message);
+            return res.status(500).json({ error: err.message });
+        }
+        console.log(`[USER_API] Found ${rows.length} users.`);
         res.json(rows);
     });
 });
 
 app.post('/api/users', requireAdmin, (req, res) => {
+    console.log('[USER_API] Adding new user.');
     const { username, password, isAdmin } = req.body;
-    if (!username || !password) return res.status(400).json({ error: "Username and password are required." });
+    if (!username || !password) {
+        console.warn('[USER_API] Add user failed: Username and/or password missing.');
+        return res.status(400).json({ error: "Username and password are required." });
+    }
     
     bcrypt.hash(password, saltRounds, (err, hash) => {
-        if (err) return res.status(500).json({ error: 'Error hashing password' });
+        if (err) {
+            console.error('[USER_API] Error hashing password for new user:', err);
+            return res.status(500).json({ error: 'Error hashing password' });
+        }
         db.run("INSERT INTO users (username, password, isAdmin) VALUES (?, ?, ?)", [username, hash, isAdmin ? 1 : 0], function (err) {
-            if (err) return res.status(400).json({ error: "Username already exists." });
+            if (err) {
+                console.error('[USER_API] Error inserting new user:', err.message);
+                return res.status(400).json({ error: "Username already exists." });
+            }
+            console.log(`[USER_API] User "${username}" added successfully (ID: ${this.lastID}).`);
             res.json({ success: true, id: this.lastID });
         });
     });
@@ -488,29 +655,55 @@ app.post('/api/users', requireAdmin, (req, res) => {
 app.put('/api/users/:id', requireAdmin, (req, res) => {
     const { id } = req.params;
     const { username, password, isAdmin } = req.body;
+    console.log(`[USER_API] Updating user ID: ${id}. Username: ${username}, IsAdmin: ${isAdmin}`);
 
     const updateUser = () => {
         if (password) {
             bcrypt.hash(password, saltRounds, (err, hash) => {
-                if (err) return res.status(500).json({ error: 'Error hashing password' });
+                if (err) {
+                    console.error('[USER_API] Error hashing password during user update:', err);
+                    return res.status(500).json({ error: 'Error hashing password' });
+                }
                 db.run("UPDATE users SET username = ?, password = ?, isAdmin = ? WHERE id = ?", [username, hash, isAdmin ? 1 : 0, id], (err) => {
-                    if (err) return res.status(500).json({ error: err.message });
-                    if (req.session.userId == id) req.session.isAdmin = isAdmin;
+                    if (err) {
+                        console.error(`[USER_API] Error updating user ${id} with new password:`, err.message);
+                        return res.status(500).json({ error: err.message });
+                    }
+                    if (req.session.userId == id) {
+                        req.session.username = username;
+                        req.session.isAdmin = isAdmin;
+                        console.log(`[USER_API] Current user's session (ID: ${id}) updated.`);
+                    }
+                    console.log(`[USER_API] User ${id} updated successfully (with password change).`);
                     res.json({ success: true });
                 });
             });
         } else {
             db.run("UPDATE users SET username = ?, isAdmin = ? WHERE id = ?", [username, isAdmin ? 1 : 0, id], (err) => {
-                if (err) return res.status(500).json({ error: err.message });
-                 if (req.session.userId == id) req.session.isAdmin = isAdmin;
+                if (err) {
+                    console.error(`[USER_API] Error updating user ${id} without password change:`, err.message);
+                    return res.status(500).json({ error: err.message });
+                }
+                 if (req.session.userId == id) {
+                    req.session.username = username;
+                    req.session.isAdmin = isAdmin;
+                    console.log(`[USER_API] Current user's session (ID: ${id}) updated.`);
+                 }
+                console.log(`[USER_API] User ${id} updated successfully (without password change).`);
                 res.json({ success: true });
             });
         }
     };
     
     if (req.session.userId == id && !isAdmin) {
+        console.log(`[USER_API] Attempting to demote current admin user ${id}. Checking if last admin.`);
          db.get("SELECT COUNT(*) as count FROM users WHERE isAdmin = 1", [], (err, row) => {
-            if (err || row.count <= 1) {
+            if (err) {
+                console.error('[USER_API] Error checking admin count for demotion:', err.message);
+                return res.status(500).json({ error: err.message });
+            }
+            if (row.count <= 1) {
+                console.warn(`[USER_API] Cannot demote user ${id}: They are the last administrator.`);
                 return res.status(403).json({error: "Cannot remove the last administrator."});
             }
             updateUser();
@@ -522,10 +715,22 @@ app.put('/api/users/:id', requireAdmin, (req, res) => {
 
 app.delete('/api/users/:id', requireAdmin, (req, res) => {
     const { id } = req.params;
-    if (req.session.userId == id) return res.status(403).json({ error: "You cannot delete your own account." });
+    console.log(`[USER_API] Deleting user ID: ${id}`);
+    if (req.session.userId == id) {
+        console.warn(`[USER_API] Attempted to delete own account for user ${id}.`);
+        return res.status(403).json({ error: "You cannot delete your own account." });
+    }
     
     db.run("DELETE FROM users WHERE id = ?", id, function(err) {
-        if (err) return res.status(500).json({ error: err.message });
+        if (err) {
+            console.error(`[USER_API] Error deleting user ${id}:`, err.message);
+            return res.status(500).json({ error: err.message });
+        }
+        if (this.changes === 0) {
+            console.warn(`[USER_API] User ${id} not found for deletion.`);
+            return res.status(404).json({ error: 'User not found.' });
+        }
+        console.log(`[USER_API] User ${id} deleted successfully.`);
         res.json({ success: true });
     });
 });
@@ -533,18 +738,37 @@ app.delete('/api/users/:id', requireAdmin, (req, res) => {
 
 // --- Protected IPTV API Endpoints ---
 app.get('/api/config', requireAuth, (req, res) => {
+    console.log('[API] Fetching /api/config for user:', req.session.username);
     try {
         let config = { m3uContent: null, epgContent: null, settings: {} };
         let globalSettings = getSettings();
-        config.settings = globalSettings;
+        config.settings = globalSettings; // Start with global settings
 
-        if (fs.existsSync(MERGED_M3U_PATH)) config.m3uContent = fs.readFileSync(MERGED_M3U_PATH, 'utf-8');
-        if (fs.existsSync(MERGED_EPG_JSON_PATH)) config.epgContent = JSON.parse(fs.readFileSync(MERGED_EPG_JSON_PATH, 'utf-8'));
+        // Read merged M3U and EPG files
+        if (fs.existsSync(MERGED_M3U_PATH)) {
+            config.m3uContent = fs.readFileSync(MERGED_M3U_PATH, 'utf-8');
+            console.log(`[API] Loaded M3U content from ${MERGED_M3U_PATH}.`);
+        } else {
+            console.log(`[API] No merged M3U file found at ${MERGED_M3U_PATH}.`);
+        }
+        if (fs.existsSync(MERGED_EPG_JSON_PATH)) {
+            try {
+                config.epgContent = JSON.parse(fs.readFileSync(MERGED_EPG_JSON_PATH, 'utf-8'));
+                console.log(`[API] Loaded EPG content from ${MERGED_EPG_JSON_PATH}.`);
+            } catch (parseError) {
+                console.error(`[API] Error parsing merged EPG JSON from ${MERGED_EPG_JSON_PATH}: ${parseError.message}`);
+                config.epgContent = {};
+            }
+        } else {
+            console.log(`[API] No merged EPG JSON file found at ${MERGED_EPG_JSON_PATH}.`);
+        }
         
+        // Fetch user-specific settings and merge them
         db.all(`SELECT key, value FROM user_settings WHERE user_id = ?`, [req.session.userId], (err, rows) => {
             if (err) {
-                console.error("Error fetching user settings:", err);
-                return res.json(config);
+                console.error("[API] Error fetching user settings:", err);
+                // Still send global settings if user settings fail
+                return res.status(200).json(config);
             }
             if (rows) {
                 const userSettings = {};
@@ -552,16 +776,19 @@ app.get('/api/config', requireAuth, (req, res) => {
                     try {
                         userSettings[row.key] = JSON.parse(row.value);
                     } catch (e) {
-                        userSettings[row.key] = row.value;
+                        userSettings[row.key] = row.value; // Store as string if not valid JSON
+                        console.warn(`[API] User setting key "${row.key}" could not be parsed as JSON. Storing as raw string.`);
                     }
                 });
+                // Merge user settings on top of global settings (user settings override global)
                 config.settings = { ...config.settings, ...userSettings };
+                console.log(`[API] Merged user settings for user ID: ${req.session.userId}`);
             }
-            res.json(config);
+            res.status(200).json(config);
         });
 
     } catch (error) {
-        console.error("Error reading config:", error);
+        console.error("[API] Error reading config or related files:", error);
         res.status(500).json({ error: "Could not load configuration from server." });
     }
 });
@@ -569,7 +796,12 @@ app.get('/api/config', requireAuth, (req, res) => {
 
 const upload = multer({
     storage: multer.diskStorage({
-        destination: (req, file, cb) => cb(null, SOURCES_DIR),
+        destination: (req, file, cb) => {
+            if (!fs.existsSync(SOURCES_DIR)) {
+                fs.mkdirSync(SOURCES_DIR, { recursive: true });
+            }
+            cb(null, SOURCES_DIR);
+        },
         filename: (req, file, cb) => {
             cb(null, `${file.fieldname}-${Date.now()}${path.extname(file.originalname)}`);
         }
@@ -579,32 +811,38 @@ const upload = multer({
 
 app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, res) => {
     const { sourceType, name, url, isActive, id } = req.body;
+    console.log(`[SOURCES_API] ${id ? 'Updating' : 'Adding'} source. Type: ${sourceType}, Name: ${name}`);
 
     if (!sourceType || !name) {
-        if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path); // Clean up uploaded file
+        console.warn('[SOURCES_API] Source type or name missing for source operation.');
         return res.status(400).json({ error: 'Source type and name are required.' });
     }
 
     const settings = getSettings();
     const sourceList = sourceType === 'm3u' ? settings.m3uSources : settings.epgSources;
 
-    if (id) {
+    if (id) { // Update existing source
         const sourceIndex = sourceList.findIndex(s => s.id === id);
         if (sourceIndex === -1) {
-            if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path); // Clean up uploaded file
+            console.warn(`[SOURCES_API] Source ID ${id} not found for update.`);
             return res.status(404).json({ error: 'Source to update not found.' });
         }
 
         const sourceToUpdate = sourceList[sourceIndex];
+        console.log(`[SOURCES_API] Found existing source for update: ${sourceToUpdate.name}`);
         sourceToUpdate.name = name;
         sourceToUpdate.isActive = isActive === 'true';
         sourceToUpdate.lastUpdated = new Date().toISOString();
 
-        if (req.file) { 
+        if (req.file) { // New file uploaded
+            console.log(`[SOURCES_API] New file uploaded for source ${id}. Deleting old file if exists.`);
             if (sourceToUpdate.type === 'file' && fs.existsSync(sourceToUpdate.path)) {
                 try {
                     fs.unlinkSync(sourceToUpdate.path);
-                } catch (e) { console.error("Could not delete old source file:", e); }
+                    console.log(`[SOURCES_API] Deleted old file: ${sourceToUpdate.path}`);
+                } catch (e) { console.error("[SOURCES_API] Could not delete old source file:", e); }
             }
 
             const extension = sourceType === 'm3u' ? '.m3u' : '.xml';
@@ -613,24 +851,33 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
                 fs.renameSync(req.file.path, newPath);
                 sourceToUpdate.path = newPath;
                 sourceToUpdate.type = 'file';
+                console.log(`[SOURCES_API] Renamed uploaded file to: ${newPath}`);
             } catch (e) {
-                console.error('Error renaming updated source file:', e);
+                console.error('[SOURCES_API] Error renaming updated source file:', e);
                 return res.status(500).json({ error: 'Could not save updated file.' });
             }
-        } else if (url) {
+        } else if (url !== undefined) { // URL provided, could be same or new URL, or changing from file to URL
+            console.log(`[SOURCES_API] URL provided for source ${id}.`);
             if (sourceToUpdate.type === 'file' && fs.existsSync(sourceToUpdate.path)) {
                 try {
                     fs.unlinkSync(sourceToUpdate.path);
-                } catch (e) { console.error("Could not delete old source file:", e); }
+                    console.log(`[SOURCES_API] Deleted old file (switching to URL): ${sourceToUpdate.path}`);
+                } catch (e) { console.error("[SOURCES_API] Could not delete old source file (on type change):", e); }
             }
             sourceToUpdate.path = url;
             sourceToUpdate.type = 'url';
+        } else if (sourceToUpdate.type === 'file' && !req.file && (!sourceToUpdate.path || !fs.existsSync(sourceToUpdate.path))) {
+            // This case handles existing file source where no new file is uploaded and original path is missing
+            console.warn(`[SOURCES_API] Existing file source ${id} has no file and no new file/URL provided.`);
+            return res.status(400).json({ error: 'Existing file source requires a new file if original is missing.' });
         }
 
-        saveSettings(settings);
-        res.json({ success: true, message: 'Source updated successfully.', settings });
 
-    } else { 
+        saveSettings(settings);
+        console.log(`[SOURCES_API] Source ${id} updated successfully.`);
+        res.json({ success: true, message: 'Source updated successfully.', settings: getSettings() }); // Re-fetch to send merged settings
+
+    } else { // Add new source
         const newSource = {
             id: `src-${Date.now()}`,
             name,
@@ -643,7 +890,12 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
         };
 
         if (newSource.type === 'url' && !newSource.path) {
+            console.warn('[SOURCES_API] New URL source failed: URL is required.');
             return res.status(400).json({ error: 'URL is required for URL-type source.' });
+        }
+        if (newSource.type === 'file' && !req.file) {
+            console.warn('[SOURCES_API] New file source failed: A file must be selected.');
+            return res.status(400).json({ error: 'A file must be selected for new file-based sources.' });
         }
 
         if (req.file) {
@@ -652,15 +904,17 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
             try {
                 fs.renameSync(req.file.path, newPath);
                 newSource.path = newPath;
+                console.log(`[SOURCES_API] Renamed uploaded file for new source to: ${newPath}`);
             } catch (e) {
-                console.error('Error renaming new source file:', e);
+                console.error('[SOURCES_API] Error renaming new source file:', e);
                 return res.status(500).json({ error: 'Could not save uploaded file.' });
             }
         }
 
         sourceList.push(newSource);
         saveSettings(settings);
-        res.json({ success: true, message: 'Source added successfully.', settings });
+        console.log(`[SOURCES_API] New source "${name}" added successfully (ID: ${newSource.id}).`);
+        res.json({ success: true, message: 'Source added successfully.', settings: getSettings() });
     }
 });
 
@@ -668,29 +922,33 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
 app.put('/api/sources/:sourceType/:id', requireAuth, (req, res) => {
     const { sourceType, id } = req.params;
     const { name, path: newPath, isActive } = req.body;
+    console.log(`[SOURCES_API] Partial update source ID: ${id}, Type: ${sourceType}, isActive: ${isActive}`);
     
     const settings = getSettings();
     const sourceList = sourceType === 'm3u' ? settings.m3uSources : settings.epgSources;
     const sourceIndex = sourceList.findIndex(s => s.id === id);
 
     if (sourceIndex === -1) {
+        console.warn(`[SOURCES_API] Source ID ${id} not found for partial update.`);
         return res.status(404).json({ error: 'Source not found.' });
     }
 
     const source = sourceList[sourceIndex];
     source.name = name ?? source.name;
-    source.isActive = isActive ?? source.isActive;
-    if (source.type === 'url') {
-        source.path = newPath ?? source.path;
+    source.isActive = isActive ?? source.isActive; // Handle boolean conversion from client if needed
+    if (source.type === 'url' && newPath !== undefined) { // Only allow path update for URL types here
+        source.path = newPath;
     }
     source.lastUpdated = new Date().toISOString();
 
     saveSettings(settings);
-    res.json({ success: true, message: 'Source updated.', settings });
+    console.log(`[SOURCES_API] Source ${id} partially updated.`);
+    res.json({ success: true, message: 'Source updated.', settings: getSettings() });
 });
 
 app.delete('/api/sources/:sourceType/:id', requireAuth, (req, res) => {
     const { sourceType, id } = req.params;
+    console.log(`[SOURCES_API] Deleting source ID: ${id}, Type: ${sourceType}`);
     
     const settings = getSettings();
     let sourceList = sourceType === 'm3u' ? settings.m3uSources : settings.epgSources;
@@ -699,90 +957,117 @@ app.delete('/api/sources/:sourceType/:id', requireAuth, (req, res) => {
     if (source && source.type === 'file' && fs.existsSync(source.path)) {
         try {
             fs.unlinkSync(source.path);
+            console.log(`[SOURCES_API] Deleted associated file: ${source.path}`);
         } catch (e) {
-            console.error(`Could not delete source file: ${source.path}`, e);
+            console.error(`[SOURCES_API] Could not delete source file: ${source.path}`, e);
         }
     }
     
+    const initialLength = sourceList.length;
     const newList = sourceList.filter(s => s.id !== id);
     if (sourceType === 'm3u') settings.m3uSources = newList;
     else settings.epgSources = newList;
 
+    if (newList.length === initialLength) {
+        console.warn(`[SOURCES_API] Source ID ${id} not found for deletion.`);
+        return res.status(404).json({ error: 'Source not found.' });
+    }
+
     saveSettings(settings);
-    res.json({ success: true, message: 'Source deleted.', settings });
+    console.log(`[SOURCES_API] Source ${id} deleted successfully.`);
+    res.json({ success: true, message: 'Source deleted.', settings: getSettings() });
 });
 
 app.post('/api/process-sources', requireAuth, async (req, res) => {
+    console.log('[API] Received request to /api/process-sources (manual trigger).');
     try {
         const result = await processAndMergeSources();
+        console.log('[API] Source processing completed (manual trigger).');
         res.json(result);
     }
     catch (error) {
-        console.error("Error during manual source processing:", error);
-        res.status(500).json({ error: 'Failed to process sources.' });
+        console.error("[API] Error during manual source processing:", error);
+        res.status(500).json({ error: 'Failed to process sources. Check server logs.' });
     }
 });
 
 
 app.post('/api/save/settings', requireAuth, async (req, res) => {
+    console.log('[API] Received request to /api/save/settings.');
     try {
         let currentSettings = getSettings();
         
         const oldTimezone = currentSettings.timezoneOffset;
         const oldRefresh = currentSettings.autoRefresh;
 
-        const updatedSettings = { ...currentSettings, ...req.body };
-
-        const userSpecificKeys = ['favorites', 'playerDimensions', 'programDetailsDimensions', 'recentChannels', 'notificationLeadTime'];
-        userSpecificKeys.forEach(key => delete updatedSettings[key]);
+        // Merge incoming settings, ensuring we don't accidentally save user-specific settings as global
+        const updatedSettings = { ...currentSettings };
+        for (const key in req.body) {
+            // These keys are explicitly managed as user-specific on the client,
+            // so they should not be written to the global settings.json
+            if (!['favorites', 'playerDimensions', 'programDetailsDimensions', 'recentChannels', 'notificationLeadTime'].includes(key)) {
+                updatedSettings[key] = req.body[key];
+            } else {
+                console.warn(`[SETTINGS_SAVE] Attempted to save user-specific key "${key}" to global settings. This is ignored.`);
+            }
+        }
 
         saveSettings(updatedSettings);
         
+        // Trigger re-processing or rescheduling if relevant settings changed
         if (updatedSettings.timezoneOffset !== oldTimezone) {
-            console.log("Timezone changed, re-processing sources.");
+            console.log("[API] Timezone setting changed, re-processing sources.");
             await processAndMergeSources();
         }
         if (updatedSettings.autoRefresh !== oldRefresh) {
-            console.log("Auto-refresh setting changed, rescheduling.");
+            console.log("[API] Auto-refresh setting changed, rescheduling EPG refresh.");
             scheduleEpgRefresh();
         }
 
-        res.json({ success: true, message: 'Settings saved.', settings: updatedSettings });
+        res.json({ success: true, message: 'Settings saved.', settings: getSettings() }); // Return the full, current global settings
     } catch (error) {
-        console.error("Error saving settings:", error);
-        res.status(500).json({ error: "Could not save settings." });
+        console.error("[API] Error saving global settings:", error);
+        res.status(500).json({ error: "Could not save settings. Check server logs." });
     }
 });
 
 app.post('/api/user/settings', requireAuth, (req, res) => {
+    console.log(`[API] Received request to /api/user/settings for user ${req.session.userId}.`);
     const { key, value } = req.body;
-    if (!key) return res.status(400).json({ error: 'A setting key is required.' });
+    if (!key) {
+        console.warn('[API] User setting save failed: Key is missing.');
+        return res.status(400).json({ error: 'A setting key is required.' });
+    }
     
     const valueJson = JSON.stringify(value);
     const userId = req.session.userId;
 
+    // UPSERT operation: try to update, if no rows changed, then insert
     db.run(
         `UPDATE user_settings SET value = ? WHERE user_id = ? AND key = ?`,
         [valueJson, userId, key],
         function (err) {
             if (err) {
-                console.error('Error updating user setting:', err);
+                console.error(`[API] Error updating user setting for user ${userId}, key ${key}:`, err);
                 return res.status(500).json({ error: 'Could not save user setting.' });
             }
             
             if (this.changes === 0) {
+                console.log(`[API] User setting for user ${userId}, key ${key} not found for update. Attempting insert.`);
                 db.run(
                     `INSERT INTO user_settings (user_id, key, value) VALUES (?, ?, ?)`,
                     [userId, key, valueJson],
                     (insertErr) => {
                         if (insertErr) {
-                            console.error('Error inserting user setting:', insertErr);
+                            console.error(`[API] Error inserting user setting for user ${userId}, key ${key}:`, insertErr);
                             return res.status(500).json({ error: 'Could not save user setting.' });
                         }
+                        console.log(`[API] User setting for user ${userId}, key ${key} inserted successfully.`);
                         res.json({ success: true });
                     }
                 );
             } else {
+                console.log(`[API] User setting for user ${userId}, key ${key} updated successfully.`);
                 res.json({ success: true });
             }
         }
@@ -792,86 +1077,100 @@ app.post('/api/user/settings', requireAuth, (req, res) => {
 // --- Notification Endpoints ---
 
 app.get('/api/notifications/vapid-public-key', requireAuth, (req, res) => {
+    console.log('[PUSH_API] Request for VAPID public key.');
     if (!vapidKeys.publicKey) {
+        console.error('[PUSH_API] VAPID public key not available on the server.');
         return res.status(500).json({ error: 'VAPID public key not available on the server.' });
     }
     res.send(vapidKeys.publicKey);
 });
 
 app.post('/api/notifications/subscribe', requireAuth, (req, res) => {
+    console.log(`[PUSH_API] Subscribe request for user ${req.session.userId}.`);
     const subscription = req.body;
     const userId = req.session.userId;
 
-    if (!subscription || !subscription.endpoint) {
+    if (!subscription || !subscription.endpoint || !subscription.keys || !subscription.keys.p256dh || !subscription.keys.auth) {
+        console.warn('[PUSH_API] Invalid subscription object received.');
         return res.status(400).json({ error: 'Invalid subscription object.' });
     }
 
     const { endpoint, keys: { p256dh, auth } } = subscription;
 
+    // UPSERT logic: Insert or update if endpoint already exists
     db.run(
         `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) VALUES (?, ?, ?, ?)
-         ON CONFLICT(endpoint) DO UPDATE SET user_id=excluded.user_id`,
+         ON CONFLICT(endpoint) DO UPDATE SET user_id=excluded.user_id, p256dh=excluded.p256dh, auth=excluded.auth`,
         [userId, endpoint, p256dh, auth],
         function(err) {
             if (err) {
-                console.error('Error saving push subscription:', err);
+                console.error(`[PUSH_API] Error saving push subscription for user ${userId}:`, err);
                 return res.status(500).json({ error: 'Could not save subscription.' });
             }
-            console.log(`[Push] User ${userId} subscribed with endpoint: ${endpoint}`);
+            console.log(`[PUSH] User ${userId} subscribed with endpoint: ${endpoint}. (ID: ${this.lastID || 'existing'})`);
             res.status(201).json({ success: true });
         }
     );
 });
 
 app.post('/api/notifications/unsubscribe', requireAuth, (req, res) => {
+    console.log(`[PUSH_API] Unsubscribe request for user ${req.session.userId}.`);
     const { endpoint } = req.body;
     if (!endpoint) {
+        console.warn('[PUSH_API] Unsubscribe failed: Endpoint is required.');
         return res.status(400).json({ error: 'Endpoint is required to unsubscribe.' });
     }
 
-    db.run("DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?", [endpoint, req.session.userId], (err) => {
+    db.run("DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?", [endpoint, req.session.userId], function(err) {
         if (err) {
-            console.error('Error deleting push subscription:', err);
+            console.error(`[PUSH_API] Error deleting push subscription for user ${req.session.userId}, endpoint ${endpoint}:`, err);
             return res.status(500).json({ error: 'Could not unsubscribe.' });
         }
-        console.log(`[Push] User ${req.session.userId} unsubscribed from endpoint: ${endpoint}`);
+        if (this.changes === 0) {
+            console.warn(`[PUSH_API] No subscription found for user ${req.session.userId} with endpoint ${endpoint} for deletion.`);
+            return res.status(404).json({ error: 'Subscription not found or unauthorized.' });
+        }
+        console.log(`[PUSH] User ${req.session.userId} unsubscribed from endpoint: ${endpoint}`);
         res.json({ success: true });
     });
 });
 
 app.post('/api/notifications', requireAuth, (req, res) => {
+    console.log(`[PUSH_API] Add notification request for user ${req.session.userId}.`);
     const { channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, scheduledTime, programId } = req.body;
 
     if (!channelId || !programTitle || !programStart || !scheduledTime || !programId) {
+        console.warn('[PUSH_API] Missing required fields for adding notification.');
         return res.status(400).json({ error: 'Missing required notification fields.' });
     }
 
-    // NEW: Insert with 'pending' status
     db.run(`INSERT INTO notifications (user_id, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime, programId, status)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
         [req.session.userId, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, scheduledTime, programId],
         function (err) {
             if (err) {
-                console.error('Error adding notification to database:', err);
+                console.error('[PUSH_API] Error adding notification to database:', err);
                 return res.status(500).json({ error: 'Could not add notification.' });
             }
+            console.log(`[PUSH_API] Notification added for program "${programTitle}" (ID: ${this.lastID}) for user ${req.session.userId}.`);
             res.status(201).json({ success: true, id: this.lastID });
         }
     );
 });
 
 app.get('/api/notifications', requireAuth, (req, res) => {
-    // NEW: Fetch all notifications, the frontend will filter 'upcoming' vs 'past/expired'
+    console.log(`[PUSH_API] Fetching notifications for user ${req.session.userId}.`);
     db.all(`SELECT id, user_id, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime as scheduledTime, programId, status, triggeredAt
             FROM notifications
             WHERE user_id = ?
-            ORDER BY notificationTime DESC`, // Ordered by notification time (newest first for 'past' section)
+            ORDER BY notificationTime DESC`,
         [req.session.userId],
         (err, rows) => {
             if (err) {
-                console.error('Error fetching notifications from database:', err);
+                console.error('[PUSH_API] Error fetching notifications from database:', err);
                 return res.status(500).json({ error: 'Could not retrieve notifications.' });
             }
+            console.log(`[PUSH_API] Found ${rows.length} notifications for user ${req.session.userId}.`);
             res.json(rows);
         }
     );
@@ -879,16 +1178,19 @@ app.get('/api/notifications', requireAuth, (req, res) => {
 
 app.delete('/api/notifications/:id', requireAuth, (req, res) => {
     const { id } = req.params;
+    console.log(`[PUSH_API] Deleting notification ID: ${id} for user ${req.session.userId}.`);
     db.run(`DELETE FROM notifications WHERE id = ? AND user_id = ?`,
         [id, req.session.userId],
         function (err) {
             if (err) {
-                console.error('Error deleting notification from database:', err);
+                console.error(`[PUSH_API] Error deleting notification ${id} from database:`, err);
                 return res.status(500).json({ error: 'Could not delete notification.' });
             }
             if (this.changes === 0) {
+                console.warn(`[PUSH_API] Notification ${id} not found or unauthorized for user ${req.session.userId}.`);
                 return res.status(404).json({ error: 'Notification not found or unauthorized.' });
             }
+            console.log(`[PUSH_API] Notification ${id} deleted successfully for user ${req.session.userId}.`);
             res.json({ success: true });
         }
     );
@@ -896,96 +1198,148 @@ app.delete('/api/notifications/:id', requireAuth, (req, res) => {
 
 
 app.delete('/api/data', requireAuth, (req, res) => {
+    console.log(`[API] Received request to /api/data (clear all data) for user ${req.session.userId}.`);
     try {
         [MERGED_M3U_PATH, MERGED_EPG_JSON_PATH, SETTINGS_PATH].forEach(file => {
-            if (fs.existsSync(file)) fs.unlinkSync(file);
+            if (fs.existsSync(file)) {
+                fs.unlinkSync(file);
+                console.log(`[API] Deleted file: ${file}`);
+            }
         });
         if(fs.existsSync(SOURCES_DIR)) {
             fs.rmSync(SOURCES_DIR, { recursive: true, force: true });
+            console.log(`[API] Removed sources directory: ${SOURCES_DIR}`);
             fs.mkdirSync(SOURCES_DIR, { recursive: true });
+            console.log(`[API] Recreated empty sources directory: ${SOURCES_DIR}`);
         }
         
-        db.run(`DELETE FROM user_settings WHERE user_id = ?`, [req.session.userId]);
-        // Also clear all notifications for the user upon full data clear
-        db.run(`DELETE FROM notifications WHERE user_id = ?`, [req.session.userId]);
-        db.run(`DELETE FROM push_subscriptions WHERE user_id = ?`, [req.session.userId]);
+        // Delete user-specific data from DB
+        db.run(`DELETE FROM user_settings WHERE user_id = ?`, [req.session.userId], (err) => {
+            if (err) console.error(`[API] Error clearing user settings for user ${req.session.userId}:`, err.message);
+            else console.log(`[API] Cleared user settings for user ${req.session.userId}.`);
+        });
+        db.run(`DELETE FROM notifications WHERE user_id = ?`, [req.session.userId], (err) => {
+            if (err) console.error(`[API] Error clearing notifications for user ${req.session.userId}:`, err.message);
+            else console.log(`[API] Cleared notifications for user ${req.session.userId}.`);
+        });
+        db.run(`DELETE FROM push_subscriptions WHERE user_id = ?`, [req.session.userId], (err) => {
+            if (err) console.error(`[API] Error clearing push subscriptions for user ${req.session.userId}:`, err.message);
+            else console.log(`[API] Cleared push subscriptions for user ${req.session.userId}.`);
+        });
 
+        console.log(`[API] All data cleared for user ${req.session.userId}.`);
         res.json({ success: true, message: 'All data has been cleared.' });
     } catch (error) {
-        console.error("Error clearing data:", error);
+        console.error("[API] Error clearing data:", error);
         res.status(500).json({ error: "Failed to clear data." });
     }
 });
 
 app.get('/stream', requireAuth, (req, res) => {
     const { url: streamUrl, profileId, userAgentId } = req.query;
-    if (!streamUrl) return res.status(400).send('Error: `url` query parameter is required.');
+    console.log(`[STREAM] Stream request received. URL: ${streamUrl}, Profile ID: ${profileId}, User Agent ID: ${userAgentId}`);
+
+    if (!streamUrl) {
+        console.warn('[STREAM] Missing stream URL in request.');
+        return res.status(400).send('Error: `url` query parameter is required.');
+    }
 
     let settings = getSettings();
     
     const profile = (settings.streamProfiles || []).find(p => p.id === profileId);
-    if (!profile) return res.status(404).send(`Error: Stream profile with ID "${profileId}" not found.`);
+    if (!profile) {
+        console.error(`[STREAM] Stream profile with ID "${profileId}" not found in settings.`);
+        return res.status(404).send(`Error: Stream profile with ID "${profileId}" not found.`);
+    }
 
     if (profile.command === 'redirect') {
+        console.log(`[STREAM] Redirecting to stream URL: ${streamUrl}`);
         return res.redirect(302, streamUrl);
     }
     
     const userAgent = (settings.userAgents || []).find(ua => ua.id === userAgentId);
-    if (!userAgent) return res.status(404).send(`Error: User agent with ID "${userAgentId}" not found.`);
+    if (!userAgent) {
+        console.error(`[STREAM] User agent with ID "${userAgentId}" not found in settings.`);
+        return res.status(404).send(`Error: User agent with ID "${userAgentId}" not found.`);
+    }
     
-    console.log(`[STREAM] Proxying: ${streamUrl}`);
-    console.log(`[STREAM] Profile: "${profile.name}"`);
-    console.log(`[STREAM] User Agent: "${userAgent.name}"`);
+    console.log(`[STREAM] Proxying stream: ${streamUrl}`);
+    console.log(`[STREAM] Using Profile: "${profile.name}"`);
+    console.log(`[STREAM] Using User Agent: "${userAgent.name}"`);
 
     const commandTemplate = profile.command
         .replace(/{streamUrl}/g, streamUrl)
         .replace(/{userAgent}|{clientUserAgent}/g, userAgent.value);
         
+    // Split command into arguments, handling quoted strings
     const args = (commandTemplate.match(/(?:[^\s"]+|"[^"]*")+/g) || []).map(arg => arg.replace(/^"|"$/g, ''));
 
+    console.log(`[STREAM] FFmpeg command args: ${args.join(' ')}`);
     const ffmpeg = spawn('ffmpeg', args);
-    res.setHeader('Content-Type', 'video/mp2t');
+    res.setHeader('Content-Type', 'video/mp2t'); // Standard MIME type for MPEG Transport Stream
+    
     ffmpeg.stdout.pipe(res);
     
     ffmpeg.stderr.on('data', (data) => {
-        console.error(`[FFMPEG_ERROR] ${streamUrl}: ${data}`);
+        // Log FFMPEG errors to the server console, but don't send to client directly
+        console.error(`[FFMPEG_ERROR] Stream: ${streamUrl} - ${data.toString().trim()}`);
     });
 
     ffmpeg.on('close', (code) => {
-        if (code !== 0) console.log(`[STREAM] ffmpeg process for ${streamUrl} exited with code ${code}`);
-        res.end();
+        if (code !== 0) {
+            console.log(`[STREAM] ffmpeg process for ${streamUrl} exited with code ${code}`);
+        } else {
+            console.log(`[STREAM] ffmpeg process for ${streamUrl} exited gracefully.`);
+        }
+        if (!res.headersSent) { // Only end response if headers haven't been sent yet
+             res.status(500).send('FFmpeg stream ended unexpectedly or failed to start.');
+        } else {
+            res.end(); // End the response when ffmpeg closes
+        }
+    });
+
+    ffmpeg.on('error', (err) => {
+        console.error(`[STREAM] Failed to start ffmpeg process for ${streamUrl}: ${err.message}`);
+        if (!res.headersSent) {
+            res.status(500).send('Failed to start streaming service. Check server logs.');
+        }
     });
 
     req.on('close', () => {
-        console.log(`[STREAM] Client closed connection for ${streamUrl}. Killing ffmpeg.`);
-        ffmpeg.kill('SIGKILL');
+        console.log(`[STREAM] Client closed connection for ${streamUrl}. Killing ffmpeg process (PID: ${ffmpeg.pid}).`);
+        ffmpeg.kill('SIGKILL'); // Force kill ffmpeg process
     });
 });
 
 
 async function checkAndSendNotifications() {
+    console.log('[PUSH_CHECKER] Running scheduled notification check.');
     try {
         const now = new Date();
-        // NEW: Select only pending notifications where notificationTime is due
+        const nowIso = now.toISOString();
+        // Select only pending notifications where notificationTime is due
         const dueNotifications = await new Promise((resolve, reject) => {
-            db.all("SELECT * FROM notifications WHERE status = 'pending' AND notificationTime <= ?", [now.toISOString()], (err, rows) => {
+            db.all("SELECT * FROM notifications WHERE status = 'pending' AND notificationTime <= ?", [nowIso], (err, rows) => {
                 if (err) reject(err);
                 else resolve(rows);
             });
         });
 
         if (dueNotifications.length > 0) {
-            console.log(`[Push] Found ${dueNotifications.length} due notifications to send.`);
+            console.log(`[PUSH_CHECKER] Found ${dueNotifications.length} due notifications to process.`);
+        } else {
+            console.log('[PUSH_CHECKER] No due notifications found.');
         }
 
         for (const notification of dueNotifications) {
-            // NEW: Check if the program has already ended
+            console.log(`[PUSH_CHECKER] Processing notification ID: ${notification.id} for "${notification.programTitle}".`);
+            // Check if the program has already ended
             if (new Date(notification.programStop).getTime() <= now.getTime()) {
                 // Program has ended, mark notification as 'expired'
-                db.run("UPDATE notifications SET status = 'expired', triggeredAt = ? WHERE id = ?", [now.toISOString(), notification.id], (err) => {
-                    if (err) console.error(`[Push] Error marking notification ${notification.id} as expired:`, err);
+                db.run("UPDATE notifications SET status = 'expired', triggeredAt = ? WHERE id = ?", [nowIso, notification.id], (err) => {
+                    if (err) console.error(`[PUSH_CHECKER] Error marking notification ${notification.id} as expired:`, err.message);
                 });
-                console.log(`[Push] Notification for "${notification.programTitle}" (${notification.id}) expired. Program already ended.`);
+                console.log(`[PUSH_CHECKER] Notification for "${notification.programTitle}" (ID: ${notification.id}) expired. Program already ended.`);
                 continue; // Skip sending this notification
             }
 
@@ -996,12 +1350,20 @@ async function checkAndSendNotifications() {
                 });
             });
 
+            if (subscriptions.length === 0) {
+                console.log(`[PUSH_CHECKER] No active push subscriptions for user ${notification.user_id}. Marking notification ${notification.id} as expired.`);
+                 db.run("UPDATE notifications SET status = 'expired', triggeredAt = ? WHERE id = ?", [nowIso, notification.id], (err) => {
+                    if (err) console.error(`[PUSH_CHECKER] Error marking notification ${notification.id} as expired (no subscriptions):`, err.message);
+                });
+                continue;
+            }
+
             const payload = JSON.stringify({
                 title: `Upcoming: ${notification.programTitle}`,
                 body: `Starts at ${new Date(notification.programStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} on ${notification.channelName}`,
                 icon: notification.channelLogo || 'https://i.imgur.com/rwa8SjI.png',
                 data: {
-                    url: `/tvguide?channelId=${notification.channelId}&programId=${notification.programId}` // NEW: Include programId
+                    url: `/tvguide?channelId=${notification.channelId}&programId=${notification.programId}`
                 }
             });
 
@@ -1013,51 +1375,65 @@ async function checkAndSendNotifications() {
 
                 return webpush.sendNotification(pushSubscription, payload)
                     .then(() => {
-                        console.log(`[Push] Notification sent to endpoint: ${sub.endpoint}`);
-                        // NEW: Mark notification as 'sent' after successful delivery
-                        db.run("UPDATE notifications SET status = 'sent', triggeredAt = ? WHERE id = ?", [now.toISOString(), notification.id], (err) => {
-                            if (err) console.error(`[Push] Error updating notification ${notification.id} status to sent:`, err);
+                        console.log(`[PUSH_CHECKER] Notification "${notification.programTitle}" (ID: ${notification.id}) sent to endpoint: ${sub.endpoint}`);
+                        // Mark notification as 'sent' after successful delivery
+                        db.run("UPDATE notifications SET status = 'sent', triggeredAt = ? WHERE id = ?", [nowIso, notification.id], (err) => {
+                            if (err) console.error(`[PUSH_CHECKER] Error updating notification ${notification.id} status to sent:`, err.message);
                         });
                     })
                     .catch(error => {
-                        if (error.statusCode === 410) {
-                            console.log(`[Push] Subscription expired or invalid. Deleting endpoint: ${sub.endpoint}`);
-                            db.run("DELETE FROM push_subscriptions WHERE endpoint = ?", [sub.endpoint]);
-                        } else {
-                            console.error(`[Push] Error sending notification to ${sub.endpoint}:`, error.statusCode, error.body);
+                        console.error(`[PUSH_CHECKER] Error sending notification ${notification.id} to ${sub.endpoint}:`, error.statusCode, error.body || error.message);
+                        if (error.statusCode === 410 || error.statusCode === 404) { // 410 Gone means subscription is no longer valid
+                            console.log(`[PUSH_CHECKER] Subscription expired or invalid (410/404). Deleting endpoint: ${sub.endpoint}`);
+                            db.run("DELETE FROM push_subscriptions WHERE endpoint = ?", [sub.endpoint], (err) => {
+                                if (err) console.error(`[PUSH_CHECKER] Error deleting expired subscription ${sub.endpoint}:`, err.message);
+                            });
                         }
                     });
             });
 
             await Promise.all(sendPromises);
-
-            // Removed original DELETE FROM notifications WHERE id = ?
-            // Now handled by UPDATE status
         }
     } catch (error) {
-        console.error('[Push] Error in checkAndSendNotifications:', error);
+        console.error('[PUSH_CHECKER] Unhandled error in checkAndSendNotifications:', error);
     }
 }
 
 
 // --- Main Route Handling ---
 app.get('*', (req, res) => {
-    const pathToFile = path.join(PUBLIC_DIR, req.path);
-    if(fs.existsSync(pathToFile) && fs.lstatSync(pathToFile).isFile()){
-        return res.sendFile(pathToFile);
+    // This serves index.html for all non-file paths, enabling client-side routing.
+    // Ensure the path is relative to PUBLIC_DIR
+    const filePath = path.join(PUBLIC_DIR, req.path);
+
+    // If the request path corresponds to an actual file in PUBLIC_DIR, serve it
+    if(fs.existsSync(filePath) && fs.lstatSync(filePath).isFile()){
+        console.log(`[HTTP] Serving static file: ${req.path}`);
+        return res.sendFile(filePath);
     }
+    // Otherwise, serve index.html for client-side routing
+    console.log(`[HTTP] Serving index.html for path: ${req.path}`);
     res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 
 // --- Server Start ---
 app.listen(port, () => {
-    console.log(`VINI PLAY server listening at http://localhost:${port}`);
-    console.log(`Data is stored in the host directory mapped to ${DATA_DIR}`);
-    console.log(`Serving frontend from: ${PUBLIC_DIR}`);
+    console.log(`\n======================================================`);
+    console.log(` VINI PLAY server listening at http://localhost:${port}`);
+    console.log(` Data is stored persistently in your host's viniplay-data folder`);
+    console.log(` Serving frontend from: ${PUBLIC_DIR}`);
+    console.log(`======================================================\n`);
 
-    scheduleEpgRefresh();
+    // Initial processing of sources on server boot
+    processAndMergeSources().then(() => {
+        console.log('[INIT] Initial source processing complete.');
+        scheduleEpgRefresh(); // Schedule subsequent refreshes
+    }).catch(error => {
+        console.error('[INIT] Initial source processing failed:', error.message);
+    });
 
+    // Clear any existing interval to prevent duplicates on hot-reload (if applicable)
     if (notificationCheckInterval) clearInterval(notificationCheckInterval);
-    notificationCheckInterval = setInterval(checkAndSendNotifications, 60000);
+    notificationCheckInterval = setInterval(checkAndSendNotifications, 60000); // Check every minute
     console.log('[Push] Notification checker started. Will check for due notifications every minute.');
 });
