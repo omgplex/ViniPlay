@@ -269,9 +269,11 @@ export function setupSettingsEventListeners() {
                 const config = await configResponse.json();
                 if (!config.m3uContent) {
                     showNotification("No active M3U sources found or sources are empty.", true);
-                    handleGuideLoad('', '');
+                    // FIX: Pass all required arguments, marking it as a fresh load.
+                    handleGuideLoad('', '', new Date(), true);
                 } else {
-                    handleGuideLoad(config.m3uContent, config.epgContent);
+                    // FIX: Pass all required arguments, marking it as a fresh load.
+                    handleGuideLoad(config.m3uContent, config.epgContent, new Date(), true);
                     Object.assign(guideState.settings, config.settings || {}); // Merge settings
                     updateUIFromSettings();
                     navigate('/tvguide');
