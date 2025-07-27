@@ -12,7 +12,7 @@ import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './
 import { setupPlayerEventListeners } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
 import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu, showNotification } from './modules/ui.js';
-import { loadAndScheduleNotifications, subscribeUserToPush } from './modules/notification.js';
+import { loadAndScheduleNotifications, subscribeUserToPush, handleUrlParameters } from './modules/notification.js';
 
 /**
  * Initializes the main application after successful authentication.
@@ -67,6 +67,10 @@ export async function initMainApp() {
         // Subscribe to push notifications
         await subscribeUserToPush();
 
+        // Handle initial URL parameters for notifications
+        handleUrlParameters();
+
+        // Handle initial page load routing
         handleRouteChange();
 
     } catch (e) {
