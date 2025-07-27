@@ -127,7 +127,7 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 else console.log("[DB] 'notifications' table checked/created.");
 
                 // --- Database Migration: Add 'status' and 'triggeredAt' columns if they don't exist ---
-                db.get("PRAGMA table_info(notifications)", (err, rows) => {
+                db.all("PRAGMA table_info(notifications)", (err, rows) => { // Changed db.get to db.all
                     if (err) {
                         console.error("[DB_MIGRATION] Error checking notifications table info:", err.message);
                         return;
