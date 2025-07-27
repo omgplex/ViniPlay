@@ -24,7 +24,7 @@ export const guideState = {
     settings: {
         // Add a default for channelColumnWidth
         channelColumnWidth: window.innerWidth < 768 ? 64 : 180, // Default based on screen size
-        notificationLeadTime: 10, // NEW: Default notification lead time in minutes
+        notificationLeadTime: 10, // Default notification lead time in minutes
     }, // This will hold both GLOBAL and USER settings, merged.
     guideDurationHours: 48,
     hourWidthPixels: window.innerWidth < 768 ? 200 : 300,
@@ -32,8 +32,12 @@ export const guideState = {
     channelGroups: new Set(),
     channelSources: new Set(), // For the source filter
     visibleChannels: [],
-    scrollHandler: null, // NEW: Holds the reference to the throttled scroll handler for virtualization
-    userNotifications: [], // NEW: Stores active program notifications for the current user
+    scrollHandler: null, // Holds the reference to the throttled scroll handler for virtualization
+    // NEW: userNotifications is now an object to hold both active and past notifications
+    userNotifications: {
+        active: [],
+        past: []
+    },
 };
 
 // A cache for frequently accessed DOM elements
@@ -64,7 +68,7 @@ export const initializeUIElements = () => {
     UIElements.stickyCorner = document.querySelector('.sticky-corner');
     UIElements.channelColumnResizeHandle = document.getElementById('channel-column-resize-handle');
 
-    // NEW: Program Details Modal Notification Button
+    // Program Details Modal Notification Button
     UIElements.programDetailsNotifyBtn = document.getElementById('program-details-notify-btn');
 
     // Mobile menu elements
@@ -76,7 +80,7 @@ export const initializeUIElements = () => {
     UIElements.mobileNavLogoutBtn = document.getElementById('mobile-nav-logout-btn');
     UIElements.mobileMenuOverlay = document.getElementById('mobile-menu-overlay');
 
-    // NEW: Notification Tab/Page Elements
+    // Notification Tab/Page Elements
     UIElements.tabNotifications = document.getElementById('tab-notifications'); // Desktop Nav
     UIElements.mobileNavNotifications = document.getElementById('mobile-nav-notifications'); // Mobile Nav
     UIElements.pageNotifications = document.getElementById('page-notifications');
@@ -84,5 +88,7 @@ export const initializeUIElements = () => {
     UIElements.noNotificationsMessage = document.getElementById('no-notifications-message');
     UIElements.notificationLeadTimeInput = document.getElementById('notification-lead-time-input');
 
-    // Removed: UIElements.resetFilterBtn as the button is removed from HTML
+    // NEW: Past Notification elements
+    UIElements.pastNotificationsHeader = document.getElementById('past-notifications-header');
+    UIElements.pastNotificationsList = document.getElementById('past-notifications-list');
 };
