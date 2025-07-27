@@ -4,10 +4,11 @@
  * Handles subscribing/unsubscribing and interacts with the backend API.
  */
 
-import { showNotification, showConfirm, navigate } from './ui.js';
+import { showNotification, showConfirm, navigate, openModal, closeModal } from './ui.js';
 import { UIElements, guideState, appState } from './state.js';
-import { handleSearchAndFilter } from './guide.js';
+import { handleSearchAndFilter, findProgramDetails, openProgramDetailsModal, scrollToProgramInGuide } from './guide.js';
 import { getVapidKey, subscribeToPush, addProgramNotification, getProgramNotifications, deleteProgramNotification, unsubscribeFromPush } from './api.js';
+import { playChannel } from './player.js';
 
 let isSubscribed = false;
 
@@ -70,19 +71,20 @@ export async function subscribeUserToPush() {
     }
 }
 
-
 /**
- * Loads all active notifications from the backend to display in the UI.
- * This no longer schedules anything on the client.
+ * Loads all active and past notifications from the backend.
  */
 export const loadAndScheduleNotifications = async () => {
     try {
         const notifications = await getProgramNotifications();
         guideState.userNotifications = notifications;
-        console.log(`[Notifications] Loaded ${notifications.length} scheduled notifications from server.`);
+        console.log(`[Notifications] Loaded ${notifications.active.length} active and ${notifications.past.length} past notifications from server.`);
         
         renderNotifications();
-        handleSearchAndFilter(false); // Update guide with indicators
+        // The guide needs to be re-rendered to show the visual indicators
+        if (!UIElements.pageGuide.classList.contains('hidden')) {
+             handleSearchAndFilter(false);
+        }
     } catch (error) {
         console.error('Error loading notifications:', error);
         showNotification('An error occurred loading notifications.', true);
@@ -96,14 +98,14 @@ export const loadAndScheduleNotifications = async () => {
 export const addOrRemoveNotification = async (programDetails) => {
     const existingNotification = findNotificationForProgram(programDetails, programDetails.channelId);
     
-    if (existingNotification) {
+    if (existingNotification && existingNotification.status === 'active') {
         showConfirm(
             'Remove Notification?',
             `Are you sure you want to remove the notification for "${programDetails.programTitle}"?`,
             async () => {
                 const success = await deleteProgramNotification(existingNotification.id);
                 if (success) {
-                    guideState.userNotifications = guideState.userNotifications.filter(n => n.id !== existingNotification.id);
+                    guideState.userNotifications.active = guideState.userNotifications.active.filter(n => n.id !== existingNotification.id);
                     renderNotifications();
                     handleSearchAndFilter(false);
                 }
@@ -112,8 +114,6 @@ export const addOrRemoveNotification = async (programDetails) => {
     } else {
         if (!isSubscribed) {
              showNotification('Please enable notifications for this site to receive alerts.', true);
-             // You could trigger the subscription flow here if you want
-             // await subscribeUserToPush();
              return;
         }
 
@@ -141,7 +141,11 @@ export const addOrRemoveNotification = async (programDetails) => {
 
         const addedNotification = await addProgramNotification(newNotificationData);
         if (addedNotification) {
-            guideState.userNotifications.push(addedNotification);
+            // Remove from past list if it exists, then add to active list
+            guideState.userNotifications.past = guideState.userNotifications.past.filter(n => n.programId !== addedNotification.programId || n.channelId !== addedNotification.channelId);
+            guideState.userNotifications.active = guideState.userNotifications.active.filter(n => n.id !== addedNotification.id);
+            guideState.userNotifications.active.push(addedNotification);
+
             renderNotifications();
             handleSearchAndFilter(false);
             showNotification(`Notification set for "${addedNotification.programTitle}"!`);
@@ -150,142 +154,172 @@ export const addOrRemoveNotification = async (programDetails) => {
 };
 
 /**
- * Checks if a given program has an active notification scheduled.
+ * Checks if a given program has any notification (active or past).
+ * Used for the visual indicator in the TV Guide.
  * @param {object} program - The program object.
  * @param {string} channelId - The ID of the channel the program belongs to.
  * @returns {object|null} The notification object if found, otherwise null.
  */
 export const findNotificationForProgram = (program, channelId) => {
-    return guideState.userNotifications.find(n =>
+    const allNotifications = [
+        ...(guideState.userNotifications.active || []),
+        ...(guideState.userNotifications.past || [])
+    ];
+    return allNotifications.find(n =>
         n.channelId === channelId &&
         n.programId === program.programId
     );
 };
 
 /**
- * Renders the list of upcoming notifications in the Notification Center.
+ * Renders both upcoming and past notifications in the Notification Center.
  */
 export const renderNotifications = () => {
-    const notificationListEl = UIElements.notificationsList;
-    if (!notificationListEl) return;
-
     const now = new Date();
-    const upcomingNotifications = guideState.userNotifications
-        .filter(n => new Date(n.scheduledTime).getTime() > now.getTime()) 
-        .sort((a, b) => new Date(a.scheduledTime) - new Date(b.scheduledTime));
+    
+    // Render Upcoming Notifications
+    const notificationListEl = UIElements.notificationsList;
+    if (notificationListEl) {
+        const upcomingNotifications = (guideState.userNotifications.active || [])
+            .filter(n => new Date(n.scheduledTime).getTime() > now.getTime()) 
+            .sort((a, b) => new Date(a.scheduledTime) - new Date(b.scheduledTime));
 
-    UIElements.noNotificationsMessage.classList.toggle('hidden', upcomingNotifications.length > 0);
+        UIElements.noNotificationsMessage.classList.toggle('hidden', upcomingNotifications.length > 0);
+        notificationListEl.innerHTML = upcomingNotifications.map(notif => {
+            const programStartTime = new Date(notif.programStart);
+            const notificationTime = new Date(notif.scheduledTime);
+            const formattedProgramTime = programStartTime.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            const formattedNotificationTime = notificationTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    notificationListEl.innerHTML = upcomingNotifications.map(notif => {
-        const programStartTime = new Date(notif.programStart);
-        const notificationTime = new Date(notif.scheduledTime);
-        const formattedProgramTime = programStartTime.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-        const formattedNotificationTime = notificationTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-        return `
-            <div class="flex items-center p-4 border-b border-gray-700/50 hover:bg-gray-800 transition-colors rounded-md" data-notification-id="${notif.id}">
-                <img src="${notif.channelLogo || 'https://placehold.co/48x48/1f2937/d1d5db?text=?;&font=Inter'}" onerror="this.onerror=null; this.src='https://placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-4 flex-shrink-0 rounded-md bg-gray-700">
-                <div class="flex-grow">
-                    <p class="font-semibold text-white text-md">${notif.programTitle}</p>
-                    <p class="text-gray-400 text-sm">${notif.channelName} • ${formattedProgramTime}</p>
-                    <p class="text-blue-400 text-xs mt-1">Will be notified at ${formattedNotificationTime} (${notif.notificationLeadTime} mins before)</p>
+            return `
+                <div class="flex items-center p-4 border-b border-gray-700/50 hover:bg-gray-800 transition-colors rounded-md" data-notification-id="${notif.id}">
+                    <img src="${notif.channelLogo || 'https://placehold.co/48x48/1f2937/d1d5db?text=?;&font=Inter'}" onerror="this.onerror=null; this.src='https://placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-4 flex-shrink-0 rounded-md bg-gray-700">
+                    <div class="flex-grow">
+                        <p class="font-semibold text-white text-md">${notif.programTitle}</p>
+                        <p class="text-gray-400 text-sm">${notif.channelName} • ${formattedProgramTime}</p>
+                        <p class="text-blue-400 text-xs mt-1">Will be notified at ${formattedNotificationTime} (${notif.notificationLeadTime} mins before)</p>
+                    </div>
+                    <div class="flex items-center gap-2 flex-shrink-0 ml-4">
+                        <button class="action-btn view-program-btn p-2 rounded-full hover:bg-gray-700" title="View in TV Guide" data-channel-id="${notif.channelId}" data-program-start="${notif.programStart}" data-program-id="${notif.programId}">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400 hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.555-4.555A.5.5 0 0120 6v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h10l-4 4"></path><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v7a1 1 0 001 1h7"></path></svg>
+                        </button>
+                        <button class="action-btn delete-notification-btn p-2 rounded-full hover:bg-red-900" title="Delete Notification" data-notification-id="${notif.id}">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400 hover:text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
+                    </div>
                 </div>
-                <div class="flex items-center gap-2 flex-shrink-0 ml-4">
-                    <button class="action-btn view-program-btn p-2 rounded-full hover:bg-gray-700" title="View in TV Guide" data-channel-id="${notif.channelId}" data-program-start="${notif.programStart}" data-program-id="${notif.programId}">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400 hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.555-4.555A.5.5 0 0120 6v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h10l-4 4"></path><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v7a1 1 0 001 1h7"></path></svg>
-                    </button>
-                    <button class="action-btn delete-notification-btn p-2 rounded-full hover:bg-red-900" title="Delete Notification" data-notification-id="${notif.id}">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400 hover:text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                    </button>
+            `;
+        }).join('');
+    }
+
+    // Render Past Notifications
+    const pastListEl = UIElements.pastNotificationsList;
+    const pastHeaderEl = UIElements.pastNotificationsHeader;
+    if (pastListEl && pastHeaderEl) {
+        const pastNotifications = guideState.userNotifications.past || [];
+        pastHeaderEl.classList.toggle('hidden', pastNotifications.length === 0);
+        pastListEl.innerHTML = pastNotifications.map(notif => {
+            const programStartTime = new Date(notif.programStart);
+            const notifiedTime = new Date(notif.notifiedAt);
+            const formattedProgramTime = programStartTime.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            const formattedNotifiedTime = notifiedTime.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+            
+            const statusClass = notif.status === 'sent' ? 'text-green-400' : 'text-yellow-500';
+            const statusText = notif.status === 'sent' ? `Notified at ${formattedNotifiedTime}` : 'Notification expired (browser offline)';
+
+            return `
+                <div class="flex items-center p-4 border-b border-gray-700/50 hover:bg-gray-800 transition-colors rounded-md opacity-70" data-notification-id="${notif.id}">
+                    <img src="${notif.channelLogo || 'https://placehold.co/48x48/1f2937/d1d5db?text=?;&font=Inter'}" onerror="this.onerror=null; this.src='https://placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-4 flex-shrink-0 rounded-md bg-gray-700">
+                    <div class="flex-grow">
+                        <p class="font-semibold text-white text-md">${notif.programTitle}</p>
+                        <p class="text-gray-400 text-sm">${notif.channelName} • Started at ${formattedProgramTime}</p>
+                        <p class="${statusClass} text-xs mt-1">${statusText}</p>
+                    </div>
+                    <div class="flex items-center gap-2 flex-shrink-0 ml-4">
+                         <button class="action-btn view-program-btn p-2 rounded-full hover:bg-gray-700" title="View Program Details" data-channel-id="${notif.channelId}" data-program-id="${notif.programId}">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400 hover:text-white" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z" /><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.022 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd" /></svg>
+                        </button>
+                        <button class="action-btn delete-notification-btn p-2 rounded-full hover:bg-red-900" title="Delete Notification" data-notification-id="${notif.id}">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400 hover:text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
+                    </div>
                 </div>
-            </div>
-        `;
-    }).join('');
+            `;
+        }).join('');
+    }
 
     setupNotificationListEventListeners();
 };
 
 /**
- * Sets up event listeners for the dynamically rendered notification list.
+ * Sets up event listeners for the dynamically rendered notification lists.
  */
 const setupNotificationListEventListeners = () => {
-    UIElements.notificationsList.removeEventListener('click', handleNotificationListClick);
-    UIElements.notificationsList.addEventListener('click', handleNotificationListClick);
+    const activeList = UIElements.notificationsList;
+    const pastList = UIElements.pastNotificationsList;
+    if (activeList) {
+        activeList.removeEventListener('click', handleNotificationListClick);
+        activeList.addEventListener('click', handleNotificationListClick);
+    }
+    if (pastList) {
+        pastList.removeEventListener('click', handleNotificationListClick);
+        pastList.addEventListener('click', handleNotificationListClick);
+    }
 };
 
 /**
- * Handles clicks within the notification list.
+ * Handles clicks within the notification lists (both active and past).
  * @param {Event} e - The click event.
  */
 const handleNotificationListClick = (e) => {
     const deleteBtn = e.target.closest('.delete-notification-btn');
     const viewBtn = e.target.closest('.view-program-btn');
+    const notificationRow = e.target.closest('[data-notification-id]');
+
+    if (!notificationRow) return;
+    const notificationId = notificationRow.dataset.notificationId;
+
+    const allNotifications = [...(guideState.userNotifications.active || []), ...(guideState.userNotifications.past || [])];
+    const notification = allNotifications.find(n => n.id == notificationId);
+    if (!notification) return;
 
     if (deleteBtn) {
-        const notificationId = deleteBtn.dataset.notificationId;
-        const notification = guideState.userNotifications.find(n => n.id == notificationId);
-        if (notification) {
-            showConfirm(
-                'Delete Notification?',
-                `Are you sure you want to delete the notification for "${notification.programTitle}"?`,
-                async () => {
-                    const success = await deleteProgramNotification(notificationId);
-                    if (success) {
-                        guideState.userNotifications = guideState.userNotifications.filter(n => n.id != notificationId);
-                        renderNotifications();
-                        handleSearchAndFilter(false);
-                    }
+        showConfirm(
+            'Delete Notification?',
+            `Are you sure you want to delete the notification record for "${notification.programTitle}"? This cannot be undone.`,
+            async () => {
+                const success = await deleteProgramNotification(notificationId);
+                if (success) {
+                    guideState.userNotifications.active = guideState.userNotifications.active.filter(n => n.id != notificationId);
+                    guideState.userNotifications.past = guideState.userNotifications.past.filter(n => n.id != notificationId);
+                    renderNotifications();
+                    handleSearchAndFilter(false); // Update guide in case it was a past notification
                 }
-            );
-        }
+            }
+        );
     } else if (viewBtn) {
-        const channelId = viewBtn.dataset.channelId;
-        const programStart = viewBtn.dataset.programStart;
-        const programId = viewBtn.dataset.programId;
+        const { channelId, programStart, programId } = notification;
         navigateToProgramInGuide(channelId, programStart, programId);
     }
 };
 
 
 /**
- * Navigates to the TV Guide page and attempts to scroll to and highlight a specific program.
+ * Navigates to the TV Guide page and attempts to show the program's details.
  * @param {string} channelId
  * @param {string} programStart
- * @param {string} [programId]
+ * @param {string} programId
  */
-export const navigateToProgramInGuide = (channelId, programStart, programId = null) => {
+export const navigateToProgramInGuide = (channelId, programStart, programId) => {
     navigate('/tvguide');
 
     setTimeout(() => {
-        const progStart = new Date(programStart);
-        const guideStart = new Date(guideState.currentDate);
-        guideStart.setHours(0,0,0,0);
-
-        const dateDiff = Math.floor((progStart - guideStart) / (1000 * 60 * 60 * 24));
-        if (dateDiff !== 0) {
-            guideState.currentDate.setDate(guideState.currentDate.getDate() + dateDiff);
-            handleSearchAndFilter();
+        const programData = findProgramDetails(channelId, programId);
+        if (programData) {
+            openProgramDetailsModal(programData, channelId);
+        } else {
+            console.warn("Program details not found in current guide view. Falling back to scroll.");
+            scrollToProgramInGuide(channelId, programStart, programId);
         }
-
-        setTimeout(() => {
-            let programElement;
-            if (programId) {
-                programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-id="${programId}"][data-channel-id="${channelId}"]`);
-            }
-            if (!programElement) {
-                programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programStart}"][data-channel-id="${channelId}"]`);
-            }
-
-            if(programElement) {
-                const scrollLeft = programElement.offsetLeft - (UIElements.guideContainer.clientWidth / 4);
-                UIElements.guideContainer.scrollTo({ left: scrollLeft, behavior: 'smooth' });
-
-                programElement.style.transition = 'outline 0.5s, box-shadow 0.5s, transform 0.5s';
-                programElement.classList.add('highlighted-search');
-                setTimeout(() => { programElement.classList.remove('highlighted-search'); }, 2500);
-            } else {
-                showNotification("Could not find program in current guide view.", false, 4000);
-            }
-        }, 300);
-    }, 100);
+    }, 150);
 };
