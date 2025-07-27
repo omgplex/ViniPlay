@@ -270,5 +270,3 @@ export function setupAuthEventListeners() {
     }
     console.log('[AUTH_EVENTS] Authentication event listeners setup complete.');
 }
-
-    
