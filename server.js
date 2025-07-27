@@ -419,7 +419,7 @@ app.post('/api/auth/setup-admin', (req, res) => {
                 req.session.userId = this.lastID;
                 req.session.username = username;
                 req.session.isAdmin = true;
-                res.json({ success: true, user: { username, isAdmin: true } });
+                res.json({ success: true, user: { username: req.session.username, isAdmin: req.session.isAdmin } }); // Corrected to use session values
             });
         });
     });
