@@ -83,6 +83,10 @@ export const initializeUIElements = () => {
     UIElements.notificationsList = document.getElementById('notifications-list');
     UIElements.noNotificationsMessage = document.getElementById('no-notifications-message');
     UIElements.notificationLeadTimeInput = document.getElementById('notification-lead-time-input');
+    // NEW: Past Notifications section elements
+    UIElements.pastNotificationsList = document.getElementById('past-notifications-list');
+    UIElements.noPastNotificationsMessage = document.getElementById('no-past-notifications-message');
 
     // Removed: UIElements.resetFilterBtn as the button is removed from HTML
 };
+```
