@@ -51,7 +51,7 @@ export async function subscribeUserToPush() {
                 showNotification('Could not get notification key from server.', true);
                 return;
             }
-            const applicationServerKey = urlBase664ToUint8Array(vapidPublicKey);
+            const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
 
             // Subscribe the user
             const newSubscription = await appState.swRegistration.pushManager.subscribe({
