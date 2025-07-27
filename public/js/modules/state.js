@@ -34,6 +34,12 @@ export const guideState = {
     visibleChannels: [],
     scrollHandler: null, // NEW: Holds the reference to the throttled scroll handler for virtualization
     userNotifications: [], // NEW: Stores active program notifications for the current user
+    
+    // NEW: For Infinite Scroll - tracking loaded date ranges
+    loadedDates: new Set(), // Stores dates (e.g., "YYYY-MM-DD") for which EPG data is loaded
+    programCache: {}, // Stores EPG data for loaded dates
+    loadingEpgData: false, // Flag to prevent multiple concurrent API calls
+    virtualScrollPosition: 0, // To maintain scroll position during date changes for infinite scroll
 };
 
 // A cache for frequently accessed DOM elements
@@ -66,6 +72,10 @@ export const initializeUIElements = () => {
 
     // NEW: Program Details Modal Notification Button
     UIElements.programDetailsNotifyBtn = document.getElementById('program-details-notify-btn');
+
+    // NEW: Date Picker elements
+    UIElements.jumpToDateBtn = document.getElementById('jump-to-date-btn');
+    UIElements.datePickerInput = document.getElementById('date-picker-input');
 
     // Mobile menu elements
     UIElements.mobileMenuToggle = document.getElementById('mobile-menu-toggle');
