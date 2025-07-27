@@ -131,7 +131,11 @@ export async function addProgramNotification(notificationData) {
 
     const data = await res.json();
     if (res.ok && data.success) {
-        return { id: data.id, ...notificationData };
+        return { 
+            id: data.id, 
+            status: 'active',
+            ...notificationData 
+        };
     } else {
         console.error('Failed to add notification:', data.error);
         showNotification(data.error || 'Could not add notification.', true);
@@ -140,20 +144,27 @@ export async function addProgramNotification(notificationData) {
 }
 
 /**
- * Fetches all scheduled program notifications for the current user from the backend.
- * @returns {Promise<Array<object>>} - An array of notification objects, or empty array on failure.
+ * Fetches all scheduled (active) and past program notifications for the current user.
+ * @returns {Promise<{active: Array<object>, past: Array<object>}>} - An object containing arrays of active and past notification objects.
  */
 export async function getProgramNotifications() {
     const res = await apiFetch('/api/notifications');
-    if (!res) return [];
+    const defaultResponse = { active: [], past: [] };
+    if (!res) return defaultResponse;
 
-    const data = await res.json();
-    if (res.ok) {
-        return data;
-    } else {
-        console.error('Failed to get notifications:', data.error);
-        showNotification(data.error || 'Could not retrieve notifications.', true);
-        return [];
+    try {
+        const data = await res.json();
+        if (res.ok) {
+            return data;
+        } else {
+            console.error('Failed to get notifications:', data.error);
+            showNotification(data.error || 'Could not retrieve notifications.', true);
+            return defaultResponse;
+        }
+    } catch(e) {
+        console.error('Failed to parse notifications response:', e);
+        showNotification('Could not read notifications from server.', true);
+        return defaultResponse;
     }
 }
 
