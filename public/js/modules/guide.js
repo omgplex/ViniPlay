@@ -246,13 +246,12 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
                 // Construct the unique programId using channel.id, program start, and program stop
                 const uniqueProgramId = `${channel.id}-${progStart.toISOString()}-${progStop.toISOString()}`;
 
-                // NEW: Check if this program has an active notification
-                const hasNotification = findNotificationForProgram({
-                    programId: uniqueProgramId, // Pass the unique programId for lookup
-                    title: prog.title, // Also pass title, start, stop for fallback in findNotificationForProgram
-                    start: prog.start,
-                    stop: prog.stop
-                }, channel.id);
+                // NEW: Check if this program has ANY notification (pending, sent, or expired)
+                // We're iterating through all user notifications to see if this program ID exists.
+                const hasNotification = guideState.userNotifications.some(n =>
+                    n.channelId === channel.id &&
+                    n.programId === uniqueProgramId
+                );
                 const notificationClass = hasNotification ? 'has-notification' : '';
 
                 // Added data-prog-id attribute as requested
@@ -614,6 +613,7 @@ export function setupGuideEventListeners() {
             const isProgramRelevantForNotification = programStopTime > now.getTime();
             
             // Pass programData object directly to findNotificationForProgram
+            // This now looks for PENDING notifications to decide the button state
             const notification = findNotificationForProgram(programData, channelId);
 
             if (isProgramRelevantForNotification) {
@@ -638,7 +638,7 @@ export function setupGuideEventListeners() {
                         programId: programData.programId // Unique ID for program within channel
                     });
                     // Re-render button state after action
-                    const updatedNotification = findNotificationForProgram(programData, channelId);
+                    const updatedNotification = findNotificationForProgram(programData, channelId); // Re-check for pending notification
                     UIElements.programDetailsNotifyBtn.textContent = updatedNotification ? 'Notification Set' : 'Notify Me';
                     UIElements.programDetailsNotifyBtn.classList.toggle('bg-yellow-600', !updatedNotification);
                     UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-yellow-700', !updatedNotification);
@@ -740,3 +740,4 @@ export function setupGuideEventListeners() {
 
     UIElements.guideContainer.addEventListener('scroll', handleScrollHeader);
 }
+```
