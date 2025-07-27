@@ -740,4 +740,3 @@ export function setupGuideEventListeners() {
 
     UIElements.guideContainer.addEventListener('scroll', handleScrollHeader);
 }
-```
