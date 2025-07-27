@@ -89,4 +89,3 @@ export const initializeUIElements = () => {
 
     // Removed: UIElements.resetFilterBtn as the button is removed from HTML
 };
-```
