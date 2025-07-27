@@ -11,16 +11,13 @@ import { checkAuthStatus, setupAuthEventListeners } from './modules/auth.js';
 import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './modules/guide.js';
 import { setupPlayerEventListeners } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
-import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu } from './modules/ui.js';
-import { loadAndScheduleNotifications, renderNotifications } from './modules/notification.js'; // NEW: Import notification functions
+import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu, showNotification } from './modules/ui.js';
+import { loadAndScheduleNotifications, subscribeUserToPush } from './modules/notification.js';
 
 /**
  * Initializes the main application after successful authentication.
  */
 export async function initMainApp() {
-    // UIElements are now initialized at DOMContentLoaded, so no need to call it here.
-    // This function runs when the user is logged in and the main app is shown.
-
     // 1. Initialize IndexedDB for caching
     try {
         appState.db = await openDB();
@@ -41,21 +38,15 @@ export async function initMainApp() {
         if (!response || !response.ok) throw new Error('Could not connect to the server.');
 
         const config = await response.json();
-        // Merge fetched settings into guideState.settings, preserving defaults
         Object.assign(guideState.settings, config.settings || {});
 
-        // Restore dimensions of resizable modals and column
         restoreDimensions();
-
-        // Populate UI elements that depend on settings
         populateTimezoneSelector();
         updateUIFromSettings();
 
-        // Show loading indicator while fetching data
         UIElements.initialLoadingIndicator.classList.remove('hidden');
         UIElements.guidePlaceholder.classList.remove('hidden');
 
-        // Try loading from cache first for a faster startup
         const cachedChannels = await loadDataFromDB('channels');
         const cachedPrograms = await loadDataFromDB('programs');
 
@@ -64,26 +55,25 @@ export async function initMainApp() {
             guideState.programs = cachedPrograms;
             finalizeGuideLoad(true);
         } else if (config.m3uContent) {
-            // Fallback to network data if cache is empty
             handleGuideLoad(config.m3uContent, config.epgContent);
         } else {
-            // If no data from cache or network, show the "no data" message
             UIElements.initialLoadingIndicator.classList.add('hidden');
             UIElements.noDataMessage.classList.remove('hidden');
         }
         
-        // NEW: Load and schedule notifications after settings are loaded
+        // Load the list of scheduled notifications for the UI
         await loadAndScheduleNotifications();
 
-        // Handle the initial route once the app is ready
-        // This will also trigger the initial padding calculation for page-guide
+        // Subscribe to push notifications
+        await subscribeUserToPush();
+
         handleRouteChange();
 
     } catch (e) {
         showNotification("Initialization failed: " + e.message, true);
         UIElements.initialLoadingIndicator.classList.add('hidden');
         UIElements.noDataMessage.classList.remove('hidden');
-        switchTab('settings'); // Redirect to settings on failure
+        switchTab('settings');
     }
 }
 
@@ -123,7 +113,6 @@ async function loadDataFromDB(key) {
  * Restores the dimensions of resizable modals and the channel column from saved settings.
  */
 function restoreDimensions() {
-    // Restore modal dimensions
     if (guideState.settings.playerDimensions) {
         const { width, height } = guideState.settings.playerDimensions;
         if (width) UIElements.videoModalContainer.style.width = `${width}px`;
@@ -134,7 +123,6 @@ function restoreDimensions() {
         if (width) UIElements.programDetailsContainer.style.width = `${width}px`;
         if (height) UIElements.programDetailsContainer.style.height = `${height}px`;
     }
-    // Restore channel column width
     if (guideState.settings.channelColumnWidth) {
         UIElements.guideGrid.style.setProperty('--channel-col-width', `${guideState.settings.channelColumnWidth}px`);
     }
@@ -144,52 +132,38 @@ function restoreDimensions() {
  * Sets up core application event listeners (navigation, modals, etc.).
  */
 function setupCoreEventListeners() {
-    // Main navigation (Desktop tabs)
     UIElements.tabGuide?.addEventListener('click', () => switchTab('guide'));
-    UIElements.tabNotifications?.addEventListener('click', () => switchTab('notifications')); // NEW
+    UIElements.tabNotifications?.addEventListener('click', () => switchTab('notifications'));
     UIElements.tabSettings?.addEventListener('click', () => switchTab('settings'));
 
-    // Mobile navigation (Hamburger menu and links)
     UIElements.mobileMenuToggle?.addEventListener('click', openMobileMenu);
     UIElements.mobileMenuClose?.addEventListener('click', closeMobileMenu);
-    UIElements.mobileMenuOverlay?.addEventListener('click', closeMobileMenu); // Close when clicking overlay
+    UIElements.mobileMenuOverlay?.addEventListener('click', closeMobileMenu);
     UIElements.mobileNavGuide?.addEventListener('click', () => switchTab('guide'));
-    UIElements.mobileNavNotifications?.addEventListener('click', () => switchTab('notifications')); // NEW
+    UIElements.mobileNavNotifications?.addEventListener('click', () => switchTab('notifications'));
     UIElements.mobileNavSettings?.addEventListener('click', () => switchTab('settings'));
-    UIElements.mobileNavLogoutBtn?.addEventListener('click', () => { // Logout button in mobile menu
-        // Trigger the existing logout functionality
+    UIElements.mobileNavLogoutBtn?.addEventListener('click', () => {
         const logoutButton = document.getElementById('logout-btn');
-        if (logoutButton) {
-            logoutButton.click();
-        }
+        if (logoutButton) logoutButton.click();
         closeMobileMenu();
     });
 
-    // Browser back/forward navigation
     window.addEventListener('popstate', handleRouteChange);
 
-    // Modal controls
-    UIElements.confirmCancelBtn.addEventListener('click', () => {
-       closeModal(UIElements.confirmModal);
-    });
+    UIElements.confirmCancelBtn.addEventListener('click', () => closeModal(UIElements.confirmModal));
     UIElements.confirmOkBtn.addEventListener('click', handleConfirm);
-    UIElements.detailsCloseBtn.addEventListener('click', () => {
-        closeModal(UIElements.programDetailsModal);
-    });
+    UIElements.detailsCloseBtn.addEventListener('click', () => closeModal(UIElements.programDetailsModal));
 
-    // Resizable modals
     makeModalResizable(UIElements.videoResizeHandle, UIElements.videoModalContainer, 400, 300, 'playerDimensions');
     makeModalResizable(UIElements.detailsResizeHandle, UIElements.programDetailsContainer, 320, 250, 'programDetailsDimensions');
 
-    // Resizable channel column
-    // Only enable if the handle and grid exist and it's not a mobile view where column is fixed
     if (UIElements.channelColumnResizeHandle && UIElements.guideGrid && window.innerWidth >= 768) {
         makeColumnResizable(
             UIElements.channelColumnResizeHandle,
             UIElements.guideGrid,
-            100, // Minimum width for the channel column
-            'channelColumnWidth', // Setting key
-            '--channel-col-width' // CSS custom property to update
+            100,
+            'channelColumnWidth',
+            '--channel-col-width'
         );
     }
 }
@@ -197,12 +171,23 @@ function setupCoreEventListeners() {
 
 // --- App Start ---
 document.addEventListener('DOMContentLoaded', () => {
-    // Initialize UI elements as soon as the DOM is ready
-    // This ensures elements are available for initial auth checks and UI manipulations.
     initializeUIElements();
 
-    // Setup listeners for the initial auth forms first
+    // Register Service Worker
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+        console.log('Service Worker and Push is supported');
+        navigator.serviceWorker.register('sw.js')
+            .then(swReg => {
+                console.log('Service Worker is registered', swReg);
+                appState.swRegistration = swReg;
+            })
+            .catch(error => {
+                console.error('Service Worker Error', error);
+            });
+    } else {
+        console.warn('Push messaging is not supported');
+    }
+
     setupAuthEventListeners();
-    // Then check the auth status to decide what to show
     checkAuthStatus();
 });
