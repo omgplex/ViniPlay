@@ -16,7 +16,7 @@ self.addEventListener('push', event => {
         title: 'ViniPlay Notification',
         body: 'You have a new notification.',
         icon: 'https://i.imgur.com/rwa8SjI.png',
-        data: { url: '/' }
+        data: { url: '/', programId: null, channelId: null } // Add programId and channelId to default data
     };
 
     // Try to parse the data sent with the push message
@@ -34,7 +34,10 @@ self.addEventListener('push', event => {
         badge: 'https://i.imgur.com/rwa8SjI.png', // Badge for Android notifications
         vibrate: [100, 50, 100], // Vibration pattern
         data: {
-            url: payload.data.url, // URL to open on click
+            // NEW: Pass programId and channelId along with the URL
+            url: payload.data.url,
+            programId: payload.data.programId,
+            channelId: payload.data.channelId
         },
     };
 
@@ -52,19 +55,33 @@ self.addEventListener('notificationclick', event => {
     // Close the notification
     event.notification.close();
 
-    const urlToOpen = event.notification.data.url || '/';
+    // NEW: Construct the URL with query parameters for program and channel ID
+    const programId = event.notification.data.programId;
+    const channelId = event.notification.data.channelId;
+    let urlToOpen = event.notification.data.url || '/';
+
+    if (programId && channelId) {
+        // This creates a URL like /tvguide?programId=...&channelId=...
+        const url = new URL(urlToOpen, self.location.origin);
+        url.searchParams.set('programId', programId);
+        url.searchParams.set('channelId', channelId);
+        urlToOpen = url.href;
+    }
+
 
     // Use waitUntil to ensure the browser doesn't terminate the
     // service worker before the new window/tab has been focused.
     event.waitUntil(
         clients.matchAll({
-            type: "window"
+            type: "window",
+            includeUncontrolled: true // Important to find clients not controlled by this SW version
         }).then(clientList => {
             // Check if there's already a window open for the app
             for (let i = 0; i < clientList.length; i++) {
                 const client = clientList[i];
-                // If a client is found, focus it.
-                if (client.url === self.location.origin + '/' && 'focus' in client) {
+                // If a client is found, focus it and navigate it to the correct URL
+                if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+                    client.navigate(urlToOpen); // Navigate the existing client
                     return client.focus();
                 }
             }
