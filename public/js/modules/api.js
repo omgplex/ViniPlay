@@ -72,10 +72,52 @@ export async function saveGlobalSetting(settingObject) {
     }
 }
 
-// NEW: Notification API functions
+// --- REFACTORED/NEW Notification API functions ---
 
 /**
- * Adds a program notification to the backend.
+ * Fetches the VAPID public key from the server.
+ * @returns {Promise<string|null>} The VAPID public key or null on failure.
+ */
+export async function getVapidKey() {
+    const res = await apiFetch('/api/notifications/vapid-public-key');
+    if (!res || !res.ok) {
+        console.error('Failed to get VAPID public key from server.');
+        return null;
+    }
+    return res.text();
+}
+
+/**
+ * Sends the push subscription object to the server to be saved.
+ * @param {PushSubscription} subscription - The subscription object from the PushManager.
+ * @returns {Promise<boolean>} True on success, false on failure.
+ */
+export async function subscribeToPush(subscription) {
+    const res = await apiFetch('/api/notifications/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subscription)
+    });
+    return res && res.ok;
+}
+
+/**
+ * Tells the server to remove a push subscription.
+ * @param {PushSubscription} subscription - The subscription object to remove.
+ * @returns {Promise<boolean>} True on success, false on failure.
+ */
+export async function unsubscribeFromPush(subscription) {
+    const res = await apiFetch('/api/notifications/unsubscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: subscription.endpoint })
+    });
+    return res && res.ok;
+}
+
+
+/**
+ * Requests the server to schedule a program notification.
  * @param {object} notificationData - Object containing notification details.
  * @returns {Promise<object|null>} - The added notification object with its ID, or null on failure.
  */
@@ -98,7 +140,7 @@ export async function addProgramNotification(notificationData) {
 }
 
 /**
- * Fetches all program notifications for the current user from the backend.
+ * Fetches all scheduled program notifications for the current user from the backend.
  * @returns {Promise<Array<object>>} - An array of notification objects, or empty array on failure.
  */
 export async function getProgramNotifications() {
@@ -116,8 +158,8 @@ export async function getProgramNotifications() {
 }
 
 /**
- * Deletes a program notification from the backend.
- * @param {number} notificationId - The ID of the notification to delete.
+ * Deletes a scheduled program notification from the backend.
+ * @param {string|number} notificationId - The ID of the notification to delete.
  * @returns {Promise<boolean>} - True on success, false on failure.
  */
 export async function deleteProgramNotification(notificationId) {
