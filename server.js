@@ -218,7 +218,7 @@ const requireAdmin = (req, res, next) => {
     } else {
         console.warn(`[AUTH] Admin privileges required for ${req.path}. User is not admin or session invalid.`);
         return res.status(403).json({ error: 'Administrator privileges required.' });
-    }
+    };
 };
 
 // --- Helper Functions ---
@@ -779,10 +779,36 @@ app.get('/api/config', requireAuth, (req, res) => {
         } else {
             console.log(`[API] No merged M3U file found at ${MERGED_M3U_PATH}.`);
         }
+
+        // --- NEW: Handle optional 'date' parameter for EPG content ---
         if (fs.existsSync(MERGED_EPG_JSON_PATH)) {
             try {
-                config.epgContent = JSON.parse(fs.readFileSync(MERGED_EPG_JSON_PATH, 'utf-8'));
-                console.log(`[API] Loaded EPG content from ${MERGED_EPG_JSON_PATH}.`);
+                const fullEpgContent = JSON.parse(fs.readFileSync(MERGED_EPG_JSON_PATH, 'utf-8'));
+                console.log(`[API] Loaded full EPG content from ${MERGED_EPG_JSON_PATH}.`);
+
+                const requestedDateStr = req.query.date; // Get the date from query parameters (YYYY-MM-DD)
+                if (requestedDateStr) {
+                    console.log(`[API] Filtering EPG content for date: ${requestedDateStr}`);
+                    const requestedDate = new Date(requestedDateStr);
+                    requestedDate.setHours(0, 0, 0, 0); // Normalize to start of the day
+                    const endOfRequestedDate = new Date(requestedDate.getTime() + 24 * 60 * 60 * 1000); // End of the day
+
+                    const filteredEpg = {};
+                    for (const channelId in fullEpgContent) {
+                        const programsForChannel = fullEpgContent[channelId];
+                        filteredEpg[channelId] = programsForChannel.filter(prog => {
+                            const progStart = new Date(prog.start);
+                            const progStop = new Date(prog.stop);
+                            // Keep programs that overlap with the requested 24-hour period
+                            return progStart < endOfRequestedDate && progStop > requestedDate;
+                        });
+                    }
+                    config.epgContent = filteredEpg;
+                } else {
+                    // If no date is specified, return the entire EPG content
+                    config.epgContent = fullEpgContent;
+                    console.log('[API] No specific date requested, returning full EPG content.');
+                }
             } catch (parseError) {
                 console.error(`[API] Error parsing merged EPG JSON from ${MERGED_EPG_JSON_PATH}: ${parseError.message}`);
                 config.epgContent = {};
@@ -790,6 +816,7 @@ app.get('/api/config', requireAuth, (req, res) => {
         } else {
             console.log(`[API] No merged EPG JSON file found at ${MERGED_EPG_JSON_PATH}.`);
         }
+        // --- END NEW: Handle optional 'date' parameter ---
         
         // Fetch user-specific settings and merge them
         db.all(`SELECT key, value FROM user_settings WHERE user_id = ?`, [req.session.userId], (err, rows) => {
