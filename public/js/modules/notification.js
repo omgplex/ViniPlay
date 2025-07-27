@@ -101,7 +101,7 @@ export const addOrRemoveNotification = async (programDetails) => {
     if (existingNotification && existingNotification.status === 'active') {
         showConfirm(
             'Remove Notification?',
-            `Are you sure you want to remove the notification for "${programDetails.programTitle}"?`,
+            `Are you sure you want to remove the notification for "${programDetails.title}"?`,
             async () => {
                 const success = await deleteProgramNotification(existingNotification.id);
                 if (success) {
@@ -118,7 +118,7 @@ export const addOrRemoveNotification = async (programDetails) => {
         }
 
         const notificationLeadTime = guideState.settings.notificationLeadTime || 10;
-        const programStartTime = new Date(programDetails.programStart);
+        const programStartTime = new Date(programDetails.start);
         const scheduledTime = new Date(programStartTime.getTime() - notificationLeadTime * 60 * 1000);
         
         if (scheduledTime <= new Date()) {
@@ -130,10 +130,10 @@ export const addOrRemoveNotification = async (programDetails) => {
             channelId: programDetails.channelId,
             channelName: programDetails.channelName,
             channelLogo: programDetails.channelLogo,
-            programTitle: programDetails.programTitle,
-            programStart: programDetails.programStart,
-            programStop: programDetails.programStop,
-            programDesc: programDetails.programDesc,
+            programTitle: programDetails.title, // FIX: Was programDetails.programTitle
+            programStart: programDetails.start, // FIX: Was programDetails.programStart
+            programStop: programDetails.stop,   // FIX: Was programDetails.programStop
+            programDesc: programDetails.desc,   // FIX: Was programDetails.programDesc
             programId: programDetails.programId,
             notificationLeadTime: notificationLeadTime,
             scheduledTime: scheduledTime.toISOString()
