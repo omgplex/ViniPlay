@@ -791,7 +791,7 @@ app.post('/api/user/settings', requireAuth, (req, res) => {
             } else {
                 res.json({ success: true });
             }
-        } // The previously missing closing brace for the UPDATE db.run callback
+        }
     );
 });
 // --- FIX END ---
@@ -824,19 +824,22 @@ app.post('/api/notifications', requireAuth, (req, res) => {
     );
 });
 
+// --- FIX START ---
 app.get('/api/notifications', requireAuth, (req, res) => {
-    // Select all columns including programId
-    db.all(`SELECT id, user_id, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime, programId FROM notifications WHERE user_id = ? ORDER BY notificationTime ASC`,
+    // Select all columns, aliasing notificationTime to scheduledTime so the frontend receives the expected property name.
+    db.all(`SELECT id, user_id, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime as scheduledTime, programId FROM notifications WHERE user_id = ? ORDER BY notificationTime ASC`,
         [req.session.userId],
         (err, rows) => {
             if (err) {
                 console.error('Error fetching notifications from database:', err);
                 return res.status(500).json({ error: 'Could not retrieve notifications.' });
             }
+            // The 'rows' object will now contain 'scheduledTime' instead of 'notificationTime', which the frontend expects.
             res.json(rows);
         }
     );
 });
+// --- FIX END ---
 
 app.delete('/api/notifications/:id', requireAuth, (req, res) => {
     const { id } = req.params;
