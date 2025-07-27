@@ -97,7 +97,10 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 programStop TEXT NOT NULL,
                 notificationTime TEXT NOT NULL,
                 programId TEXT NOT NULL,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                status TEXT NOT NULL DEFAULT 'active', -- NEW: can be 'active', 'sent', 'expired'
+                notifiedAt TEXT, -- NEW: When the notification was sent
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                UNIQUE(user_id, programId) -- NEW: Prevent duplicate notifications for the same program
             )`);
             db.run(`CREATE TABLE IF NOT EXISTS push_subscriptions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -843,28 +846,75 @@ app.post('/api/notifications', requireAuth, (req, res) => {
         return res.status(400).json({ error: 'Missing required notification fields.' });
     }
 
+    // NEW: Use ON CONFLICT to update an existing notification if it's re-added.
     db.run(`INSERT INTO notifications (user_id, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime, programId)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, programId) DO UPDATE SET
+                channelName=excluded.channelName,
+                channelLogo=excluded.channelLogo,
+                programTitle=excluded.programTitle,
+                programDesc=excluded.programDesc,
+                programStart=excluded.programStart,
+                programStop=excluded.programStop,
+                notificationTime=excluded.notificationTime,
+                status='active'`, // Reset status to active if it's re-enabled
         [req.session.userId, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, scheduledTime, programId],
         function (err) {
             if (err) {
                 console.error('Error adding notification to database:', err);
                 return res.status(500).json({ error: 'Could not add notification.' });
             }
-            res.status(201).json({ success: true, id: this.lastID });
+             // Fetch the inserted/updated record to get its ID to return to the client
+            db.get(`SELECT id FROM notifications WHERE user_id = ? AND programId = ?`, [req.session.userId, programId], (err, row) => {
+                 if (err || !row) {
+                    console.error('Could not retrieve notification ID after insert/update:', err);
+                    return res.status(500).json({ error: 'Could not retrieve notification ID after insert.' });
+                 }
+                 res.status(201).json({ success: true, id: row.id });
+            });
         }
     );
 });
 
 app.get('/api/notifications', requireAuth, (req, res) => {
-    db.all(`SELECT id, user_id, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime as scheduledTime, programId FROM notifications WHERE user_id = ? ORDER BY notificationTime ASC`,
-        [req.session.userId],
-        (err, rows) => {
+    // NEW: This endpoint now returns both active and past notifications
+    const userId = req.session.userId;
+    const pastLimit = 10;
+
+    const responsePayload = {
+        active: [],
+        past: []
+    };
+
+    // Get active notifications
+    db.all(`SELECT id, user_id, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime as scheduledTime, programId, status
+            FROM notifications 
+            WHERE user_id = ? AND status = 'active'
+            ORDER BY notificationTime ASC`,
+        [userId],
+        (err, activeRows) => {
             if (err) {
-                console.error('Error fetching notifications from database:', err);
+                console.error('Error fetching active notifications from database:', err);
                 return res.status(500).json({ error: 'Could not retrieve notifications.' });
             }
-            res.json(rows);
+            responsePayload.active = activeRows || [];
+
+            // Get past (sent/expired) notifications
+            db.all(`SELECT id, user_id, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime as scheduledTime, programId, status, notifiedAt
+                    FROM notifications
+                    WHERE user_id = ? AND status != 'active'
+                    ORDER BY notifiedAt DESC
+                    LIMIT ?`,
+                [userId, pastLimit],
+                (err, pastRows) => {
+                    if (err) {
+                        console.error('Error fetching past notifications from database:', err);
+                        return res.status(500).json({ error: 'Could not retrieve notifications.' });
+                    }
+                    responsePayload.past = pastRows || [];
+                    res.json(responsePayload);
+                }
+            );
         }
     );
 });
@@ -958,7 +1008,7 @@ async function checkAndSendNotifications() {
     try {
         const now = new Date();
         const dueNotifications = await new Promise((resolve, reject) => {
-            db.all("SELECT * FROM notifications WHERE notificationTime <= ?", [now.toISOString()], (err, rows) => {
+            db.all("SELECT * FROM notifications WHERE notificationTime <= ? AND status = 'active'", [now.toISOString()], (err, rows) => {
                 if (err) reject(err);
                 else resolve(rows);
             });
@@ -981,10 +1031,14 @@ async function checkAndSendNotifications() {
                 body: `Starts at ${new Date(notification.programStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} on ${notification.channelName}`,
                 icon: notification.channelLogo || 'https://i.imgur.com/rwa8SjI.png',
                 data: {
-                    url: `/tvguide?channelId=${notification.channelId}&programId=${notification.programId}`
+                    // NEW: Pass programId and channelId in the data payload
+                    url: `/tvguide`,
+                    programId: notification.programId,
+                    channelId: notification.channelId
                 }
             });
 
+            let notificationSentSuccessfully = false;
             const sendPromises = subscriptions.map(sub => {
                 const pushSubscription = {
                     endpoint: sub.endpoint,
@@ -992,7 +1046,10 @@ async function checkAndSendNotifications() {
                 };
 
                 return webpush.sendNotification(pushSubscription, payload)
-                    .then(() => console.log(`[Push] Notification sent to endpoint: ${sub.endpoint}`))
+                    .then(() => {
+                        notificationSentSuccessfully = true; // Mark as sent if at least one subscription succeeds
+                        console.log(`[Push] Notification sent to endpoint: ${sub.endpoint}`);
+                    })
                     .catch(error => {
                         if (error.statusCode === 410) {
                             console.log(`[Push] Subscription expired or invalid. Deleting endpoint: ${sub.endpoint}`);
@@ -1005,8 +1062,12 @@ async function checkAndSendNotifications() {
 
             await Promise.all(sendPromises);
 
-            db.run("DELETE FROM notifications WHERE id = ?", [notification.id], (err) => {
-                if(err) console.error(`[Push] Error deleting sent notification ${notification.id}:`, err);
+            // NEW: Instead of deleting, update the status to 'sent' or 'expired'.
+            // This preserves the notification for history and the guide's visual indicator.
+            const newStatus = notificationSentSuccessfully ? 'sent' : 'expired';
+            db.run("UPDATE notifications SET status = ?, notifiedAt = ? WHERE id = ?", [newStatus, new Date().toISOString(), notification.id], (err) => {
+                if (err) console.error(`[Push] Error updating sent notification ${notification.id}:`, err);
+                else console.log(`[Push] Marked notification ${notification.id} as ${newStatus}.`);
             });
         }
     } catch (error) {
