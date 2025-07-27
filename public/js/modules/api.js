@@ -14,17 +14,37 @@ import { showNotification } from './ui.js';
  * @returns {Promise<Response|null>} - The fetch Response object or null on failure.
  */
 export async function apiFetch(url, options = {}) {
+    console.log(`[API_FETCH] Requesting: ${options.method || 'GET'} ${url}`);
     try {
         const response = await fetch(url, options);
+        console.log(`[API_FETCH] Response received for ${url}: Status ${response.status} ${response.statusText}`);
+
         // If the session expired, the server will return a 401 Unauthorized
         if (response.status === 401) {
+            console.warn('[API_FETCH] 401 Unauthorized. Session expired or invalid.');
             showLoginScreen("Your session has expired. Please log in again.");
+            return null; // Prevent further processing of this response
+        }
+        
+        // Handle other non-ok responses
+        if (!response.ok) {
+            let errorData = {};
+            try {
+                errorData = await response.json(); // Try to parse error message if available
+            } catch (e) {
+                console.warn(`[API_FETCH] Could not parse error response as JSON for ${url}:`, e);
+                errorData.error = response.statusText || 'An unknown error occurred.';
+            }
+            console.error(`[API_FETCH] API call failed for ${url}: Status ${response.status}, Error: ${errorData.error || 'No specific error message.'}`);
+            showNotification(errorData.error || `API Error: ${response.status} ${response.statusText}`, true);
             return null;
         }
+
+        console.log(`[API_FETCH] API call to ${url} successful.`);
         return response;
     } catch (error) {
-        console.error('API Fetch error:', error);
-        showNotification("Could not connect to the server.", true);
+        console.error(`[API_FETCH] Network or unexpected error during fetch for ${url}:`, error);
+        showNotification("Could not connect to the server. Please check your network or server status.", true);
         return null;
     }
 }
@@ -36,16 +56,18 @@ export async function apiFetch(url, options = {}) {
  * @returns {Promise<boolean>} - True on success, false on failure.
  */
 export async function saveUserSetting(key, value) {
+    console.log(`[API] Saving user setting: ${key} =`, value);
     const res = await apiFetch('/api/user/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key, value })
     });
     if (!res || !res.ok) {
-        console.error(`Failed to save user setting: ${key}`);
-        showNotification(`Could not save setting: ${key}`, true);
+        console.error(`[API] Failed to save user setting: ${key}`);
+        // showNotification(`Could not save setting: ${key}`, true); // apiFetch already shows this
         return false;
     }
+    console.log(`[API] User setting "${key}" saved successfully.`);
     return true;
 }
 
@@ -55,19 +77,21 @@ export async function saveUserSetting(key, value) {
  * @returns {Promise<object|null>} - The updated settings object from the server or null on failure.
  */
 export async function saveGlobalSetting(settingObject) {
+    console.log('[API] Saving global setting(s):', settingObject);
     const res = await apiFetch('/api/save/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(settingObject)
     });
-    if (!res) return null;
+    if (!res) return null; // apiFetch already handled notification
 
     const data = await res.json();
     if (res.ok && data.settings) {
+        console.log('[API] Global settings saved successfully. New settings:', data.settings);
         return data.settings;
     } else {
-        console.error(`Failed to save global setting:`, settingObject);
-        showNotification(data.error || 'A global setting could not be saved.', true);
+        console.error('[API] Failed to save global setting:', data.error || 'Unknown server error.');
+        // showNotification(data.error || 'A global setting could not be saved.', true); // apiFetch already shows this
         return null;
     }
 }
@@ -79,12 +103,15 @@ export async function saveGlobalSetting(settingObject) {
  * @returns {Promise<string|null>} The VAPID public key or null on failure.
  */
 export async function getVapidKey() {
+    console.log('[API] Fetching VAPID public key.');
     const res = await apiFetch('/api/notifications/vapid-public-key');
     if (!res || !res.ok) {
-        console.error('Failed to get VAPID public key from server.');
+        console.error('[API] Failed to get VAPID public key from server.');
         return null;
     }
-    return res.text();
+    const key = await res.text();
+    console.log('[API] VAPID public key fetched successfully.');
+    return key;
 }
 
 /**
@@ -93,11 +120,17 @@ export async function getVapidKey() {
  * @returns {Promise<boolean>} True on success, false on failure.
  */
 export async function subscribeToPush(subscription) {
+    console.log('[API] Sending push subscription to server.');
     const res = await apiFetch('/api/notifications/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(subscription)
     });
+    if (res && res.ok) {
+        console.log('[API] Push subscription saved on server.');
+    } else {
+        console.error('[API] Failed to save push subscription on server.');
+    }
     return res && res.ok;
 }
 
@@ -107,11 +140,17 @@ export async function subscribeToPush(subscription) {
  * @returns {Promise<boolean>} True on success, false on failure.
  */
 export async function unsubscribeFromPush(subscription) {
+    console.log('[API] Sending unsubscribe request to server.');
     const res = await apiFetch('/api/notifications/unsubscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ endpoint: subscription.endpoint })
     });
+    if (res && res.ok) {
+        console.log('[API] Push subscription removed from server.');
+    } else {
+        console.error('[API] Failed to remove push subscription from server.');
+    }
     return res && res.ok;
 }
 
@@ -122,6 +161,7 @@ export async function unsubscribeFromPush(subscription) {
  * @returns {Promise<object|null>} - The added notification object with its ID, or null on failure.
  */
 export async function addProgramNotification(notificationData) {
+    console.log('[API] Requesting to add program notification:', notificationData.programTitle);
     const res = await apiFetch('/api/notifications', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -131,10 +171,11 @@ export async function addProgramNotification(notificationData) {
 
     const data = await res.json();
     if (res.ok && data.success) {
+        console.log(`[API] Program notification added successfully. ID: ${data.id}`);
         return { id: data.id, ...notificationData };
     } else {
-        console.error('Failed to add notification:', data.error);
-        showNotification(data.error || 'Could not add notification.', true);
+        console.error('[API] Failed to add notification:', data.error);
+        // showNotification(data.error || 'Could not add notification.', true); // apiFetch already shows this
         return null;
     }
 }
@@ -144,15 +185,17 @@ export async function addProgramNotification(notificationData) {
  * @returns {Promise<Array<object>>} - An array of notification objects, or empty array on failure.
  */
 export async function getProgramNotifications() {
+    console.log('[API] Fetching all program notifications.');
     const res = await apiFetch('/api/notifications');
     if (!res) return [];
 
     const data = await res.json();
     if (res.ok) {
+        console.log(`[API] Fetched ${data.length} program notifications.`);
         return data;
     } else {
-        console.error('Failed to get notifications:', data.error);
-        showNotification(data.error || 'Could not retrieve notifications.', true);
+        console.error('[API] Failed to get notifications:', data.error);
+        // showNotification(data.error || 'Could not retrieve notifications.', true); // apiFetch already shows this
         return [];
     }
 }
@@ -163,6 +206,7 @@ export async function getProgramNotifications() {
  * @returns {Promise<boolean>} - True on success, false on failure.
  */
 export async function deleteProgramNotification(notificationId) {
+    console.log(`[API] Requesting to delete notification ID: ${notificationId}.`);
     const res = await apiFetch(`/api/notifications/${notificationId}`, {
         method: 'DELETE',
     });
@@ -170,11 +214,12 @@ export async function deleteProgramNotification(notificationId) {
 
     const data = await res.json();
     if (res.ok && data.success) {
-        showNotification('Notification removed.');
+        console.log(`[API] Notification ID ${notificationId} deleted successfully.`);
+        // showNotification('Notification removed.'); // This is called in notification.js now
         return true;
     } else {
-        console.error('Failed to delete notification:', data.error);
-        showNotification(data.error || 'Could not remove notification.', true);
+        console.error(`[API] Failed to delete notification ${notificationId}:`, data.error);
+        // showNotification(data.error || 'Could not remove notification.', true); // apiFetch already shows this
         return false;
     }
 }
