@@ -27,7 +27,7 @@ const OVERSCAN_COUNT = 5; // Number of extra rows to render above and below the 
  * @param {Date} dateLoadedFor - The specific date (start of day) this EPG content corresponds to.
  * @param {boolean} isInitialLoad - True if this is the very first load of the application.
  */
-export function handleGuideLoad(m3uContent, epgContent, dateLoadedFor, isInitialLoad = false) {
+export function handleGuideLoad(m3uContent, epgContent, dateLoadedFor = new Date(), isInitialLoad = false) {
     if (isInitialLoad) {
         guideState.channels = [];
         guideState.programCache = {}; // Clear program cache on initial full load
@@ -41,7 +41,7 @@ export function handleGuideLoad(m3uContent, epgContent, dateLoadedFor, isInitial
     }
 
     // Merge EPG content into the program cache
-    if (epgContent) {
+    if (epgContent && dateLoadedFor) {
         // Mark the date as loaded
         const dateKey = dateLoadedFor.toISOString().slice(0, 10); // "YYYY-MM-DD"
         guideState.loadedDates.add(dateKey);
@@ -421,7 +421,7 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
     guideContainer.addEventListener('scroll', guideState.scrollHandler);
 
     // Initial render and positioning
-    if (isInitialAppLoad) { // Only reset scroll on true initial app load or explicit jump-to-now
+    if (resetScroll) { // FIX: Replaced isInitialAppLoad with resetScroll
         guideContainer.scrollTop = 0;
         // Position the timeline to center on 'Now' or the current day if possible
         const now = new Date();
@@ -429,16 +429,9 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
         const channelInfoColWidth = guideState.settings.channelColumnWidth;
         const scrollLeft = nowTimeOffsetPixels - (guideContainer.clientWidth / 2) + (channelInfoColWidth / 2);
         guideContainer.scrollLeft = Math.max(0, scrollLeft);
-    } else if (resetScroll) { // For "Now" button
-         guideContainer.scrollTop = 0;
-         const now = new Date();
-         const nowTimeOffsetPixels = ((now.getTime() - minTime.getTime()) / 3600000) * guideState.hourWidthPixels;
-         const channelInfoColWidth = guideState.settings.channelColumnWidth;
-         const scrollLeft = nowTimeOffsetPixels - (guideContainer.clientWidth / 2) + (channelInfoColWidth / 2);
-         guideContainer.scrollLeft = Math.max(0, scrollLeft);
     }
 
-    updateNowLine(minTime, isInitialAppLoad || resetScroll); // Pass minTime for nowLine calculation
+    updateNowLine(minTime, resetScroll); // FIX: Replaced isInitialAppLoad || resetScroll with just resetScroll
 };
 
 /**
