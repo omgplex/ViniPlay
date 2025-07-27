@@ -1059,6 +1059,5 @@ app.listen(port, () => {
 
     if (notificationCheckInterval) clearInterval(notificationCheckInterval);
     notificationCheckInterval = setInterval(checkAndSendNotifications, 60000);
-    console.log('[Push] Notification checker started. Will check for due notifications every minute.');
 });
 ```
