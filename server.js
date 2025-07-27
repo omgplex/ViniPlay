@@ -125,6 +125,34 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
             )`, (createErr) => {
                 if (createErr) console.error("[DB] Error creating 'notifications' table:", createErr.message);
                 else console.log("[DB] 'notifications' table checked/created.");
+
+                // --- Database Migration: Add 'status' and 'triggeredAt' columns if they don't exist ---
+                db.get("PRAGMA table_info(notifications)", (err, rows) => {
+                    if (err) {
+                        console.error("[DB_MIGRATION] Error checking notifications table info:", err.message);
+                        return;
+                    }
+                    const columnNames = rows.map(row => row.name);
+                    
+                    if (!columnNames.includes('status')) {
+                        db.run("ALTER TABLE notifications ADD COLUMN status TEXT DEFAULT 'pending'", (alterErr) => {
+                            if (alterErr) console.error("[DB_MIGRATION] Error adding 'status' column:", alterErr.message);
+                            else console.log("[DB_MIGRATION] Added 'status' column to 'notifications' table.");
+                        });
+                    } else {
+                        console.log("[DB_MIGRATION] 'status' column already exists in 'notifications' table.");
+                    }
+
+                    if (!columnNames.includes('triggeredAt')) {
+                        db.run("ALTER TABLE notifications ADD COLUMN triggeredAt TEXT", (alterErr) => {
+                            if (alterErr) console.error("[DB_MIGRATION] Error adding 'triggeredAt' column:", alterErr.message);
+                            else console.log("[DB_MIGRATION] Added 'triggeredAt' column to 'notifications' table.");
+                        });
+                    } else {
+                        console.log("[DB_MIGRATION] 'triggeredAt' column already exists in 'notifications' table.");
+                    }
+                });
+                // --- End Database Migration ---
             });
             db.run(`CREATE TABLE IF NOT EXISTS push_subscriptions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
