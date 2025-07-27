@@ -12,7 +12,7 @@ import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './
 import { setupPlayerEventListeners } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
 import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu, showNotification } from './modules/ui.js';
-import { loadAndScheduleNotifications, subscribeUserToPush /*, handleUrlParameters removed as it's not used */ } from './modules/notification.js';
+import { loadAndScheduleNotifications, subscribeUserToPush } from './modules/notification.js';
 
 /**
  * Initializes the main application after successful authentication.
@@ -58,6 +58,7 @@ export async function initMainApp() {
         populateTimezoneSelector();
         updateUIFromSettings();
 
+        // Ensure the initial loading indicator and placeholder are correctly managed
         UIElements.initialLoadingIndicator.classList.remove('hidden');
         UIElements.guidePlaceholder.classList.remove('hidden');
 
@@ -74,7 +75,7 @@ export async function initMainApp() {
             console.log('[MAIN_APP] Loading guide data from server config (M3U/EPG content).');
             handleGuideLoad(config.m3uContent, config.epgContent);
         } else {
-            console.warn('[MAIN_APP] No cached guide data and no M3U content in config.');
+            console.warn('[MAIN_APP] No cached guide data and no M3U content in config. Hiding loader.');
             UIElements.initialLoadingIndicator.classList.add('hidden');
             UIElements.noDataMessage.classList.remove('hidden');
         }
@@ -83,11 +84,6 @@ export async function initMainApp() {
         await loadAndScheduleNotifications();
         console.log('[MAIN_APP] Subscribing user to push notifications...');
         await subscribeUserToPush();
-
-        // Removed handleUrlParameters as it was unused and could cause issues if not fully implemented.
-        // If you intended to use it, you'll need to define it in notification.js and uncomment.
-        // console.log('[MAIN_APP] Handling URL parameters for notifications...');
-        // handleUrlParameters(); 
 
         console.log('[MAIN_APP] Handling initial page route change...');
         handleRouteChange();
@@ -160,18 +156,18 @@ function restoreDimensions() {
     console.log('[UI_RESTORE] Restoring dimensions from settings...');
     if (guideState.settings.playerDimensions) {
         const { width, height } = guideState.settings.playerDimensions;
-        if (width) UIElements.videoModalContainer.style.width = `${width}px`;
-        if (height) UIElements.videoModalContainer.style.height = `${height}px`;
+        if (UIElements.videoModalContainer && width) UIElements.videoModalContainer.style.width = `${width}px`;
+        if (UIElements.videoModalContainer && height) UIElements.videoModalContainer.style.height = `${height}px`;
         console.log(`[UI_RESTORE] Player dimensions restored to ${width}x${height}.`);
     }
     if (guideState.settings.programDetailsDimensions) {
         const { width, height } = guideState.settings.programDetailsDimensions;
-        if (width) UIElements.programDetailsContainer.style.width = `${width}px`;
-        if (height) UIElements.programDetailsContainer.style.height = `${height}px`;
+        if (UIElements.programDetailsContainer && width) UIElements.programDetailsContainer.style.width = `${width}px`;
+        if (UIElements.programDetailsContainer && height) UIElements.programDetailsContainer.style.height = `${height}px`;
         console.log(`[UI_RESTORE] Program details dimensions restored to ${width}x${height}.`);
     }
     if (guideState.settings.channelColumnWidth) {
-        UIElements.guideGrid.style.setProperty('--channel-col-width', `${guideState.settings.channelColumnWidth}px`);
+        if (UIElements.guideGrid) UIElements.guideGrid.style.setProperty('--channel-col-width', `${guideState.settings.channelColumnWidth}px`);
         console.log(`[UI_RESTORE] Channel column width restored to ${guideState.settings.channelColumnWidth}px.`);
     }
     console.log('[UI_RESTORE] Dimension restoration complete.');
@@ -182,6 +178,7 @@ function restoreDimensions() {
  */
 function setupCoreEventListeners() {
     console.log('[CORE_EVENTS] Setting up core event listeners...');
+    // Add checks for UIElements existence before adding event listeners
     UIElements.tabGuide?.addEventListener('click', () => { console.log('[EVENT] Click: Tab Guide'); switchTab('guide'); });
     UIElements.tabNotifications?.addEventListener('click', () => { console.log('[EVENT] Click: Tab Notifications'); switchTab('notifications'); });
     UIElements.tabSettings?.addEventListener('click', () => { console.log('[EVENT] Click: Tab Settings'); switchTab('settings'); });
@@ -201,17 +198,19 @@ function setupCoreEventListeners() {
 
     window.addEventListener('popstate', () => { console.log('[EVENT] Popstate (Browser History Change)'); handleRouteChange(); });
 
-    UIElements.confirmCancelBtn.addEventListener('click', () => { console.log('[EVENT] Click: Confirm Cancel'); closeModal(UIElements.confirmModal); });
-    UIElements.confirmOkBtn.addEventListener('click', () => { console.log('[EVENT] Click: Confirm OK'); handleConfirm(); });
-    UIElements.detailsCloseBtn.addEventListener('click', () => { console.log('[EVENT] Click: Details Close'); closeModal(UIElements.programDetailsModal); });
+    UIElements.confirmCancelBtn?.addEventListener('click', () => { console.log('[EVENT] Click: Confirm Cancel'); closeModal(UIElements.confirmModal); });
+    UIElements.confirmOkBtn?.addEventListener('click', () => { console.log('[EVENT] Click: Confirm OK'); handleConfirm(); });
+    UIElements.detailsCloseBtn?.addEventListener('click', () => { console.log('[EVENT] Click: Details Close'); closeModal(UIElements.programDetailsModal); });
 
     if (UIElements.videoResizeHandle && UIElements.videoModalContainer) {
         makeModalResizable(UIElements.videoResizeHandle, UIElements.videoModalContainer, 400, 300, 'playerDimensions');
+        console.log('[CORE_EVENTS] Video modal resizable setup.');
     } else {
         console.warn('[CORE_EVENTS] Video resize elements not found. Skipping video modal resizable setup.');
     }
     if (UIElements.detailsResizeHandle && UIElements.programDetailsContainer) {
         makeModalResizable(UIElements.detailsResizeHandle, UIElements.programDetailsContainer, 320, 250, 'programDetailsDimensions');
+        console.log('[CORE_EVENTS] Program details modal resizable setup.');
     } else {
         console.warn('[CORE_EVENTS] Program details resize elements not found. Skipping modal resizable setup.');
     }
@@ -235,26 +234,30 @@ function setupCoreEventListeners() {
 // --- App Start ---
 document.addEventListener('DOMContentLoaded', () => {
     console.log('[APP_START] DOMContentLoaded event fired. Initializing UI elements...');
-    initializeUIElements();
+    initializeUIElements(); // This should be able to query all elements by ID, even if hidden.
 
     // Register Service Worker
     if ('serviceWorker' in navigator && 'PushManager' in window) {
         console.log('[APP_START] Service Worker and Push API are supported. Registering sw.js...');
-        navigator.serviceWorker.register('sw.js')
+        // Correct the path for the service worker
+        navigator.serviceWorker.register('/sw.js') // <--- FIX: Changed 'sw.js' to '/sw.js'
             .then(swReg => {
                 console.log('[APP_START] Service Worker registered successfully:', swReg);
                 appState.swRegistration = swReg;
             })
             .catch(error => {
                 console.error('[APP_START] Service Worker registration failed:', error);
+                showNotification("Service Worker registration failed. Notifications may not work.", true);
             });
     } else {
         console.warn('[APP_START] Push messaging is NOT supported by this browser.');
+        showNotification("Push notifications are not supported by your browser.", false, 5000);
     }
 
     console.log('[APP_START] Setting up authentication event listeners...');
     setupAuthEventListeners();
     console.log('[APP_START] Checking authentication status...');
-    checkAuthStatus();
+    checkAuthStatus(); // This initiates the main app flow after auth check
 });
+
 
