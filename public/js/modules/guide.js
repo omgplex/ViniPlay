@@ -11,7 +11,7 @@ import { saveUserSetting } from './api.js';
 import { parseM3U } from './utils.js';
 import { playChannel } from './player.js';
 import { showNotification, openModal, closeModal } from './ui.js';
-import { addOrRemoveNotification, findNotificationForProgram } from './notification.js'; 
+import { addOrRemoveNotification, findNotificationForProgram } from './notification.js'; // NEW: Import notification functions
 
 // --- Virtualization Constants ---
 const ROW_HEIGHT = 96; // Height in pixels of a single channel row (.channel-info + .timeline-row)
@@ -83,7 +83,8 @@ export function finalizeGuideLoad(isFirstLoad = false) {
             guideState.programs[channelId].forEach(prog => {
                 const progStart = new Date(prog.start);
                 const progStop = new Date(prog.stop);
-                if (progStop < guideStart || progStart > guideEnd) return;
+                // Only include programs within the current guide view
+                if (progStop < guideStart || progStart > guideEnd) return; // Corrected logic to filter out programs completely outside view
                     
                 allPrograms.push({
                     ...prog,
@@ -93,7 +94,8 @@ export function finalizeGuideLoad(isFirstLoad = false) {
                         logo: channel.logo,
                         source: channel.source,
                     },
-                    programId: `${channel.id}-${progStart.toISOString()}`
+                    // Ensure a programId is generated for programs in the search index
+                    programId: `${channel.id}-${progStart.toISOString()}-${progStop.toISOString()}`
                 });
             });
         }
@@ -134,6 +136,7 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
     // --- Static Header/Time Bar Setup (Done once per full render) ---
     const guideStart = new Date(guideState.currentDate);
     guideStart.setHours(0, 0, 0, 0);
+    // Create a stable UTC reference for midnight
     const guideStartUtc = new Date(Date.UTC(guideStart.getUTCFullYear(), guideStart.getUTCMonth(), guideStart.getUTCDate()));
     const timelineWidth = guideState.guideDurationHours * guideState.hourWidthPixels;
     UIElements.guideGrid.style.setProperty('--timeline-width', `${timelineWidth}px`);
@@ -154,23 +157,27 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
     const guideContainer = UIElements.guideContainer;
     const guideGrid = UIElements.guideGrid;
 
+    // Ensure the main grid container is clear of old virtual content
     let contentWrapper = guideGrid.querySelector('#virtual-content-wrapper');
     if (contentWrapper) {
         guideGrid.removeChild(contentWrapper);
     }
 
+    // This wrapper acts as a spacer, creating the full scrollable height.
     contentWrapper = document.createElement('div');
     contentWrapper.id = 'virtual-content-wrapper';
-    contentWrapper.style.gridColumn = '1 / -1'; 
+    contentWrapper.style.gridColumn = '1 / -1'; // Span across both grid columns
     contentWrapper.style.position = 'relative';
     contentWrapper.style.height = `${totalRows * ROW_HEIGHT}px`;
 
+    // This container holds the visible rows and will be moved with `transform`.
     const rowContainer = document.createElement('div');
     rowContainer.id = 'virtual-row-container';
     rowContainer.style.position = 'absolute';
     rowContainer.style.width = '100%';
     rowContainer.style.top = '0';
     rowContainer.style.left = '0';
+    // The row container needs to be a subgrid to align with the main grid's columns
     rowContainer.style.display = 'grid';
     rowContainer.style.gridTemplateColumns = 'var(--channel-col-width, 180px) 1fr';
 
@@ -193,6 +200,7 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
             const channel = channelsToRender[i];
             const channelName = channel.displayName || channel.name;
 
+            // Assign a consistent color to each source for the badge
             if (!sourceColorMap.has(channel.source)) {
                 sourceColorMap.set(channel.source, sourceColors[colorIndex % sourceColors.length]);
                 colorIndex++;
@@ -201,6 +209,7 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
             const sourceBadgeHTML = guideState.channelSources.size > 1 ? `<span class="source-badge ${sourceBadgeColor} text-white">${channel.source}</span>` : '';
             const chnoBadgeHTML = channel.chno ? `<span class="chno-badge">${channel.chno}</span>` : '';
 
+            // Sticky Channel Info Cell
             const channelInfoHTML = `
                 <div class="channel-info p-2 flex items-center justify-between cursor-pointer" data-url="${channel.url}" data-name="${channelName}" data-id="${channel.id}">
                     <div class="flex items-center overflow-hidden flex-grow min-w-0">
@@ -217,6 +226,7 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
                 </div>
             `;
 
+            // Scrollable Timeline Row
             let programsHTML = '';
             const now = new Date();
             const guideEnd = new Date(guideStartUtc.getTime() + guideState.guideDurationHours * 3600 * 1000);
@@ -233,16 +243,20 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
                 const isLive = now >= progStart && now < progStop;
                 const progressWidth = isLive ? ((now - progStart) / durationMs) * 100 : 0;
                 
-                const uniqueProgramId = `${channel.id}-${progStart.toISOString()}`;
+                // Construct the unique programId using channel.id, program start, and program stop
+                const uniqueProgramId = `${channel.id}-${progStart.toISOString()}-${progStop.toISOString()}`;
 
-                // NEW: Check for notification and apply the correct class
-                const notification = findNotificationForProgram({ programId: uniqueProgramId }, channel.id);
-                let notificationClass = '';
-                if (notification) {
-                    notificationClass = notification.status === 'active' ? 'has-notification-active' : 'has-notification-past';
-                }
+                // NEW: Check if this program has an active notification
+                const hasNotification = findNotificationForProgram({
+                    programId: uniqueProgramId, // Pass the unique programId for lookup
+                    title: prog.title, // Also pass title, start, stop for fallback in findNotificationForProgram
+                    start: prog.start,
+                    stop: prog.stop
+                }, channel.id);
+                const notificationClass = hasNotification ? 'has-notification' : '';
 
-                programsHTML += `<div class="programme-item absolute top-1 bottom-1 bg-gray-800 rounded-md p-2 overflow-hidden flex flex-col justify-center z-5 ${isLive ? 'live' : ''} ${progStop < now ? 'past' : ''} ${notificationClass}" style="left:${left}px; width:${Math.max(0, width - 2)}px" data-channel-id="${channel.id}" data-prog-id="${uniqueProgramId}"><div class="programme-progress" style="width:${progressWidth}%"></div><p class="prog-title text-white font-semibold truncate relative z-10">${prog.title}</p><p class="prog-time text-gray-400 truncate relative z-10">${progStart.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p></div>`;
+                // Added data-prog-id attribute as requested
+                programsHTML += `<div class="programme-item absolute top-1 bottom-1 bg-gray-800 rounded-md p-2 overflow-hidden flex flex-col justify-center z-5 ${isLive ? 'live' : ''} ${progStop < now ? 'past' : ''} ${notificationClass}" style="left:${left}px; width:${Math.max(0, width - 2)}px" data-channel-url="${channel.url}" data-channel-id="${channel.id}" data-channel-name="${channelName}" data-prog-title="${prog.title}" data-prog-desc="${prog.desc}" data-prog-start="${progStart.toISOString()}" data-prog-stop="${progStop.toISOString()}" data-prog-id="${uniqueProgramId}"><div class="programme-progress" style="width:${progressWidth}%"></div><p class="prog-title text-white font-semibold truncate relative z-10">${prog.title}</p><p class="prog-time text-gray-400 truncate relative z-10">${progStart.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p></div>`;
             });
             const timelineRowHTML = `<div class="timeline-row" style="width: ${timelineWidth}px;">${programsHTML}</div>`;
 
@@ -253,22 +267,26 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
         rowContainer.style.transform = `translateY(${startIndex * ROW_HEIGHT}px)`;
     };
 
+    // Attach scroll listener
     if (guideState.scrollHandler) {
         guideContainer.removeEventListener('scroll', guideState.scrollHandler);
     }
-    guideState.scrollHandler = throttle(updateVisibleRows, 16);
+    guideState.scrollHandler = throttle(updateVisibleRows, 16); // Throttle to roughly 60fps
     guideContainer.addEventListener('scroll', guideState.scrollHandler);
 
+    // Initial render and positioning
     if (resetScroll) {
         guideContainer.scrollTop = 0;
     }
     updateVisibleRows();
     updateNowLine(guideStartUtc, resetScroll);
 
+    // --- Re-attach date navigation listeners ---
     const prevDayBtn = UIElements.guideGrid.querySelector('#prev-day-btn');
     const nowBtn = UIElements.guideGrid.querySelector('#now-btn');
     const nextDayBtn = UIElements.guideGrid.querySelector('#next-day-btn');
     
+    // Use .onclick to ensure we're not adding duplicate listeners on re-renders
     if (prevDayBtn) prevDayBtn.onclick = () => {
         guideState.currentDate.setDate(guideState.currentDate.getDate() - 1);
         finalizeGuideLoad();
@@ -301,31 +319,44 @@ const updateNowLine = (guideStartUtc, shouldScroll = false) => {
     if (!nowLineEl) return;
 
     const now = new Date();
-    const nowValue = now.getTime();
+    const nowValue = now.getTime(); // Use getTime() for UTC milliseconds
     const guideEnd = new Date(guideStartUtc.getTime() + guideState.guideDurationHours * 3600 * 1000);
-    const channelInfoColWidth = parseInt(getComputedStyle(UIElements.guideGrid).getPropertyValue('--channel-col-width'));
+    const channelInfoColWidth = guideState.settings.channelColumnWidth;
 
     if (nowValue >= guideStartUtc.getTime() && nowValue <= guideEnd.getTime()) {
         const leftOffsetInScrollableArea = ((nowValue - guideStartUtc.getTime()) / 3600000) * guideState.hourWidthPixels;
-        nowLineEl.style.left = `${leftOffsetInScrollableArea}px`;
-        nowLineEl.style.gridColumn = '2'; // Make it align to the timeline grid area
+        nowLineEl.style.left = `${channelInfoColWidth + leftOffsetInScrollableArea}px`;
         nowLineEl.classList.remove('hidden');
         if (shouldScroll) {
+            // Add a short delay to ensure the guide content has rendered before scrolling
             setTimeout(() => {
-                const scrollLeft = leftOffsetInScrollableArea - (UIElements.guideContainer.clientWidth / 4);
+                const isMobile = window.innerWidth < 768; 
+                let scrollLeft;
+
+                if (isMobile) {
+                    // Refined calculation to center the NOW line visually, accounting for the fixed channel column
+                    scrollLeft = (channelInfoColWidth + leftOffsetInScrollableArea) - (UIElements.guideContainer.clientWidth / 2);
+                } else {
+                    // For desktop, position now line to the left of center, allowing to see upcoming programs
+                    scrollLeft = leftOffsetInScrollableArea - (UIElements.guideContainer.clientWidth / 4);
+                }
+                
                 UIElements.guideContainer.scrollTo({
-                    left: Math.max(0, scrollLeft),
+                    left: Math.max(0, scrollLeft), // Ensure scroll position is not negative
                     behavior: 'smooth'
                 });
-            }, 500);
+            }, 500); // Increased delay for better rendering stability
         }        
     } else {
         nowLineEl.classList.add('hidden');
     }
     
+    // Now line height should cover the full virtualized height
     const contentWrapper = UIElements.guideGrid.querySelector('#virtual-content-wrapper');
     nowLineEl.style.height = `${contentWrapper?.scrollHeight || UIElements.guideContainer.scrollHeight}px`;
 
+
+    // Update progress bars only on visible items for performance
     document.querySelectorAll('.programme-item').forEach(item => {
         const progStart = new Date(item.dataset.progStart);
         const progStop = new Date(item.dataset.progStop);
@@ -339,6 +370,7 @@ const updateNowLine = (guideStartUtc, shouldScroll = false) => {
         }
     });
 
+    // Schedule next update for the "now" line
     setTimeout(() => updateNowLine(guideStartUtc, false), 60000);
 };
 
@@ -354,6 +386,7 @@ const populateGroupFilter = () => {
         const cleanGroup = group.replace(/"/g, '&quot;');
         UIElements.groupFilter.innerHTML += `<option value="${cleanGroup}">${group}</option>`;
     });
+    // Restore previous selection if possible
     UIElements.groupFilter.value = currentVal && UIElements.groupFilter.querySelector(`option[value="${currentVal.replace(/"/g, '&quot;')}"]`) ? currentVal : 'all';
     UIElements.groupFilter.classList.remove('hidden');
 };
@@ -371,6 +404,7 @@ const populateSourceFilter = () => {
     UIElements.sourceFilter.value = currentVal && UIElements.sourceFilter.querySelector(`option[value="${currentVal.replace(/"/g, '&quot;')}"]`) ? currentVal : 'all';
 
     UIElements.sourceFilter.classList.remove('hidden');
+    // Only show the source filter if there's more than one source
     UIElements.sourceFilter.style.display = guideState.channelSources.size <= 1 ? 'none' : 'block';
 };
 
@@ -384,6 +418,7 @@ export function handleSearchAndFilter(isFirstLoad = false) {
     const selectedSource = UIElements.sourceFilter.value;
     let channelsForGuide = guideState.channels;
 
+    // Apply group filter
     if (selectedGroup !== 'all') {
         if (selectedGroup === 'favorites') {
             const favoriteIds = new Set(guideState.settings.favorites || []);
@@ -396,12 +431,15 @@ export function handleSearchAndFilter(isFirstLoad = false) {
         }
     }
 
+    // Apply source filter
     if (selectedSource !== 'all') {
         channelsForGuide = channelsForGuide.filter(ch => ch.source === selectedSource);
     }
 
+    // Apply search term
     if (searchTerm && appState.fuseChannels && appState.fusePrograms) {
         const lowerCaseSearchTerm = searchTerm.toLowerCase();
+        // A simple 'includes' filter for quick results before showing Fuse results
         channelsForGuide = channelsForGuide.filter(ch =>
             (ch.displayName || ch.name).toLowerCase().includes(lowerCaseSearchTerm) ||
             (ch.source && ch.source.toLowerCase().includes(lowerCaseSearchTerm)) ||
@@ -409,12 +447,14 @@ export function handleSearchAndFilter(isFirstLoad = false) {
         );
 
         const channelResults = appState.fuseChannels.search(searchTerm).slice(0, 10);
+
         let programResults = [];
         if (guideState.settings.searchScope === 'channels_programs') {
             programResults = appState.fusePrograms.search(searchTerm).slice(0, 20);
         }
         renderSearchResults(channelResults, programResults);
     } else {
+        // Hide search results if search term is empty
         UIElements.searchResultsContainer.innerHTML = '';
         UIElements.searchResultsContainer.classList.add('hidden');
     }
@@ -447,7 +487,7 @@ const renderSearchResults = (channelResults, programResults) => {
         html += '<div class="search-results-header">Programs</div>';
         const timeFormat = { hour: '2-digit', minute: '2-digit' };
         html += programResults.map(({ item }) => `
-             <div class="search-result-program flex items-center p-3 border-b border-gray-700/50 hover:bg-gray-700 cursor-pointer" data-channel-id="${item.channel.id}" data-prog-id="${item.programId}">
+             <div class="search-result-program flex items-center p-3 border-b border-gray-700/50 hover:bg-gray-700 cursor-pointer" data-channel-id="${item.channel.id}" data-prog-start="${item.start}">
                 <img src="${item.channel.logo}" onerror="this.onerror=null; this.src='https://placehold.co/40x40/1f2937/d1d5db?text=?';" class="w-10 h-10 object-contain mr-3 rounded-md bg-gray-700 flex-shrink-0">
                 <div class="overflow-hidden">
                     <p class="font-semibold text-white text-sm truncate" title="${item.title}">${item.title}</p>
@@ -487,159 +527,49 @@ const throttle = (func, limit) => {
 };
 
 
-/**
- * NEW: Finds the full details of a program from the guide data.
- * @param {string} channelId - The ID of the channel.
- * @param {string} programId - The unique ID of the program.
- * @returns {object|null} The full program data object or null if not found.
- */
-export const findProgramDetails = (channelId, programId) => {
-    const programs = guideState.programs[channelId];
-    if (!programs) return null;
-    
-    // The programId is constructed as `channelId-isoStartTime`
-    const startTimeFromId = programId.replace(`${channelId}-`, '');
-
-    const program = programs.find(p => p.start === startTimeFromId);
-    if (!program) return null;
-
-    const channel = guideState.channels.find(c => c.id === channelId);
-    if (!channel) return null;
-
-    return {
-        title: program.title,
-        desc: program.desc,
-        start: program.start,
-        stop: program.stop,
-        channelId: channelId,
-        channelName: channel.displayName || channel.name,
-        channelLogo: channel.logo,
-        channelUrl: channel.url,
-        programId: programId
-    };
-};
-
-/**
- * NEW: Populates and opens the program details modal.
- * @param {object} programData - The complete data for the program.
- * @param {string} channelId - The channel ID.
- */
-export const openProgramDetailsModal = (programData, channelId) => {
-    UIElements.detailsTitle.textContent = programData.title;
-    const progStart = new Date(programData.start);
-    const progStop = new Date(programData.stop);
-    UIElements.detailsTime.textContent = `${progStart.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${progStop.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-    UIElements.detailsDesc.textContent = programData.desc || "No description available.";
-
-    UIElements.detailsPlayBtn.onclick = () => {
-        playChannel(programData.channelUrl, programData.channelName, channelId);
-        closeModal(UIElements.programDetailsModal);
-    };
-
-    const now = new Date();
-    const programStopTime = progStop.getTime();
-    const isProgramRelevantForNotification = programStopTime > now.getTime();
-    
-    const notification = findNotificationForProgram(programData, channelId);
-
-    if (isProgramRelevantForNotification) {
-        UIElements.programDetailsNotifyBtn.classList.remove('hidden');
-        const isSet = notification && notification.status === 'active';
-        UIElements.programDetailsNotifyBtn.textContent = isSet ? 'Notification Set' : 'Notify Me';
-        UIElements.programDetailsNotifyBtn.disabled = !notification && Notification.permission === 'denied';
-        UIElements.programDetailsNotifyBtn.classList.toggle('bg-yellow-600', !isSet);
-        UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-yellow-700', !isSet);
-        UIElements.programDetailsNotifyBtn.classList.toggle('bg-gray-600', isSet);
-        UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-gray-500', isSet);
-
-        UIElements.programDetailsNotifyBtn.onclick = async () => {
-            await addOrRemoveNotification({
-                id: notification ? notification.id : null,
-                ...programData
-            });
-            // Re-render button state after action
-            const updatedNotification = findNotificationForProgram(programData, channelId);
-            const isNowSet = updatedNotification && updatedNotification.status === 'active';
-            UIElements.programDetailsNotifyBtn.textContent = isNowSet ? 'Notification Set' : 'Notify Me';
-            UIElements.programDetailsNotifyBtn.classList.toggle('bg-yellow-600', !isNowSet);
-            UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-yellow-700', !isNowSet);
-            UIElements.programDetailsNotifyBtn.classList.toggle('bg-gray-600', isNowSet);
-            UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-gray-500', isNowSet);
-            handleSearchAndFilter(false); // Re-render guide to update indicator
-        };
-    } else {
-        UIElements.programDetailsNotifyBtn.classList.add('hidden');
-    }
-
-    openModal(UIElements.programDetailsModal);
-};
-
-/**
- * NEW: Scrolls the guide to a specific program and highlights it.
- * @param {string} channelId - The ID of the channel.
- * @param {string} programStartIso - The ISO string start time of the program.
- * @param {string} programId - The unique ID of the program.
- */
-export const scrollToProgramInGuide = (channelId, programStartIso, programId) => {
-    const progStart = new Date(programStartIso);
-    const guideStart = new Date(guideState.currentDate);
-    guideStart.setHours(0,0,0,0);
-
-    const dateDiff = Math.floor((progStart.setHours(0,0,0,0) - guideStart) / (1000 * 60 * 60 * 24));
-    
-    if (dateDiff !== 0) {
-        guideState.currentDate.setDate(guideState.currentDate.getDate() + dateDiff);
-        handleSearchAndFilter(); // This will re-render the guide for the correct day
-    }
-
-    setTimeout(() => {
-        const programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-id="${programId}"]`);
-        if(programElement) {
-            const scrollLeft = programElement.offsetLeft - (UIElements.guideContainer.clientWidth / 4);
-            UIElements.guideContainer.scrollTo({ left: scrollLeft, behavior: 'smooth' });
-
-            programElement.style.transition = 'outline 0.5s, box-shadow 0.5s, transform 0.5s';
-            programElement.classList.add('highlighted-search');
-            setTimeout(() => { programElement.classList.remove('highlighted-search'); }, 2500);
-        } else {
-            showNotification("Could not find program in current guide view.", false, 4000);
-        }
-    }, 300); // Delay to allow potential re-render to complete
-};
-
 // --- Event Listeners ---
 
 /**
  * Sets up all event listeners for the guide page.
  */
 export function setupGuideEventListeners() {
+    // --- Filtering and Searching ---
     UIElements.groupFilter.addEventListener('change', () => handleSearchAndFilter());
     UIElements.sourceFilter.addEventListener('change', () => handleSearchAndFilter());
     UIElements.searchInput.addEventListener('input', () => {
         clearTimeout(appState.searchDebounceTimer);
         appState.searchDebounceTimer = setTimeout(() => handleSearchAndFilter(false), 250);
     });
+    // Hide search results when clicking outside
     document.addEventListener('click', e => {
         if (!UIElements.searchInput.contains(e.target) && !UIElements.searchResultsContainer.contains(e.target) && !e.target.closest('.search-result-channel') && !e.target.closest('.search-result-program')) {
             UIElements.searchResultsContainer.classList.add('hidden');
         }
     });
 
+    // --- Interactions (Clicks on the new grid) ---
+    // Event delegation is used here on the guideGrid, which is now efficient
+    // because only visible rows are in the DOM at any time.
     UIElements.guideGrid.addEventListener('click', (e) => {
         const favoriteStar = e.target.closest('.favorite-star');
         const channelInfo = e.target.closest('.channel-info');
         const progItem = e.target.closest('.programme-item');
 
         if (favoriteStar) {
-            e.stopPropagation();
+            e.stopPropagation(); // Prevent the channel click from firing
             const channelId = favoriteStar.dataset.channelId;
             const channel = guideState.channels.find(c => c.id === channelId);
             if (!channel) return;
 
+            // Toggle favorite state and update UI
             channel.isFavorite = !channel.isFavorite;
             favoriteStar.classList.toggle('favorited', channel.isFavorite);
+
+            // Update settings and save to server
             guideState.settings.favorites = guideState.channels.filter(c => c.isFavorite).map(c => c.id);
             saveUserSetting('favorites', guideState.settings.favorites);
+
+            // If currently viewing favorites, re-filter the list
             if (UIElements.groupFilter.value === 'favorites') {
                 handleSearchAndFilter();
             }
@@ -651,15 +581,81 @@ export function setupGuideEventListeners() {
         }
 
         if (progItem) {
+            // Populate and show the program details modal
             const channelId = progItem.dataset.channelId;
-            const programId = progItem.dataset.progId;
-            const programData = findProgramDetails(channelId, programId);
-            if(programData) {
-                openProgramDetailsModal(programData, channelId);
+            const programData = {
+                title: progItem.dataset.progTitle,
+                desc: progItem.dataset.progDesc,
+                start: progItem.dataset.progStart,
+                stop: progItem.dataset.progStop,
+                channelId: channelId,
+                programId: progItem.dataset.progId, // This now correctly retrieves the unique ID
+            };
+
+            const channelData = guideState.channels.find(c => c.id === channelId);
+            const channelName = channelData ? (channelData.displayName || channelData.name) : 'Unknown Channel';
+            const channelLogo = channelData ? channelData.logo : '';
+            const channelUrl = channelData ? channelData.url : '';
+
+            UIElements.detailsTitle.textContent = programData.title;
+            const progStart = new Date(programData.start);
+            const progStop = new Date(programData.stop);
+            UIElements.detailsTime.textContent = `${progStart.toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})}`;
+            UIElements.detailsDesc.textContent = programData.desc || "No description available.";
+            
+            UIElements.detailsPlayBtn.onclick = () => {
+                playChannel(channelUrl, channelName, channelId);
+                closeModal(UIElements.programDetailsModal);
+            };
+
+            // NEW: Notification button logic - Show button if program is not yet finished
+            const now = new Date();
+            const programStopTime = new Date(programData.stop).getTime();
+            const isProgramRelevantForNotification = programStopTime > now.getTime();
+            
+            // Pass programData object directly to findNotificationForProgram
+            const notification = findNotificationForProgram(programData, channelId);
+
+            if (isProgramRelevantForNotification) {
+                UIElements.programDetailsNotifyBtn.classList.remove('hidden');
+                UIElements.programDetailsNotifyBtn.textContent = notification ? 'Notification Set' : 'Notify Me';
+                UIElements.programDetailsNotifyBtn.disabled = !notification && Notification.permission === 'denied'; // Disable if notif already denied
+                UIElements.programDetailsNotifyBtn.classList.toggle('bg-yellow-600', !notification);
+                UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-yellow-700', !notification);
+                UIElements.programDetailsNotifyBtn.classList.toggle('bg-gray-600', !!notification);
+                UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-gray-500', !!notification);
+
+                UIElements.programDetailsNotifyBtn.onclick = async () => {
+                    await addOrRemoveNotification({
+                        id: notification ? notification.id : null, // Pass existing ID if updating/removing
+                        channelId: programData.channelId,
+                        channelName: channelName,
+                        channelLogo: channelLogo,
+                        programTitle: programData.title,
+                        programStart: programData.start,
+                        programStop: programData.stop,
+                        programDesc: programData.desc,
+                        programId: programData.programId // Unique ID for program within channel
+                    });
+                    // Re-render button state after action
+                    const updatedNotification = findNotificationForProgram(programData, channelId);
+                    UIElements.programDetailsNotifyBtn.textContent = updatedNotification ? 'Notification Set' : 'Notify Me';
+                    UIElements.programDetailsNotifyBtn.classList.toggle('bg-yellow-600', !updatedNotification);
+                    UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-yellow-700', !updatedNotification);
+                    UIElements.programDetailsNotifyBtn.classList.toggle('bg-gray-600', !!updatedNotification);
+                    UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-gray-500', !!updatedNotification);
+                    // Also re-render the guide to update the visual indicator
+                    handleSearchAndFilter(false); 
+                };
+            } else {
+                UIElements.programDetailsNotifyBtn.classList.add('hidden');
             }
+
+            openModal(UIElements.programDetailsModal);
         }
     });
 
+    // --- Search Results Click ---
     UIElements.searchResultsContainer.addEventListener('click', e => {
         const programItem = e.target.closest('.search-result-program');
         const channelItem = e.target.closest('.search-result-channel');
@@ -671,38 +667,59 @@ export function setupGuideEventListeners() {
             const channelId = channelItem.dataset.channelId;
             const channelIndex = guideState.visibleChannels.findIndex(c => c.id === channelId);
             if (channelIndex > -1) {
+                // Scroll to the item's virtual position
                 UIElements.guideContainer.scrollTo({ top: channelIndex * ROW_HEIGHT, behavior: 'smooth' });
+
+                // Highlight after scroll
                 setTimeout(() => {
                     const channelRow = UIElements.guideGrid.querySelector(`.channel-info[data-id="${channelId}"]`);
                     if (channelRow) {
                         channelRow.style.transition = 'background-color 0.5s';
-                        channelRow.style.backgroundColor = '#3b82f6';
+                        channelRow.style.backgroundColor = '#3b82f6'; // Highlight
                         setTimeout(() => { channelRow.style.backgroundColor = ''; }, 2000);
                     }
-                }, 500);
+                }, 500); // Wait for scroll to finish
             }
         } else if (programItem) {
-            const channelId = programItem.dataset.channelId;
-            const programId = programItem.dataset.progId;
-            const programData = findProgramDetails(channelId, programId);
-            if (programData) {
-                openProgramDetailsModal(programData, channelId);
-            } else {
-                 showNotification("Could not find program details.", true);
-            }
+             const progStart = new Date(programItem.dataset.progStart);
+             const guideStart = new Date(guideState.currentDate);
+             guideStart.setHours(0,0,0,0);
+
+             const dateDiff = Math.floor((progStart - guideStart) / (1000 * 60 * 60 * 24));
+             if (dateDiff !== 0) {
+                 guideState.currentDate.setDate(guideState.currentDate.getDate() + dateDiff);
+                 finalizeGuideLoad();
+             }
+
+            setTimeout(() => {
+                const programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programItem.dataset.progStart}"][data-channel-id="${programItem.dataset.channelId}"]`);
+                if(programElement) {
+                    const scrollLeft = programElement.offsetLeft - (UIElements.guideContainer.clientWidth / 4);
+                    UIElements.guideContainer.scrollTo({ left: scrollLeft, behavior: 'smooth' });
+
+                    programElement.style.transition = 'outline 0.5s';
+                    programElement.style.outline = '3px solid #facc15';
+                    setTimeout(() => { programElement.style.outline = 'none'; }, 2500);
+                }
+            }, 200);
         }
     });
 
+    // --- Scroll event for header visibility ---
     let lastScrollTop = 0;
     let initialHeaderHeight = 0;
+
     const calculateInitialHeaderHeight = () => {
         let height = 0;
         if (UIElements.mainHeader) height += UIElements.mainHeader.offsetHeight;
         if (UIElements.unifiedGuideHeader) height += UIElements.unifiedGuideHeader.offsetHeight;
         return height;
     };
+
     const handleScrollHeader = throttle(() => {
-        if (!UIElements.guideContainer || !UIElements.appContainer || !UIElements.pageGuide) return;
+        if (!UIElements.guideContainer || !UIElements.appContainer || !UIElements.pageGuide) {
+            return;
+        }
 
         const scrollTop = UIElements.guideContainer.scrollTop;
         const scrollDirection = scrollTop > lastScrollTop ? 'down' : 'up';
@@ -710,7 +727,9 @@ export function setupGuideEventListeners() {
         if (initialHeaderHeight === 0) {
             initialHeaderHeight = calculateInitialHeaderHeight();
         }
+
         const collapseThreshold = initialHeaderHeight * 0.5;
+
         if (scrollDirection === 'down' && scrollTop > collapseThreshold) {
             UIElements.appContainer.classList.add('header-collapsed');
         } else if (scrollDirection === 'up' && scrollTop <= collapseThreshold / 2) {
