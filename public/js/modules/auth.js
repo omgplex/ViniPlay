@@ -270,17 +270,5 @@ export function setupAuthEventListeners() {
     }
     console.log('[AUTH_EVENTS] Authentication event listeners setup complete.');
 }
-```
 
----
-
-## 🚦 Final Steps
-
-1.  **Replace `public/js/modules/auth.js` with the code above.**
-2.  **Ensure `public/js/main.js` is also updated** with the version I provided in the previous turn (where `initializeUIElements()` was moved inside `initMainApp()`).
-3.  **Rebuild and Rerun Docker:**
-    ```bash
-    docker-compose down # Stop and remove existing container
-    docker-compose build --no-cache # Rebuild the image from scratch
-    docker-compose up -d # Run the new container in detached mode
     
