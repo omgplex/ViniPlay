@@ -34,7 +34,7 @@ self.addEventListener('push', event => {
         badge: 'https://i.imgur.com/rwa8SjI.png', // Badge for Android notifications
         vibrate: [100, 50, 100], // Vibration pattern
         data: {
-            url: payload.data.url, // URL to open on click
+            url: payload.data.url, // URL to open on click, now includes channelId and programId
         },
     };
 
@@ -58,20 +58,22 @@ self.addEventListener('notificationclick', event => {
     // service worker before the new window/tab has been focused.
     event.waitUntil(
         clients.matchAll({
-            type: "window"
+            type: "window",
+            includeUncontrolled: true // Include tabs that might not be controlled by this SW yet
         }).then(clientList => {
             // Check if there's already a window open for the app
             for (let i = 0; i < clientList.length; i++) {
                 const client = clientList[i];
-                // If a client is found, focus it.
-                if (client.url === self.location.origin + '/' && 'focus' in client) {
-                    return client.focus();
+                // NEW: If a client is found that matches our origin, navigate it to the specific URL
+                if (client.url.startsWith(self.location.origin) && 'navigate' in client) {
+                    return client.navigate(urlToOpen).then(navigatedClient => navigatedClient.focus());
                 }
             }
-            // If no client is found, open a new tab/window.
+            // If no client is found or no suitable client to navigate, open a new tab/window.
             if (clients.openWindow) {
                 return clients.openWindow(urlToOpen);
             }
         })
     );
 });
+```
