@@ -19,15 +19,12 @@ import { loadAndScheduleNotifications, subscribeUserToPush } from './modules/not
  */
 export async function initMainApp() {
     console.log('[MAIN_APP] initMainApp called. App is initializing...');
-    // 1. Initialize IndexedDB for caching
-    try {
-        appState.db = await openDB();
-        console.log('[MAIN_APP] IndexedDB opened successfully.');
-    } catch (e) {
-        console.error('[MAIN_APP] Error initializing local cache (IndexedDB):', e);
-        showNotification("Could not initialize local cache.", true);
-    }
 
+    // 1. Initialize UIElements only when the main app container is actually visible
+    // This ensures all DOM elements are parsed and available.
+    console.log('[MAIN_APP] Initializing UIElements now that app-container is visible...');
+    initializeUIElements(); 
+    
     // 2. Setup all event listeners for the main app
     console.log('[MAIN_APP] Setting up core event listeners...');
     setupCoreEventListeners();
@@ -36,7 +33,17 @@ export async function initMainApp() {
     setupSettingsEventListeners();
     console.log('[MAIN_APP] All event listeners set up.');
 
-    // 3. Load initial configuration and guide data
+    // 3. Initialize IndexedDB for caching (moved after UIElements initialization)
+    try {
+        appState.db = await openDB();
+        console.log('[MAIN_APP] IndexedDB opened successfully.');
+    } catch (e) {
+        console.error('[MAIN_APP] Error initializing local cache (IndexedDB):', e);
+        showNotification("Could not initialize local cache.", true);
+    }
+
+
+    // 4. Load initial configuration and guide data
     try {
         console.log('[MAIN_APP] Fetching initial /api/config...');
         const response = await apiFetch(`/api/config?t=${Date.now()}`);
@@ -154,21 +161,30 @@ async function loadDataFromDB(key) {
  */
 function restoreDimensions() {
     console.log('[UI_RESTORE] Restoring dimensions from settings...');
-    if (guideState.settings.playerDimensions) {
+    // Ensure UIElements are valid before attempting to set styles
+    if (UIElements.videoModalContainer && guideState.settings.playerDimensions) {
         const { width, height } = guideState.settings.playerDimensions;
-        if (UIElements.videoModalContainer && width) UIElements.videoModalContainer.style.width = `${width}px`;
-        if (UIElements.videoModalContainer && height) UIElements.videoModalContainer.style.height = `${height}px`;
+        if (width) UIElements.videoModalContainer.style.width = `${width}px`;
+        if (height) UIElements.videoModalContainer.style.height = `${height}px`;
         console.log(`[UI_RESTORE] Player dimensions restored to ${width}x${height}.`);
+    } else {
+        console.log('[UI_RESTORE] Skipping player dimensions restore: UIElements.videoModalContainer not found or no settings.');
     }
-    if (guideState.settings.programDetailsDimensions) {
+
+    if (UIElements.programDetailsContainer && guideState.settings.programDetailsDimensions) {
         const { width, height } = guideState.settings.programDetailsDimensions;
-        if (UIElements.programDetailsContainer && width) UIElements.programDetailsContainer.style.width = `${width}px`;
-        if (UIElements.programDetailsContainer && height) UIElements.programDetailsContainer.style.height = `${height}px`;
+        if (width) UIElements.programDetailsContainer.style.width = `${width}px`;
+        if (height) UIElements.programDetailsContainer.style.height = `${height}px`;
         console.log(`[UI_RESTORE] Program details dimensions restored to ${width}x${height}.`);
+    } else {
+        console.log('[UI_RESTORE] Skipping program details dimensions restore: UIElements.programDetailsContainer not found or no settings.');
     }
-    if (guideState.settings.channelColumnWidth) {
-        if (UIElements.guideGrid) UIElements.guideGrid.style.setProperty('--channel-col-width', `${guideState.settings.channelColumnWidth}px`);
+
+    if (UIElements.guideGrid && guideState.settings.channelColumnWidth) {
+        UIElements.guideGrid.style.setProperty('--channel-col-width', `${guideState.settings.channelColumnWidth}px`);
         console.log(`[UI_RESTORE] Channel column width restored to ${guideState.settings.channelColumnWidth}px.`);
+    } else {
+        console.log('[UI_RESTORE] Skipping channel column width restore: UIElements.guideGrid not found or no settings.');
     }
     console.log('[UI_RESTORE] Dimension restoration complete.');
 }
@@ -233,8 +249,7 @@ function setupCoreEventListeners() {
 
 // --- App Start ---
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('[APP_START] DOMContentLoaded event fired. Initializing UI elements...');
-    initializeUIElements(); // This should be able to query all elements by ID, even if hidden.
+    console.log('[APP_START] DOMContentLoaded event fired.');
 
     // Register Service Worker
     if ('serviceWorker' in navigator && 'PushManager' in window) {
@@ -259,5 +274,4 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('[APP_START] Checking authentication status...');
     checkAuthStatus(); // This initiates the main app flow after auth check
 });
-
 
