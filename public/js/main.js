@@ -13,6 +13,7 @@ import { setupPlayerEventListeners } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
 import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu, showNotification } from './modules/ui.js';
 import { loadAndScheduleNotifications, subscribeUserToPush } from './modules/notification.js';
+import { parseM3U } from './modules/utils.js'; // NEW: Import parseM3U
 
 /**
  * Initializes the main application after successful authentication.
@@ -286,7 +287,7 @@ function restoreDimensions() {
         if (height) UIElements.videoModalContainer.style.height = `${height}px`;
         console.log(`[MAIN] Restored player dimensions: ${width}x${height}`);
     }
-    if (guideState.settings.programDetailsDimensions && UIElements.programDetailsContainer) {
+    if (UIElements.programDetailsDimensions && UIElements.programDetailsContainer) {
         const { width, height } = guideState.settings.programDetailsDimensions;
         if (width) UIElements.programDetailsContainer.style.width = `${width}px`;
         if (height) UIElements.programDetailsContainer.style.height = `${height}px`;
