@@ -129,31 +129,38 @@ function setupMultiViewEventListeners() {
  * Creates and adds a new player widget to the grid.
  * @param {object|null} channel - Optional channel to auto-load.
  * @param {object|null} layout - Optional layout data for the widget.
+ * @returns {HTMLElement} The added widget element.
  */
 function addPlayerWidget(channel = null, layout = {}) {
     if (grid.getGridItems().length >= MAX_PLAYERS) {
         showNotification(`You can add a maximum of ${MAX_PLAYERS} players.`, true);
-        return;
+        return null;
     }
 
-    const widgetId = `player-${Date.now()}`;
-    const widgetContent = createPlayerWidgetHTML(widgetId);
-    
-    // Add widget with provided or default layout
+    // Use the ID from the layout data if it exists, otherwise generate a new one.
+    const widgetId = layout.id || `player-${Date.now()}`;
+    const widgetHTML = createPlayerWidgetHTML(widgetId); // Just gets the HTML string now
+
     const widgetOptions = {
         id: widgetId,
+        content: widgetHTML, // Pass HTML string to Gridstack
         w: layout.w || 4,
         h: layout.h || 3,
-        x: layout.x, // Let Gridstack handle positioning if x/y are null
+        x: layout.x,
         y: layout.y
     };
-    const newWidgetEl = grid.addWidget(widgetContent, widgetOptions);
+    const newWidgetEl = grid.addWidget(widgetOptions); // newWidgetEl is the .grid-stack-item
+
+    // Find the content div inside the newly added widget and attach listeners
+    const widgetContentEl = newWidgetEl.querySelector('.grid-stack-item-content');
+    if (widgetContentEl) {
+        attachWidgetEventListeners(widgetContentEl, widgetId);
+    }
 
     if (channel) {
-        // Find the actual DOM element for the new widget to pass to play function
-        const widgetContainer = newWidgetEl.querySelector('.grid-stack-item-content');
-        playChannelInWidget(widgetId, channel, widgetContainer);
+        playChannelInWidget(widgetId, channel, widgetContentEl);
     }
+    return newWidgetEl;
 }
 
 
@@ -163,67 +170,85 @@ function addPlayerWidget(channel = null, layout = {}) {
 function removeLastPlayer() {
     const items = grid.getGridItems();
     if (items.length > 0) {
-        const lastItem = items[items.length - 1];
-        stopAndCleanupPlayer(lastItem.gridstackNode.id);
-        grid.removeWidget(lastItem);
+        // Sort items by creation time (using timestamp from ID) to be sure
+        const sortedItems = items.sort((a, b) => {
+            const timeA = parseInt((a.gridstackNode.id || '0').split('-')[1]);
+            const timeB = parseInt((b.gridstackNode.id || '0').split('-')[1]);
+            return timeA - timeB;
+        });
+        const lastItem = sortedItems[sortedItems.length - 1];
+        if (lastItem) {
+            const widgetId = lastItem.gridstackNode.id;
+            stopAndCleanupPlayer(widgetId);
+            grid.removeWidget(lastItem);
+            console.log(`[MultiView] Removed last player: ${widgetId}`);
+        }
+    } else {
+        showNotification("No players to remove.", false);
     }
 }
 
+
 /**
  * Applies a predefined layout to the player grid.
+ * This function now CLEARS the grid and creates empty players in the specified layout.
  * @param {'auto'|'2x2'|'1x3'} layoutName - The name of the layout to apply.
  */
 function applyPresetLayout(layoutName) {
-    const items = grid.getGridItems();
-    if (items.length === 0) return;
+    // Clear the current grid first, after confirmation
+    showConfirm(
+        `Apply '${layoutName}' Layout?`,
+        "This will stop all current streams and apply the new layout. Are you sure?",
+        () => {
+            cleanupMultiView(); // Clears all players and the grid
+            grid.batchUpdate();
+            try {
+                let layout = [];
+                if (layoutName === '2x2') {
+                    layout = [
+                        {x: 0, y: 0, w: 6, h: 5}, {x: 6, y: 0, w: 6, h: 5},
+                        {x: 0, y: 5, w: 6, h: 5}, {x: 6, y: 5, w: 6, h: 5}
+                    ];
+                } else if (layoutName === '1x3') {
+                     layout = [
+                        {x: 0, y: 0, w: 8, h: 8}, // Large player
+                        {x: 8, y: 0, w: 4, h: 2.66}, {x: 8, y: 2.66, w: 4, h: 2.66}, {x: 8, y: 5.32, w: 4, h: 2.66}
+                     ];
+                } else if (layoutName === 'auto') {
+                    addPlayerWidget();
+                    return;
+                }
 
-    grid.batchUpdate();
-    try {
-        if (layoutName === 'auto') {
-            grid.compact(); // Gridstack's default packing algorithm
-        } else if (layoutName === '2x2') {
-            if (items.length > 4) showNotification("2x2 layout works best with up to 4 players.", false);
-            const layout = [
-                {x: 0, y: 0, w: 6, h: 4}, {x: 6, y: 0, w: 6, h: 4},
-                {x: 0, y: 4, w: 6, h: 4}, {x: 6, y: 4, w: 6, h: 4}
-            ];
-            items.forEach((item, i) => {
-                if(layout[i]) grid.update(item, layout[i]);
-            });
-        } else if (layoutName === '1x3') {
-             if (items.length !== 4) {
-                 showNotification("This layout requires exactly 4 players.", true);
-                 return;
-             }
-             const layout = [
-                {x: 0, y: 0, w: 8, h: 8}, // Large player
-                {x: 8, y: 0, w: 4, h: 3}, {x: 8, y: 3, w: 4, h: 3}, {x: 8, y: 6, w: 4, h: 2.7}
-             ];
-             items.forEach((item, i) => {
-                 if(layout[i]) grid.update(item, layout[i]);
-             });
+                // Add empty widgets based on the chosen layout
+                layout.forEach(widgetLayout => {
+                    addPlayerWidget(null, widgetLayout);
+                });
+
+            } finally {
+                grid.batchUpdate(false);
+            }
         }
-    } finally {
-        grid.batchUpdate(false);
-    }
+    );
 }
 
 /**
  * Creates the inner HTML for a new player widget.
  * @param {string} widgetId - The unique ID for this widget.
- * @returns {string} The HTML content for the widget.
+ * @returns {string} The HTML content string for the widget.
  */
 function createPlayerWidgetHTML(widgetId) {
+    // This function now returns a simple string, not a DOM element.
     const content = `
         <div class="grid-stack-item-content" id="${widgetId}" data-channel-id="">
             <div class="player-header">
                 <span class="player-header-title">No Channel</span>
                 <div class="player-controls">
                     <button class="select-channel-btn" title="Select Channel"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg></button>
-                    <button class="mute-btn" title="Mute"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M9.953 2.903a.75.75 0 00-1.06 0L3.463 8.33a.75.75 0 00-.22.53v2.28a.75.75 0 00.75.75h2.28a.75.75 0 00.53-.22l5.43-5.43a.75.75 0 000-1.06zM11.03 2.904a.75.75 0 00-1.06 1.06l4.24 4.24a.75.75 0 001.06-1.06l-4.24-4.24zM10 5.06l-4.24 4.24v.45h2.28l4.24-4.24v-.45h-2.28z"></path><path d="M14.5 10a4.5 4.5 0 01-8.6 2.006a.75.75 0 10-1.3-.75a6 6 0 0011.19 1.488A.75.75 0 1014.5 10z"></path></svg></button>
+                    <button class="mute-btn" title="Mute"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" id="mute-icon-${widgetId}"><path d="M5.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h3.5a.75.75 0 00.75-.75V3.75A.75.75 0 009.25 3h-3.5zM14.25 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h3.5a.75.75 0 00.75-.75V3.75a.75.75 0 00-.75-.75h-3.5z"></path></svg></button>
                     <input type="range" min="0" max="1" step="0.05" value="0.5" class="volume-slider">
                     <button class="fullscreen-btn" title="Fullscreen"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M3 8.75A.75.75 0 013.75 8h4.5a.75.75 0 010 1.5h-3.25v3.25a.75.75 0 01-1.5 0V8.75zM11.25 3a.75.75 0 01.75.75v3.25h3.25a.75.75 0 010 1.5h-4.5a.75.75 0 01-.75-.75V3.75A.75.75 0 0111.25 3zM8.75 17a.75.75 0 01-.75-.75v-3.25H4.75a.75.75 0 010-1.5h4.5a.75.75 0 01.75.75v4.5a.75.75 0 01-.75.75zM17 11.25a.75.75 0 01-.75.75h-3.25v3.25a.75.75 0 01-1.5 0v-4.5a.75.75 0 01.75-.75h4.5a.75.75 0 01.75.75z"></path></svg></button>
-                    <button class="close-btn" title="Close Player"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"></path></svg></button>
+                    <button class="stop-btn" title="Stop Channel"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2H5z"></path></svg></button>
+                    <button class="remove-widget-btn" title="Remove Player"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" /></svg></button>
                 </div>
             </div>
             <div class="player-body">
@@ -235,64 +260,65 @@ function createPlayerWidgetHTML(widgetId) {
             </div>
         </div>
     `;
-
-    // Create a temporary DOM element to attach event listeners
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = content;
-    attachWidgetEventListeners(tempDiv, widgetId);
-
-    // Return the element itself for Gridstack to use
-    return tempDiv.firstElementChild;
+    return content;
 }
 
 /**
  * Attaches event listeners to the controls within a player widget.
- * @param {HTMLElement} widgetEl - The widget's root element.
+ * @param {HTMLElement} widgetContentEl - The widget's .grid-stack-item-content element.
  * @param {string} widgetId - The unique ID of the widget.
  */
-function attachWidgetEventListeners(widgetEl, widgetId) {
-    const videoEl = widgetEl.querySelector('video');
-    const container = widgetEl.querySelector('.grid-stack-item-content');
+function attachWidgetEventListeners(widgetContentEl, widgetId) {
+    const videoEl = widgetContentEl.querySelector('video');
+    const gridStackItem = widgetContentEl.closest('.grid-stack-item');
 
     const openSelector = () => {
-        channelSelectorCallback = (channel) => playChannelInWidget(widgetId, channel, container);
+        channelSelectorCallback = (channel) => playChannelInWidget(widgetId, channel, widgetContentEl);
         populateChannelSelector();
         openModal(UIElements.multiviewChannelSelectorModal);
     };
 
-    widgetEl.querySelector('.select-channel-btn').addEventListener('click', openSelector);
-    widgetEl.querySelector('.player-placeholder').addEventListener('click', openSelector);
+    widgetContentEl.querySelector('.select-channel-btn').addEventListener('click', openSelector);
+    widgetContentEl.querySelector('.player-placeholder').addEventListener('click', openSelector);
 
-    widgetEl.querySelector('.close-btn').addEventListener('click', (e) => {
+    widgetContentEl.querySelector('.stop-btn').addEventListener('click', (e) => {
         e.stopPropagation();
-        stopAndCleanupPlayer(widgetId);
-        // The widget element to remove is the parent .grid-stack-item
-        grid.removeWidget(widgetEl);
+        stopAndCleanupPlayer(widgetId, true); // Stop stream AND reset UI to placeholder
+    });
+
+    widgetContentEl.querySelector('.remove-widget-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        stopAndCleanupPlayer(widgetId, true);
+        if (gridStackItem) {
+            grid.removeWidget(gridStackItem);
+        }
     });
     
-    widgetEl.querySelector('.mute-btn').addEventListener('click', (e) => {
+    widgetContentEl.querySelector('.mute-btn').addEventListener('click', (e) => {
         e.stopPropagation();
         videoEl.muted = !videoEl.muted;
-        e.currentTarget.innerHTML = videoEl.muted 
-            ? `<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M9.953 2.903a.75.75 0 00-1.06 0L3.463 8.33a.75.75 0 00-.22.53v2.28a.75.75 0 00.75.75h2.28a.75.75 0 00.53-.22l5.43-5.43a.75.75 0 000-1.06zM11.03 2.904a.75.75 0 00-1.06 1.06l4.24 4.24a.75.75 0 001.06-1.06l-4.24-4.24zM10 5.06l-4.24 4.24v.45h2.28l4.24-4.24v-.45h-2.28z"></path><path d="M14.5 10a4.5 4.5 0 01-8.6 2.006a.75.75 0 10-1.3-.75a6 6 0 0011.19 1.488A.75.75 0 1014.5 10z"></path></svg>`
-            : `<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M5.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h3.5a.75.75 0 00.75-.75V3.75A.75.75 0 009.25 3h-3.5zM14.25 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h3.5a.75.75 0 00.75-.75V3.75a.75.75 0 00-.75-.75h-3.5z"></path></svg>`;
+        const muteIcon = document.getElementById(`mute-icon-${widgetId}`);
+        if (muteIcon) {
+            muteIcon.innerHTML = videoEl.muted
+                ? `<path fill-rule="evenodd" d="M10 1a.75.75 0 00-1.06.04L4.854 5.146A.75.75 0 004.5 5.5v9a.75.75 0 00.22.53l5.43 5.43a.75.75 0 001.28-.53V1.5A.75.75 0 0010 1zM8.5 6.54v6.92L5.25 10.21V5.79L8.5 6.54zM12.5 5a.75.75 0 01.75.75v8.5a.75.75 0 01-1.5 0v-8.5a.75.75 0 01.75-.75zM15.5 5a.75.75 0 01.75.75v8.5a.75.75 0 01-1.5 0v-8.5a.75.75 0 01.75-.75z" clip-rule="evenodd" />`
+                : `<path d="M5.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h3.5a.75.75 0 00.75-.75V3.75A.75.75 0 009.25 3h-3.5zM14.25 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h3.5a.75.75 0 00.75-.75V3.75a.75.75 0 00-.75-.75h-3.5z"></path>`;
+        }
     });
 
-    widgetEl.querySelector('.volume-slider').addEventListener('input', (e) => {
+    widgetContentEl.querySelector('.volume-slider').addEventListener('input', (e) => {
         e.stopPropagation();
         videoEl.volume = parseFloat(e.target.value);
         if (videoEl.volume > 0) videoEl.muted = false;
     });
-    
-    widgetEl.querySelector('.fullscreen-btn').addEventListener('click', (e) => {
+
+    widgetContentEl.querySelector('.fullscreen-btn').addEventListener('click', (e) => {
         e.stopPropagation();
         if (videoEl.requestFullscreen) {
             videoEl.requestFullscreen();
         }
     });
 
-    // Active player handling
-    container.addEventListener('click', () => {
+    widgetContentEl.addEventListener('click', () => {
         setActivePlayer(widgetId);
     });
 }
@@ -335,16 +361,16 @@ function setActivePlayer(widgetId) {
 function playChannelInWidget(widgetId, channel, widgetEl) {
     if (!widgetEl) return;
 
-    stopAndCleanupPlayer(widgetId); // Stop previous stream if any
+    stopAndCleanupPlayer(widgetId, false); // Stop previous stream if any
 
     const videoEl = widgetEl.querySelector('video');
     const placeholderEl = widgetEl.querySelector('.player-placeholder');
     const titleEl = widgetEl.querySelector('.player-header-title');
 
     titleEl.textContent = channel.name;
-    widgetEl.dataset.channelId = channel.id; // Store channel id
-    widgetEl.dataset.channelLogo = channel.logo; // Store logo
-    widgetEl.dataset.channelName = channel.name; // Store name
+    widgetEl.dataset.channelId = channel.id;
+    widgetEl.dataset.channelLogo = channel.logo;
+    widgetEl.dataset.channelName = channel.name;
     videoEl.classList.remove('hidden');
     placeholderEl.classList.add('hidden');
 
@@ -374,7 +400,7 @@ function playChannelInWidget(widgetId, channel, widgetEl) {
         player.play().catch(err => {
             console.error(`[MultiView] MPEGTS Player Error for ${widgetId}:`, err);
             showNotification(`Could not play stream: ${channel.name}`, true);
-            stopAndCleanupPlayer(widgetId);
+            stopAndCleanupPlayer(widgetId, true);
         });
 
         setActivePlayer(widgetId);
@@ -386,8 +412,10 @@ function playChannelInWidget(widgetId, channel, widgetEl) {
 
 /**
  * Stops the stream and cleans up resources for a specific player widget.
+ * @param {string} widgetId - The ID of the widget.
+ * @param {boolean} resetUI - If true, resets the widget's UI to the placeholder state.
  */
-function stopAndCleanupPlayer(widgetId) {
+function stopAndCleanupPlayer(widgetId, resetUI = true) {
     if (players.has(widgetId)) {
         const player = players.get(widgetId);
         player.pause();
@@ -398,20 +426,23 @@ function stopAndCleanupPlayer(widgetId) {
         console.log(`[MultiView] Player destroyed for widget ${widgetId}`);
     }
 
-    const widgetEl = document.getElementById(widgetId);
-    if (widgetEl) {
-        const videoEl = widgetEl.querySelector('video');
-        videoEl.src = "";
-        videoEl.removeAttribute('src');
-        videoEl.load();
-        videoEl.classList.add('hidden');
-        widgetEl.querySelector('.player-placeholder').classList.remove('hidden');
-        widgetEl.querySelector('.player-header-title').textContent = 'No Channel';
-        widgetEl.dataset.channelId = ''; // Clear stored data
-        widgetEl.dataset.channelLogo = '';
-        widgetEl.dataset.channelName = '';
+    if (resetUI) {
+        const widgetEl = document.getElementById(widgetId);
+        if (widgetEl) {
+            const videoEl = widgetEl.querySelector('video');
+            videoEl.src = "";
+            videoEl.removeAttribute('src');
+            videoEl.load();
+            videoEl.classList.add('hidden');
+            widgetEl.querySelector('.player-placeholder').classList.remove('hidden');
+            widgetEl.querySelector('.player-header-title').textContent = 'No Channel';
+            widgetEl.dataset.channelId = '';
+            widgetEl.dataset.channelLogo = '';
+            widgetEl.dataset.channelName = '';
+        }
     }
 }
+
 
 /**
  * Populates the channel selector modal with available channels based on the selected filter.
@@ -430,9 +461,9 @@ function populateChannelSelector() {
         channelsToDisplay = guideState.channels.filter(ch => favoriteIds.has(ch.id));
     } else if (filter === 'recents') {
         const recentIds = guideState.settings.recentChannels || [];
-        channelsToDisplay = recentIds.map(id => guideState.channels.find(ch => ch.id === id)).filter(Boolean); // .filter(Boolean) removes any undefined if a channel was deleted
+        channelsToDisplay = recentIds.map(id => guideState.channels.find(ch => ch.id === id)).filter(Boolean);
     } else {
-        channelsToDisplay = [...guideState.channels]; // All channels
+        channelsToDisplay = [...guideState.channels];
     }
     
     // Then apply search term
@@ -506,8 +537,7 @@ async function saveLayout(e) {
         return;
     }
 
-    const layoutData = grid.save(false); // false = don't save content
-    // We need to add the channel ID to each widget's data
+    const layoutData = grid.save(false);
     layoutData.forEach(widget => {
         const el = document.getElementById(widget.id);
         if (el) {
@@ -527,7 +557,7 @@ async function saveLayout(e) {
         showNotification('Layout saved successfully!');
         closeModal(UIElements.saveLayoutModal);
         UIElements.saveLayoutForm.reset();
-        loadLayouts(); // Refresh the list of layouts
+        loadLayouts();
     }
 }
 
@@ -544,27 +574,24 @@ function loadSelectedLayout() {
         return;
     }
     
-    // Clear current grid
-    cleanupMultiView();
-
-    grid.batchUpdate();
-    try {
-        grid.load(layout.layout_data, true); // true = add new widgets
-        // After loading the grid structure, find the channel for each widget and play it
-        layout.layout_data.forEach(widgetData => {
-            const channel = guideState.channels.find(c => c.id === widgetData.channelId);
-            if(channel) {
-                const widgetEl = document.getElementById(widgetData.id);
-                if(widgetEl) {
-                    playChannelInWidget(widgetData.id, channel, widgetEl);
-                }
+    showConfirm(
+        `Load '${layout.name}'?`,
+        "This will stop all current streams and load the selected layout. Are you sure?",
+        () => {
+            cleanupMultiView();
+            grid.batchUpdate();
+            try {
+                layout.layout_data.forEach(widgetData => {
+                    const channel = guideState.channels.find(c => c.id === widgetData.channelId);
+                    addPlayerWidget(channel, widgetData);
+                });
+            } finally {
+                grid.batchUpdate(false);
             }
-        });
-
-    } finally {
-        grid.batchUpdate(false);
-    }
+        }
+    );
 }
+
 
 /**
  * Deletes the currently selected layout from the server.
@@ -580,7 +607,7 @@ async function deleteLayout() {
         const res = await apiFetch(`/api/multiview/layouts/${layoutId}`, { method: 'DELETE' });
         if (res && res.ok) {
             showNotification('Layout deleted successfully.');
-            loadLayouts(); // Refresh dropdown
+            loadLayouts();
         }
     });
 }
