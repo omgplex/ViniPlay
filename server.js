@@ -238,7 +238,9 @@ function getSettings() {
             searchScope: 'channels_programs',
             autoRefresh: 0,
             timezoneOffset: Math.round(-(new Date().getTimezoneOffset() / 60)),
-            notificationLeadTime: 10
+            notificationLeadTime: 10,
+            epgMinDate: null, // NEW: Default for min EPG date
+            epgMaxDate: null  // NEW: Default for max EPG date
         };
         try {
             fs.writeFileSync(SETTINGS_PATH, JSON.stringify(defaultSettings, null, 2));
@@ -254,12 +256,16 @@ function getSettings() {
         if (!settings.m3uSources) settings.m3uSources = [];
         if (!settings.epgSources) settings.epgSources = [];
         if (settings.notificationLeadTime === undefined) settings.notificationLeadTime = 10;
+        // NEW: Ensure EPG min/max dates have defaults
+        if (settings.epgMinDate === undefined) settings.epgMinDate = null;
+        if (settings.epgMaxDate === undefined) settings.epgMaxDate = null;
+
         console.log('[SETTINGS] Settings loaded successfully.');
         return settings;
     } catch (e) {
         console.error("[SETTINGS] Could not parse settings.json, returning default. Error:", e.message);
         // Fallback to minimal defaults if file is corrupted
-        return { m3uSources: [], epgSources: [], notificationLeadTime: 10 };
+        return { m3uSources: [], epgSources: [], notificationLeadTime: 10, epgMinDate: null, epgMaxDate: null };
     }
 }
 
@@ -408,6 +414,10 @@ async function processAndMergeSources() {
         console.log('[PROCESS] No active EPG sources found.');
     }
 
+    // NEW: Initialize min and max EPG dates
+    let minEpgDate = null;
+    let maxEpgDate = null;
+
     for (const source of activeEpgSources) {
         console.log(`[EPG] Processing source: "${source.name}" (ID: ${source.id}, Type: ${source.type}, Path: ${source.path})`);
         try {
@@ -452,6 +462,18 @@ async function processAndMergeSources() {
                     continue;
                 }
                 
+                // Parse program start and stop times
+                const progStartTime = parseEpgTime(prog._attributes.start, timezoneOffset);
+                const progStopTime = parseEpgTime(prog._attributes.stop, timezoneOffset);
+
+                // Update minEpgDate and maxEpgDate
+                if (minEpgDate === null || progStartTime < minEpgDate) {
+                    minEpgDate = progStartTime;
+                }
+                if (maxEpgDate === null || progStopTime > maxEpgDate) {
+                    maxEpgDate = progStopTime;
+                }
+
                 for(const m3uSource of m3uSourceProviders) {
                     const uniqueChannelId = `${m3uSource.id}_${originalChannelId}`;
 
@@ -463,8 +485,8 @@ async function processAndMergeSources() {
                     const descNode = prog.desc && prog.desc._cdata ? prog.desc._cdata : (prog.desc?._text || '');
                     
                     mergedProgramData[uniqueChannelId].push({
-                        start: parseEpgTime(prog._attributes.start, timezoneOffset).toISOString(),
-                        stop: parseEpgTime(prog._attributes.stop, timezoneOffset).toISOString(),
+                        start: progStartTime.toISOString(), // Use the parsed Date object
+                        stop: progStopTime.toISOString(),   // Use the parsed Date object
                         title: titleNode.trim(),
                         desc: descNode.trim()
                     });
@@ -491,6 +513,10 @@ async function processAndMergeSources() {
         console.error(`[EPG] Error writing merged EPG JSON file: ${writeErr.message}`);
     }
     
+    // NEW: Save the calculated min and max EPG dates to settings
+    settings.epgMinDate = minEpgDate ? minEpgDate.toISOString() : null;
+    settings.epgMaxDate = maxEpgDate ? maxEpgDate.toISOString() : null;
+
     saveSettings(settings); // Save settings with updated status and lastUpdated for sources
     console.log('[PROCESS] Finished processing and merging all active sources.');
     return { success: true, message: 'Sources merged successfully.'};
