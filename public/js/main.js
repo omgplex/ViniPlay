@@ -13,7 +13,6 @@ import { setupPlayerEventListeners } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
 import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu, showNotification } from './modules/ui.js';
 import { loadAndScheduleNotifications, subscribeUserToPush } from './modules/notification.js';
-import { parseM3U } from './modules/utils.js'; // NEW: Import parseM3U
 
 /**
  * Initializes the main application after successful authentication.
@@ -40,8 +39,7 @@ export async function initMainApp() {
     // 3. Load initial configuration and guide data
     try {
         console.log('[MAIN] Fetching initial configuration from server...');
-        // Fetch config without specific date to get M3U and global settings
-        const response = await apiFetch(`/api/config?t=${Date.now()}`); 
+        const response = await apiFetch(`/api/config?t=${Date.now()}`); // Add timestamp to prevent caching
         if (!response || !response.ok) {
             const errorText = response ? `Status: ${response.status} ${response.statusText}` : 'No response from server.';
             throw new Error(`Could not load configuration from server. ${errorText}`);
@@ -57,13 +55,29 @@ export async function initMainApp() {
         populateTimezoneSelector();
         updateUIFromSettings();
 
-        // Show initial loading indicator for guide
+        // Show initial loading indicator for guide (if not already handled by auth.js)
         UIElements.initialLoadingIndicator.classList.remove('hidden');
         UIElements.guidePlaceholder.classList.remove('hidden');
 
-        // Load initial guide data including a range of dates
-        await loadInitialGuideData(config.m3uContent, config.epgContent); // Pass initial EPG for potential merge
+        // Attempt to load cached data first
+        console.log('[MAIN] Attempting to load guide data from IndexedDB cache...');
+        const cachedChannels = await loadDataFromDB('channels');
+        const cachedPrograms = await loadDataFromDB('programs');
 
+        if (cachedChannels?.length > 0 && cachedPrograms) {
+            console.log('[MAIN] Loaded guide data from cache. Finalizing guide load.');
+            guideState.channels = cachedChannels;
+            guideState.programs = cachedPrograms;
+            finalizeGuideLoad(true); // true indicates first load
+        } else if (config.m3uContent) {
+            console.log('[MAIN] No cached data or incomplete cache. Processing guide data from server config.');
+            handleGuideLoad(config.m3uContent, config.epgContent);
+        } else {
+            console.log('[MAIN] No M3U content from server or cache. Displaying no data message.');
+            UIElements.initialLoadingIndicator.classList.add('hidden');
+            UIElements.noDataMessage.classList.remove('hidden');
+        }
+        
         // Load the list of scheduled notifications for the UI
         console.log('[MAIN] Loading and scheduling notifications...');
         await loadAndScheduleNotifications();
@@ -87,131 +101,6 @@ export async function initMainApp() {
 }
 
 /**
- * Loads initial guide data, attempting from IndexedDB first, then fetching from server.
- * Ensures a range of dates (e.g., yesterday, today, tomorrow) is loaded for infinite scroll.
- * @param {string} initialM3uContent - M3U content from the initial /api/config call.
- * @param {object} initialEpgContent - EPG content from the initial /api/config call (might be full EPG or empty if no date param was passed).
- */
-async function loadInitialGuideData(initialM3uContent, initialEpgContent) {
-    let cachedChannels = null;
-    let cachedProgramCache = null;
-    let cachedLoadedDates = null;
-
-    // Attempt to load cached data first
-    try {
-        console.log('[MAIN] Attempting to load guide data from IndexedDB cache...');
-        cachedChannels = await loadDataFromDB('channels');
-        cachedProgramCache = await loadDataFromDB('programCache');
-        cachedLoadedDates = await loadDataFromDB('loadedDates');
-
-        if (cachedChannels?.length > 0 && cachedProgramCache && cachedLoadedDates?.length > 0) {
-            console.log('[MAIN] Loaded guide data from cache. Finalizing guide load.');
-            guideState.channels = cachedChannels;
-            guideState.programCache = cachedProgramCache;
-            guideState.loadedDates = new Set(cachedLoadedDates);
-            finalizeGuideLoad(true); // true indicates first load
-            
-            // Check if essential dates are loaded, if not, fetch them
-            await ensureDateRangeLoaded();
-
-            return; // Exit if data loaded from cache and initial date range is covered
-        }
-    } catch (e) {
-        console.warn('[MAIN] Error loading cached data:', e);
-        // Continue to fetch from server if cache fails
-    }
-
-    // If no complete cached data, proceed with server content
-    console.log('[MAIN] No complete cached data. Processing guide data from server config and fetching required dates.');
-    if (initialM3uContent) {
-        guideState.channels = parseM3U(initialM3uContent);
-    } else {
-        UIElements.initialLoadingIndicator.classList.add('hidden');
-        UIElements.noDataMessage.classList.remove('hidden');
-        return; // No M3U content, nothing to display
-    }
-
-    // For initial load, fetch EPG data for a range of dates around 'now'
-    const today = new Date();
-    today.setHours(0, 0, 0, 0); // Normalize to start of today
-
-    const datesToLoad = [
-        new Date(today.getTime() - 24 * 3600 * 1000), // Yesterday
-        today,                                       // Today
-        new Date(today.getTime() + 24 * 3600 * 1000), // Tomorrow
-        new Date(today.getTime() + 2 * 24 * 3600 * 1000) // Day after tomorrow (optional, for smooth right scroll)
-    ];
-
-    for (const date of datesToLoad) {
-        const dateKey = date.toISOString().slice(0, 10);
-        if (!guideState.loadedDates.has(dateKey)) {
-            guideState.loadingEpgData = true; // Set flag
-            try {
-                const response = await apiFetch(`/api/config?date=${dateKey}&t=${Date.now()}`);
-                if (response && response.ok) {
-                    const config = await response.json();
-                    if (config.epgContent) {
-                        handleGuideLoad(initialM3uContent, config.epgContent, date, false); // Merge, not initial load
-                    }
-                } else {
-                    console.warn(`[MAIN] Failed to fetch EPG for ${dateKey}: ${response?.statusText || 'Unknown error'}`);
-                }
-            } catch (e) {
-                console.error(`[MAIN] Error fetching EPG for ${dateKey}:`, e);
-            } finally {
-                guideState.loadingEpgData = false; // Clear flag
-            }
-        }
-    }
-    
-    finalizeGuideLoad(true); // Finalize after all initial date fetches
-}
-
-
-/**
- * Ensures that the necessary date range (e.g., around `currentDate`) is loaded.
- * This can be called after initial load from cache to verify coverage.
- */
-async function ensureDateRangeLoaded() {
-    const today = new Date(guideState.currentDate);
-    today.setHours(0, 0, 0, 0);
-
-    const datesToCheck = [
-        new Date(today.getTime() - 24 * 3600 * 1000), // Yesterday
-        today,                                       // Today
-        new Date(today.getTime() + 24 * 3600 * 1000), // Tomorrow
-        new Date(today.getTime() + 2 * 24 * 3600 * 1000) // Day after tomorrow
-    ];
-
-    for (const date of datesToCheck) {
-        const dateKey = date.toISOString().slice(0, 10);
-        if (!guideState.loadedDates.has(dateKey)) {
-            console.log(`[MAIN] Missing EPG data for ${dateKey}. Fetching...`);
-            // Call fetchEpgForDate from guide.js
-            // Note: A direct import of fetchEpgForDate from guide.js would create a circular dependency.
-            // For now, we simulate by directly calling apiFetch and handleGuideLoad here.
-            // A more robust solution might be to move fetchEpgForDate into api.js or a shared util.
-            guideState.loadingEpgData = true;
-            try {
-                const response = await apiFetch(`/api/config?date=${dateKey}&t=${Date.now()}`);
-                if (response && response.ok) {
-                    const config = await response.json();
-                    if (config.epgContent) {
-                        // Pass an empty m3uContent as it's already handled during app initialization
-                        handleGuideLoad('', config.epgContent, date, false); 
-                    }
-                }
-            } catch (e) {
-                console.error(`[MAIN] Error ensuring EPG for ${dateKey}:`, e);
-            } finally {
-                guideState.loadingEpgData = false;
-            }
-        }
-    }
-}
-
-
-/**
  * Opens and sets up the IndexedDB database.
  */
 function openDB() {
@@ -233,12 +122,7 @@ function openDB() {
                 dbInstance.createObjectStore('guideData');
                 console.log('[IndexedDB] Created "guideData" object store.');
             }
-            // Add any future schema upgrades here (e.g., 'programCache', 'loadedDates')
-            // This is crucial: ensure these stores are created on upgrade
-            if (!dbInstance.objectStoreNames.contains('guideData_channels')) { // Old approach had keys like 'channels' directly in 'guideData'
-                // For ViniPlayDB_v3, we use a single 'guideData' store with specific keys
-                // The current schema uses 'channels', 'programCache', 'loadedDates' as keys within 'guideData'
-            }
+            // Add any future schema upgrades here
         };
     });
 }
@@ -287,7 +171,7 @@ function restoreDimensions() {
         if (height) UIElements.videoModalContainer.style.height = `${height}px`;
         console.log(`[MAIN] Restored player dimensions: ${width}x${height}`);
     }
-    if (UIElements.programDetailsDimensions && UIElements.programDetailsContainer) {
+    if (guideState.settings.programDetailsDimensions && UIElements.programDetailsContainer) {
         const { width, height } = guideState.settings.programDetailsDimensions;
         if (width) UIElements.programDetailsContainer.style.width = `${width}px`;
         if (height) UIElements.programDetailsContainer.style.height = `${height}px`;
