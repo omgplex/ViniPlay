@@ -375,9 +375,11 @@ const handleNotificationListClick = (e) => {
 
 /**
  * Navigates to the TV Guide page and attempts to scroll to and open the program popup.
- * @param {string} channelId
- * @param {string} programStart
- * @param {string} programId
+ * This function is enhanced to handle cases where the program is on a different day
+ * or not currently in the DOM due to virtualization.
+ * @param {string} channelId - The ID of the channel.
+ * @param {string} programStart - The ISO string of the program's start time.
+ * @param {string} programId - The unique ID of the program (channelId-programStart-programStop).
  */
 export const navigateToProgramInGuide = (channelId, programStart, programId) => {
     console.log(`[NOTIF_NAV] Navigating to program in guide: Channel ID ${channelId}, Program Start ${programStart}, Program ID ${programId}`);
@@ -386,48 +388,50 @@ export const navigateToProgramInGuide = (channelId, programStart, programId) => 
 
     // Allow a small delay for the guide page to render and data to load
     setTimeout(() => {
-        const progStart = new Date(programStart);
-        const guideStart = new Date(guideState.currentDate);
-        guideStart.setHours(0,0,0,0);
+        const targetProgramStart = new Date(programStart);
+        const currentGuideDate = new Date(guideState.currentDate);
+        currentGuideDate.setHours(0, 0, 0, 0); // Normalize to midnight for comparison
 
-        // If the program is on a different day, update guideState.currentDate and re-render the guide
-        const dateDiff = Math.floor((progStart - guideStart) / (1000 * 60 * 60 * 24));
-        if (dateDiff !== 0) {
-            console.log(`[NOTIF_NAV] Program is on a different day. Adjusting guide date by ${dateDiff} days.`);
-            guideState.currentDate.setDate(guideState.currentDate.getDate() + dateDiff);
-            handleSearchAndFilter(); // This will re-render the guide for the new date
+        // Check if the target program is on a different day than the current guide view
+        if (targetProgramStart.toDateString() !== currentGuideDate.toDateString()) {
+            console.log(`[NOTIF_NAV] Program is on a different day. Adjusting guide date to: ${targetProgramStart.toDateString()}`);
+            guideState.currentDate = targetProgramStart; // Set the guide date to the program's date
+            // Trigger a re-render of the guide with the new date
+            handleSearchAndFilter(true); // Pass true to reset scroll to top of new day
         }
 
-        // After navigating and potentially changing date, wait for render, then find and click the program
+        // After navigating and potentially changing date, wait for the guide to render/re-render,
+        // then find and click the program.
         setTimeout(() => {
             let programElement;
+            // Prioritize finding by unique programId which is most reliable
             if (programId) {
                 programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-id="${programId}"][data-channel-id="${channelId}"]`);
             }
+            // Fallback to channelId and programStart if unique programId is not found or available
             if (!programElement) {
-                // Fallback to channelId and programStart if programId isn't found
-                console.warn(`[NOTIF_NAV] Program with unique ID ${programId} not found. Falling back to channel ID and program start.`);
+                console.warn(`[NOTIF_NAV] Program with unique ID "${programId}" not found or not primary. Falling back to channel ID and program start.`);
                 programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programStart}"][data-channel-id="${channelId}"]`);
             }
 
             if(programElement) {
                 console.log(`[NOTIF_NAV] Program element found. Scrolling to and clicking.`);
-                // Scroll to the program element
-                const scrollLeft = programElement.offsetLeft - (UIElements.guideContainer.clientWidth / 4);
+                // Scroll the guide container horizontally to make the program visible
+                const scrollLeft = programElement.offsetLeft - (UIElements.guideContainer.clientWidth / 4); // Position to the left of center
                 UIElements.guideContainer.scrollTo({ left: Math.max(0, scrollLeft), behavior: 'smooth' });
 
-                // Programmatically click the element to open the modal
+                // Programmatically click the element to open the program details modal
                 programElement.click(); 
                 
-                // Optional: Add a brief visual highlight after clicking
+                // Add a brief visual highlight to the program element
                 programElement.style.transition = 'outline 0.5s, box-shadow 0.5s, transform 0.5s';
-                programElement.classList.add('highlighted-search');
-                setTimeout(() => { programElement.classList.remove('highlighted-search'); }, 2500);
+                programElement.classList.add('highlighted-search'); // Reuse existing highlight class
+                setTimeout(() => { programElement.classList.remove('highlighted-search'); }, 2500); // Remove highlight after some time
 
             } else {
-                console.warn(`[NOTIF_NAV] Could not find program element in current guide view to open popup (Channel ID: ${channelId}, Program Start: ${programStart}, Program ID: ${programId}).`);
-                showNotification("Could not find program in guide to open details.", false, 4000);
+                console.warn(`[NOTIF_NAV] Could not find program element in current guide view to open details. (Channel ID: ${channelId}, Program Start: ${programStart}, Program ID: ${programId}).`);
+                showNotification("Could not find program in guide to open details. It might be outside the current 48-hour guide window.", false, 4000);
             }
         }, 500); // Increased delay to ensure the guide is fully rendered and virtualized elements exist
-    }, 100); // Initial delay for page navigation
+    }, 100); // Initial delay for page navigation to ensure the guide page is active
 };
