@@ -87,5 +87,22 @@ export const initializeUIElements = () => {
     UIElements.pastNotificationsList = document.getElementById('past-notifications-list');
     UIElements.noPastNotificationsMessage = document.getElementById('no-past-notifications-message');
 
+    // --- NEW: Multi-View Elements ---
+    UIElements.pageMultiview = document.getElementById('page-multiview');
+    UIElements.tabMultiview = document.getElementById('tab-multiview');
+    UIElements.mobileNavMultiview = document.getElementById('mobile-nav-multiview');
+    UIElements.multiviewHeader = document.getElementById('multiview-header');
+    UIElements.multiviewContainer = document.getElementById('multiview-container');
+    UIElements.multiviewAddPlayer = document.getElementById('multiview-add-player');
+    UIElements.multiviewRemovePlayer = document.getElementById('multiview-remove-player');
+    UIElements.layoutBtnAuto = document.getElementById('layout-btn-auto');
+    UIElements.layoutBtn2x2 = document.getElementById('layout-btn-2x2');
+    UIElements.layoutBtn1x3 = document.getElementById('layout-btn-1x3');
+    UIElements.multiviewChannelSelectorModal = document.getElementById('multiview-channel-selector-modal');
+    UIElements.channelSelectorList = document.getElementById('channel-selector-list');
+    UIElements.channelSelectorSearch = document.getElementById('channel-selector-search');
+    UIElements.channelSelectorCancelBtn = document.getElementById('channel-selector-cancel-btn');
+
+
     // Removed: UIElements.resetFilterBtn as the button is removed from HTML
 };
