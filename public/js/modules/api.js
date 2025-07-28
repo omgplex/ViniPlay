@@ -50,6 +50,29 @@ export async function apiFetch(url, options = {}) {
 }
 
 /**
+ * Fetches the entire application configuration including M3U content, EPG data, and settings.
+ * @returns {Promise<object|null>} The configuration object (m3uContent, epgContent, settings) or null on failure.
+ */
+export async function fetchConfig() {
+    console.log('[API] Fetching application configuration from /api/config.');
+    const response = await apiFetch(`/api/config?t=${Date.now()}`); // Add timestamp to prevent caching
+    if (!response) {
+        console.error('[API] Failed to fetch config: No response from apiFetch.');
+        return null;
+    }
+    
+    try {
+        const config = await response.json();
+        console.log('[API] Application configuration fetched successfully.');
+        return config;
+    } catch (e) {
+        console.error('[API] Error parsing config JSON:', e);
+        showNotification('Failed to parse server configuration.', true);
+        return null;
+    }
+}
+
+/**
  * Saves a user-specific setting to the backend.
  * @param {string} key - The setting key.
  * @param {*} value - The setting value.
