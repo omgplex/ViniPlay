@@ -210,8 +210,9 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
             const chnoBadgeHTML = channel.chno ? `<span class="chno-badge">${channel.chno}</span>` : '';
 
             // Sticky Channel Info Cell
+            // Added data-channel-index to help with programmatic scrolling if needed
             const channelInfoHTML = `
-                <div class="channel-info p-2 flex items-center justify-between cursor-pointer" data-url="${channel.url}" data-name="${channelName}" data-id="${channel.id}">
+                <div class="channel-info p-2 flex items-center justify-between cursor-pointer" data-url="${channel.url}" data-name="${channelName}" data-id="${channel.id}" data-channel-index="${i}">
                     <div class="flex items-center overflow-hidden flex-grow min-w-0">
                         <img src="${channel.logo}" onerror="this.onerror=null; this.src='https://placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-3 flex-shrink-0 rounded-md bg-gray-700">
                         <div class="flex-grow min-w-0 channel-details">
@@ -222,7 +223,7 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
                             </div>
                         </div>
                     </div>
-                    <svg data-channel-id="${channel.id}" class="w-6 h-6 text-gray-500 hover:text-yellow-400 favorite-star cursor-pointer flex-shrink-0 ml-2 ${channel.isFavorite ? 'favorited' : ''}" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8-2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>
+                    <svg data-channel-id="${channel.id}" class="w-6 h-6 text-gray-500 hover:text-yellow-400 favorite-star cursor-pointer flex-shrink-0 ml-2 ${channel.isFavorite ? 'favorited' : ''}" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 h00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8-2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>
                 </div>
             `;
 
@@ -523,6 +524,37 @@ const throttle = (func, limit) => {
             setTimeout(() => inThrottle = false, limit);
         }
     };
+};
+
+/**
+ * Scrolls the guide vertically to bring a specific channel into view.
+ * This is aware of the virtualization and calculates the correct scroll position.
+ * @param {string} channelId - The ID of the channel to scroll to.
+ * @returns {Promise<boolean>} - Resolves to true if the channel element is found and scrolled to, false otherwise (e.g., if channel is not in the currently filtered/rendered list after a reasonable wait).
+ */
+export const scrollToChannel = (channelId) => {
+    return new Promise((resolve) => {
+        const maxAttempts = 50; // Max attempts to find the channel (50 * 50ms = 2.5 seconds)
+        let attempts = 0;
+
+        const checkChannel = setInterval(() => {
+            const channelIndex = guideState.visibleChannels.findIndex(ch => ch.id === channelId);
+            if (channelIndex > -1) {
+                const targetScrollTop = channelIndex * ROW_HEIGHT;
+                UIElements.guideContainer.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
+                console.log(`[GUIDE_SCROLL] Scrolled to channel ID: ${channelId} at index ${channelIndex}.`);
+                clearInterval(checkChannel);
+                resolve(true); // Channel found and scrolled
+            } else {
+                attempts++;
+                if (attempts >= maxAttempts) {
+                    clearInterval(checkChannel);
+                    console.warn(`[GUIDE_SCROLL] Max attempts reached. Channel ID ${channelId} not found in visible channels for vertical scroll.`);
+                    resolve(false); // Channel not found after max attempts
+                }
+            }
+        }, 50); // Check every 50ms
+    });
 };
 
 
