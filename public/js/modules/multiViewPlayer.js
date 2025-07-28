@@ -4,20 +4,8 @@
  */
 
 import { UIElements, appState, guideState } from './state.js';
-import { showNotification } from './ui.js';
-import { makePlayerResizable } from './ui.js'; // Re-using adapted resize function
-
-// Sample channels for demonstration. In a real scenario, you'd integrate with your M3U data.
-const SAMPLE_CHANNELS = [
-    { name: "Sample Channel 1 (BBC)", url: "https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8" },
-    { name: "Sample Channel 2 (Al Jazeera)", url: "https://live-hls-web-aljazeera.akamaized.net/hls/live/2026858/aljazeera_ar/index.m3u8" },
-    { name: "Sample Channel 3 (NASA TV)", url: "https://nasa-i.akamaihd.net/hls/live/253381/NASA-NTV1-Public/master_f_SUBS_v_U.m3u8" },
-    { name: "Sample Channel 4 (France 24)", url: "https://static.france24.com/live/F24_EN_LIVE_HLS/live_hls.m3u8" },
-    { name: "Sample Channel 5 (Open Source)", url: "https://dge04f7f573f0.cloudfront.net/out/v1/a29e847c0b0a430b80f805a5d21a57e3/index.m3u8" },
-    { name: "Sample Channel 6 (Big Buck Bunny)", url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8" },
-];
-
-let nextSampleChannelIndex = 0; // To cycle through sample channels
+import { showNotification, openChannelSelectorModal } from './ui.js'; // NEW: Import openChannelSelectorModal
+import { makePlayerResizable } from './ui.js';
 
 /**
  * Represents a single multi-view player slot.
@@ -128,14 +116,20 @@ class MultiPlayerSlot {
             return;
         }
 
-        // For this mock, we'll use a direct stream URL.
-        // In a real implementation, you'd construct the stream URL with profile/user agent
-        // as done in the existing player.js for the single player:
-        // const profileId = guideState.settings.activeStreamProfileId;
-        // const userAgentId = guideState.settings.activeUserAgentId;
-        // const profile = (guideState.settings.streamProfiles || []).find(p => p.id === profileId);
-        // const streamUrlToPlay = profile.command === 'redirect' ? url : `/stream?url=${encodeURIComponent(url)}&profileId=${profileId}&userAgentId=${userAgentId}`;
-        const streamUrlToPlay = url; // Simplified for mock for easier testing
+        const profileId = guideState.settings.activeStreamProfileId;
+        const userAgentId = guideState.settings.activeUserAgentId;
+        if (!profileId || !userAgentId) {
+            showNotification("Active stream profile or user agent not set. Please check settings.", true);
+            return;
+        }
+
+        const profile = (guideState.settings.streamProfiles || []).find(p => p.id === profileId);
+        if (!profile) {
+            return showNotification("Stream profile not found.", true);
+        }
+        
+        // Determine the URL to play based on the stream profile (direct redirect or server proxy)
+        const streamUrlToPlay = profile.command === 'redirect' ? url : `/stream?url=${encodeURIComponent(url)}&profileId=${profileId}&userAgentId=${userAgentId}`;
 
         this.player = mpegts.createPlayer({
             type: 'mse',
@@ -185,18 +179,10 @@ class MultiPlayerSlot {
     }
 
     promptChangeChannel() {
-        // In a real app, this would open a channel picker modal,
-        // likely using your existing M3U channel data.
-        // For the mock, we'll just cycle through sample channels.
-        const selectedChannel = SAMPLE_CHANNELS[nextSampleChannelIndex];
-        nextSampleChannelIndex = (nextSampleChannelIndex + 1) % SAMPLE_CHANNELS.length;
-
-        if (selectedChannel) {
-            this.playChannel(selectedChannel.url, selectedChannel.name);
-            showNotification(`Playing: ${selectedChannel.name}`);
-        } else {
-            showNotification('No more sample channels to play!', false);
-        }
+        // Set the current player slot as the active one in appState
+        appState.activeMultiViewPlayerSlot = this;
+        // Open the channel selector modal
+        openChannelSelectorModal();
     }
 }
 
@@ -265,7 +251,7 @@ export const setActivePlayerSlot = (id) => {
     appState.multiPlayers.forEach(player => {
         if (player.id === id) {
             player.containerEl.classList.add('active-player');
-            // Ensure this player's volume is audible by unmuting if it was muted
+            // Ensure this player's volume is audible by unmuting if it was
             if (player.videoEl.muted) {
                 player.videoEl.muted = false;
             }
