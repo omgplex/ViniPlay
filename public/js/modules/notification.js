@@ -6,7 +6,7 @@
 
 import { showNotification, showConfirm, navigate, openModal, closeModal } from './ui.js';
 import { UIElements, guideState, appState } from './state.js';
-import { handleSearchAndFilter } from './guide.js';
+import { handleSearchAndFilter, scrollToChannel } from './guide.js'; // Import scrollToChannel
 import { getVapidKey, subscribeToPush, addProgramNotification, getProgramNotifications, deleteProgramNotification, unsubscribeFromPush } from './api.js';
 
 let isSubscribed = false;
@@ -381,66 +381,75 @@ const handleNotificationListClick = (e) => {
  * @param {string} programStart - The ISO string of the program's start time.
  * @param {string} programId - The unique ID of the program (channelId-programStart-programStop).
  */
-export const navigateToProgramInGuide = (channelId, programStart, programId) => {
+export const navigateToProgramInGuide = async (channelId, programStart, programId) => {
     console.log(`[NOTIF_NAV] Navigating to program in guide: Channel ID ${channelId}, Program Start ${programStart}, Program ID ${programId}`);
     // First, navigate to the TV Guide page
     navigate('/tvguide');
 
-    // Allow a small delay for the guide page to render and data to load.
-    // Increased this from 100ms to allow more time for route change and initial rendering.
-    setTimeout(() => {
-        const targetProgramStart = new Date(programStart);
-        const currentGuideDate = new Date(guideState.currentDate);
-        currentGuideDate.setHours(0, 0, 0, 0); // Normalize to midnight for comparison
+    // Introduce a slight delay to ensure the UI route change has initiated
+    await new Promise(resolve => setTimeout(resolve, 150)); // Slightly increased initial delay
 
-        // Check if the target program is on a different day than the current guide view
-        if (targetProgramStart.toDateString() !== currentGuideDate.toDateString()) {
-            console.log(`[NOTIF_NAV] Program is on a different day. Adjusting guide date to: ${targetProgramStart.toDateString()}`);
-            guideState.currentDate = targetProgramStart; // Set the guide date to the program's date
-            // Trigger a re-render of the guide with the new date
-            handleSearchAndFilter(true); // Pass true to reset scroll to top of new day
+    const targetProgramStart = new Date(programStart);
+    const currentGuideDate = new Date(guideState.currentDate);
+    currentGuideDate.setHours(0, 0, 0, 0); // Normalize to midnight for comparison
+
+    // Step 1: Check and adjust guide date if necessary
+    if (targetProgramStart.toDateString() !== currentGuideDate.toDateString()) {
+        console.log(`[NOTIF_NAV] Program is on a different day. Adjusting guide date to: ${targetProgramStart.toDateString()}`);
+        guideState.currentDate = targetProgramStart; // Set the guide date to the program's date
+        handleSearchAndFilter(true); // Trigger a re-render of the guide with the new date, reset scroll to top
+        // Give time for handleSearchAndFilter and renderGuide to start processing
+        await new Promise(resolve => setTimeout(resolve, 300)); // Additional delay after date change
+    }
+
+    // Step 2: Ensure the target channel is vertically visible using scrollToChannel
+    console.log(`[NOTIF_NAV] Attempting to scroll channel ${channelId} into view.`);
+    const channelScrolled = await scrollToChannel(channelId);
+
+    if (!channelScrolled) {
+        console.warn(`[NOTIF_NAV] Channel element for ID ${channelId} could not be made visible.`);
+        showNotification("Could not find the channel in the guide. It might be filtered out or took too long to render.", false, 6000);
+        return; // Stop if channel isn't found
+    }
+
+    // Step 3: Now that the channel is visible, poll for the program element
+    const maxProgramAttempts = 30; // More attempts for program within channel (30 * 100ms = 3 seconds)
+    let programAttempts = 0;
+    const findProgramInterval = setInterval(() => {
+        let programElement;
+        // Prioritize finding by unique programId which is most reliable
+        if (programId) {
+            programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-id="${programId}"][data-channel-id="${channelId}"]`);
+        }
+        // Fallback to channelId and programStart if unique programId is not found or available
+        if (!programElement) {
+            console.warn(`[NOTIF_NAV] Program lookup attempt ${programAttempts + 1}: Program with unique ID "${programId}" not found or not primary. Falling back to channel ID and program start.`);
+            programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programStart}"][data-channel-id="${channelId}"]`);
         }
 
-        // Use a polling mechanism to wait for the program element to appear in the DOM.
-        // This is crucial for virtualized lists where elements are rendered on demand.
-        const maxAttempts = 20; // Try for up to 20 * 100ms = 2 seconds
-        let attempts = 0;
-        const findProgramInterval = setInterval(() => {
-            let programElement;
-            // Prioritize finding by unique programId which is most reliable
-            if (programId) {
-                programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-id="${programId}"][data-channel-id="${channelId}"]`);
+        if (programElement) {
+            console.log(`[NOTIF_NAV] Program element found on attempt ${programAttempts + 1}. Scrolling horizontally and clicking.`);
+            clearInterval(findProgramInterval); // Stop polling
+
+            // Scroll the guide container horizontally to make the program visible
+            const scrollLeft = programElement.offsetLeft - (UIElements.guideContainer.clientWidth / 4); // Position to the left of center
+            UIElements.guideContainer.scrollTo({ left: Math.max(0, scrollLeft), behavior: 'smooth' });
+
+            // Programmatically click the element to open the program details modal
+            programElement.click(); 
+            
+            // Add a brief visual highlight to the program element
+            programElement.style.transition = 'outline 0.5s, box-shadow 0.5s, transform 0.5s';
+            programElement.classList.add('highlighted-search'); // Reuse existing highlight class
+            setTimeout(() => { programElement.classList.remove('highlighted-search'); }, 2500); // Remove highlight after some time
+
+        } else {
+            programAttempts++;
+            if (programAttempts >= maxProgramAttempts) {
+                clearInterval(findProgramInterval); // Stop polling after max attempts
+                console.warn(`[NOTIF_NAV] Max program attempts reached. Could not find program element in current guide view to open details. (Channel ID: ${channelId}, Program Start: ${programStart}, Program ID: ${programId}).`);
+                showNotification("Could not find program in guide to open details. It might be outside the current 48-hour guide window or took too long to render.", false, 6000);
             }
-            // Fallback to channelId and programStart if unique programId is not found or available
-            if (!programElement) {
-                console.warn(`[NOTIF_NAV] Attempt ${attempts + 1}: Program with unique ID "${programId}" not found or not primary. Falling back to channel ID and program start.`);
-                programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programStart}"][data-channel-id="${channelId}"]`);
-            }
-
-            if (programElement) {
-                console.log(`[NOTIF_NAV] Program element found on attempt ${attempts + 1}. Scrolling to and clicking.`);
-                clearInterval(findProgramInterval); // Stop polling
-
-                // Scroll the guide container horizontally to make the program visible
-                const scrollLeft = programElement.offsetLeft - (UIElements.guideContainer.clientWidth / 4); // Position to the left of center
-                UIElements.guideContainer.scrollTo({ left: Math.max(0, scrollLeft), behavior: 'smooth' });
-
-                // Programmatically click the element to open the program details modal
-                programElement.click(); 
-                
-                // Add a brief visual highlight to the program element
-                programElement.style.transition = 'outline 0.5s, box-shadow 0.5s, transform 0.5s';
-                programElement.classList.add('highlighted-search'); // Reuse existing highlight class
-                setTimeout(() => { programElement.classList.remove('highlighted-search'); }, 2500); // Remove highlight after some time
-
-            } else {
-                attempts++;
-                if (attempts >= maxAttempts) {
-                    clearInterval(findProgramInterval); // Stop polling after max attempts
-                    console.warn(`[NOTIF_NAV] Max attempts reached. Could not find program element in current guide view to open details. (Channel ID: ${channelId}, Program Start: ${programStart}, Program ID: ${programId}).`);
-                    showNotification("Could not find program in guide to open details. It might be outside the current 48-hour guide window or took too long to render.", false, 6000);
-                }
-            }
-        }, 100); // Check every 100ms
-    }, 200); // Initial delay for page navigation (increased from 100ms)
+        }
+    }, 100); // Check every 100ms for the program
 };
