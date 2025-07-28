@@ -12,8 +12,10 @@ services:
     container_name: viniplay
     
     # Map port 8998 on your host machine to port 8998 inside the container.
+    # NEW: Map port 9229 for Node.js debugging/profiling.
     ports:
       - "8998:8998"
+      - "9229:9229" # Expose the default inspect port
       
     # Define the restart policy.
     # 'unless-stopped' ensures the container automatically restarts if it crashes,
@@ -31,3 +33,9 @@ services:
     # without hardcoding them in the source code or this file.
     env_file:
       - ./.env
+
+    # NEW: Modify the entrypoint to start Node.js with the --inspect flag.
+    # This enables the debugger, which the profiler connects to.
+    command: >
+      sh -c "npm_config_loglevel=silent npm start -- --inspect=0.0.0.0:9229"
+
