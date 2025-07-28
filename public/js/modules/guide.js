@@ -223,7 +223,7 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
                             </div>
                         </div>
                     </div>
-                    <svg data-channel-id="${channel.id}" class="w-6 h-6 text-gray-500 hover:text-yellow-400 favorite-star cursor-pointer flex-shrink-0 ml-2 ${channel.isFavorite ? 'favorited' : ''}" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 h00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8-2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>
+                    <svg data-channel-id="${channel.id}" class="w-6 h-6 text-gray-500 hover:text-yellow-400 favorite-star cursor-pointer flex-shrink-0 ml-2 ${channel.isFavorite ? 'favorited' : ''}" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10.868 2.884c.321-.772 1.415-.772 1.736 0l1.884 4.545a1.5 1.5 0 001.292.934l4.892.38c.787.061 1.1.99.444 1.527l-3.623 2.805a1.5 1.5 0 00-.48 1.644l1.449 4.493c.25.777-.606 1.378-1.292.934l-4.148-2.564a1.5 1.5 0 00-1.543 0l-4.148 2.564c-.686.444-1.542-.157-1.292-.934l1.449-4.493a1.5 1.5 0 00-.48-1.644L2.008 10.26c-.656-.537-.345-1.466.444-1.527l4.892-.38a1.5 1.5 0 001.292-.934l1.884-4.545z" clip-rule="evenodd" /></svg>
                 </div>
             `;
 
