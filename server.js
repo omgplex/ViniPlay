@@ -107,6 +107,17 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 if (createErr) console.error("[DB] Error creating 'user_settings' table:", createErr.message);
                 else console.log("[DB] 'user_settings' table checked/created.");
             });
+            // ADDED: multiview_layouts table
+            db.run(`CREATE TABLE IF NOT EXISTS multiview_layouts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                layout_data TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )`, (createErr) => {
+                if (createErr) console.error("[DB] Error creating 'multiview_layouts' table:", createErr.message);
+                else console.log("[DB] 'multiview_layouts' table checked/created.");
+            });
             db.run(`CREATE TABLE IF NOT EXISTS notifications (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -1033,7 +1044,7 @@ app.post('/api/save/settings', requireAuth, async (req, res) => {
         for (const key in req.body) {
             // These keys are explicitly managed as user-specific on the client,
             // so they should not be written to the global settings.json
-            if (!['favorites', 'playerDimensions', 'programDetailsDimensions', 'recentChannels', 'notificationLeadTime'].includes(key)) {
+            if (!['favorites', 'playerDimensions', 'programDetailsDimensions', 'recentChannels', 'notificationLeadTime', 'multiviewLayouts'].includes(key)) {
                 updatedSettings[key] = req.body[key];
             } else {
                 console.warn(`[SETTINGS_SAVE] Attempted to save user-specific key "${key}" to global settings. This is ignored.`);
@@ -1336,6 +1347,64 @@ app.get('/stream', requireAuth, (req, res) => {
     req.on('close', () => {
         console.log(`[STREAM] Client closed connection for ${streamUrl}. Killing ffmpeg process (PID: ${ffmpeg.pid}).`);
         ffmpeg.kill('SIGKILL'); // Force kill ffmpeg process
+    });
+});
+
+// --- ADDED: Multi-View Layout API Endpoints ---
+app.get('/api/multiview/layouts', requireAuth, (req, res) => {
+    console.log(`[LAYOUT_API] Fetching layouts for user ${req.session.userId}.`);
+    db.all("SELECT id, name, layout_data FROM multiview_layouts WHERE user_id = ?", [req.session.userId], (err, rows) => {
+        if (err) {
+            console.error('[LAYOUT_API] Error fetching layouts:', err.message);
+            return res.status(500).json({ error: 'Could not retrieve layouts.' });
+        }
+        // Parse the layout_data from JSON string to an object
+        const layouts = rows.map(row => ({
+            ...row,
+            layout_data: JSON.parse(row.layout_data)
+        }));
+        console.log(`[LAYOUT_API] Found ${layouts.length} layouts for user ${req.session.userId}.`);
+        res.json(layouts);
+    });
+});
+
+app.post('/api/multiview/layouts', requireAuth, (req, res) => {
+    const { name, layout_data } = req.body;
+    console.log(`[LAYOUT_API] Saving layout "${name}" for user ${req.session.userId}.`);
+    if (!name || !layout_data) {
+        console.warn('[LAYOUT_API] Save failed: Name or layout_data is missing.');
+        return res.status(400).json({ error: 'Layout name and data are required.' });
+    }
+
+    const layoutJson = JSON.stringify(layout_data);
+
+    db.run("INSERT INTO multiview_layouts (user_id, name, layout_data) VALUES (?, ?, ?)",
+        [req.session.userId, name, layoutJson],
+        function (err) {
+            if (err) {
+                console.error('[LAYOUT_API] Error saving layout:', err.message);
+                return res.status(500).json({ error: 'Could not save layout.' });
+            }
+            console.log(`[LAYOUT_API] Layout "${name}" saved with ID ${this.lastID} for user ${req.session.userId}.`);
+            res.status(201).json({ success: true, id: this.lastID, name, layout_data });
+        }
+    );
+});
+
+app.delete('/api/multiview/layouts/:id', requireAuth, (req, res) => {
+    const { id } = req.params;
+    console.log(`[LAYOUT_API] Deleting layout ID: ${id} for user ${req.session.userId}.`);
+    db.run("DELETE FROM multiview_layouts WHERE id = ? AND user_id = ?", [id, req.session.userId], function(err) {
+        if (err) {
+            console.error(`[LAYOUT_API] Error deleting layout ${id}:`, err.message);
+            return res.status(500).json({ error: 'Could not delete layout.' });
+        }
+        if (this.changes === 0) {
+            console.warn(`[LAYOUT_API] Layout ${id} not found or user ${req.session.userId} not authorized.`);
+            return res.status(404).json({ error: 'Layout not found or you do not have permission to delete it.' });
+        }
+        console.log(`[LAYOUT_API] Layout ${id} deleted successfully.`);
+        res.json({ success: true });
     });
 });
 
