@@ -8,7 +8,8 @@
 export const appState = {
     currentUser: null, // { username, isAdmin }
     appInitialized: false,
-    player: null, // mpegts.js player instance
+    player: null, // mpegts.js player instance (for single view)
+    multiPlayers: [], // NEW: Array to hold active multi-view player instances
     searchDebounceTimer: null,
     confirmCallback: null,
     db: null, // IndexedDB instance
@@ -64,7 +65,7 @@ export const initializeUIElements = () => {
     UIElements.stickyCorner = document.querySelector('.sticky-corner');
     UIElements.channelColumnResizeHandle = document.getElementById('channel-column-resize-handle');
 
-    // NEW: Program Details Modal Notification Button
+    // Program Details Modal Notification Button
     UIElements.programDetailsNotifyBtn = document.getElementById('program-details-notify-btn');
 
     // Mobile menu elements
@@ -76,16 +77,27 @@ export const initializeUIElements = () => {
     UIElements.mobileNavLogoutBtn = document.getElementById('mobile-nav-logout-btn');
     UIElements.mobileMenuOverlay = document.getElementById('mobile-menu-overlay');
 
-    // NEW: Notification Tab/Page Elements
+    // Notification Tab/Page Elements
     UIElements.tabNotifications = document.getElementById('tab-notifications'); // Desktop Nav
     UIElements.mobileNavNotifications = document.getElementById('mobile-nav-notifications'); // Mobile Nav
     UIElements.pageNotifications = document.getElementById('page-notifications');
     UIElements.notificationsList = document.getElementById('notifications-list');
     UIElements.noNotificationsMessage = document.getElementById('no-notifications-message');
     UIElements.notificationLeadTimeInput = document.getElementById('notification-lead-time-input');
-    // NEW: Past Notifications section elements
+    // Past Notifications section elements
     UIElements.pastNotificationsList = document.getElementById('past-notifications-list');
     UIElements.noPastNotificationsMessage = document.getElementById('no-past-notifications-message');
 
-    // Removed: UIElements.resetFilterBtn as the button is removed from HTML
+    // NEW: Multi-view elements
+    UIElements.tabMultiView = document.getElementById('tab-multi-view');
+    UIElements.mobileNavMultiView = document.getElementById('mobile-nav-multi-view');
+    UIElements.pageMultiView = document.getElementById('page-multi-view');
+    UIElements.addPlayerSlotBtn = document.getElementById('add-player-slot-btn');
+    UIElements.removePlayerSlotBtn = document.getElementById('remove-player-slot-btn');
+    UIElements.layoutAutoBtn = document.getElementById('layout-auto-btn');
+    UIElements.layout2x2Btn = document.getElementById('layout-2x2-btn');
+    UIElements.layout1plus3Btn = document.getElementById('layout-1plus3-btn');
+    UIElements.multiViewGrid = document.getElementById('multi-view-grid');
+    UIElements.multiPlayerTemplate = document.getElementById('multi-player-template');
+    UIElements.multiViewPlaceholder = document.getElementById('multi-view-placeholder');
 };
