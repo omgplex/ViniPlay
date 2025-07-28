@@ -279,7 +279,7 @@ const renderGuide = (channelsToRender, shouldScrollToNow = false) => {
         updateVisibleRows();
         handleHorizontalScroll(guideContainer); // Check for horizontal scroll
     }, 16); // Throttle to roughly 60fps
-    guideContainer.addEventListener('scroll', guideState.scrollHandler);
+    guideContainer.addEventListener('scroll', guideContainer.scrollHandler); // Corrected: use guideContainer.scrollHandler
 
     // Initial render and positioning
     // Only scroll to "Now" if explicitly requested
@@ -332,6 +332,7 @@ const updateNowLine = (guideStartUtc, shouldScroll = false) => {
                     left: Math.max(0, scrollLeft), // Ensure scroll position is not negative
                     behavior: 'smooth'
                 });
+                appState.firstGuideRenderComplete = true; // Set flag after initial scroll
             }, 500); // Increased delay for better rendering stability
         }        
     } else {
@@ -551,7 +552,9 @@ export const scrollToChannel = (channelId) => {
  */
 let isTransitioningDay = false;
 const handleHorizontalScroll = (guideContainer) => {
-    if (isTransitioningDay) return;
+    // Only proceed if the initial guide render and scroll-to-now has completed.
+    // This prevents premature horizontal scroll triggering on page load.
+    if (!appState.firstGuideRenderComplete || isTransitioningDay) return;
 
     const scrollLeft = guideContainer.scrollLeft;
     const scrollWidth = guideContainer.scrollWidth;
