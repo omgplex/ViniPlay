@@ -103,6 +103,16 @@ export const initializeUIElements = () => {
     UIElements.channelSelectorList = document.getElementById('channel-selector-list');
     UIElements.channelSelectorSearch = document.getElementById('channel-selector-search');
     UIElements.channelSelectorCancelBtn = document.getElementById('channel-selector-cancel-btn');
+    // CORRECTED: Explicitly add all new Multi-View elements
+    UIElements.multiviewSaveLayoutBtn = document.getElementById('multiview-save-layout-btn');
+    UIElements.multiviewLoadLayoutBtn = document.getElementById('multiview-load-layout-btn');
+    UIElements.multiviewDeleteLayoutBtn = document.getElementById('multiview-delete-layout-btn');
+    UIElements.savedLayoutsSelect = document.getElementById('saved-layouts-select');
+    UIElements.saveLayoutModal = document.getElementById('save-layout-modal');
+    UIElements.saveLayoutForm = document.getElementById('save-layout-form');
+    UIElements.saveLayoutName = document.getElementById('save-layout-name');
+    UIElements.saveLayoutCancelBtn = document.getElementById('save-layout-cancel-btn');
+    UIElements.multiviewChannelFilter = document.getElementById('multiview-channel-filter');
 
 
     // Removed: UIElements.resetFilterBtn as the button is removed from HTML
