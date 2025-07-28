@@ -16,6 +16,7 @@ export const appState = {
     fuseChannels: null, // Fuse.js instance for channels
     fusePrograms: null, // Fuse.js instance for programs
     currentSourceTypeForEditor: 'url',
+    activeMultiViewPlayerSlot: null, // NEW: Reference to the MultiPlayerSlot instance that initiated the channel selection
 };
 
 // State specific to the TV Guide
@@ -88,7 +89,7 @@ export const initializeUIElements = () => {
     UIElements.pastNotificationsList = document.getElementById('past-notifications-list');
     UIElements.noPastNotificationsMessage = document.getElementById('no-past-notifications-message');
 
-    // NEW: Multi-view elements
+    // Multi-view elements
     UIElements.tabMultiView = document.getElementById('tab-multi-view');
     UIElements.mobileNavMultiView = document.getElementById('mobile-nav-multi-view');
     UIElements.pageMultiView = document.getElementById('page-multi-view');
@@ -100,4 +101,11 @@ export const initializeUIElements = () => {
     UIElements.multiViewGrid = document.getElementById('multi-view-grid');
     UIElements.multiPlayerTemplate = document.getElementById('multi-player-template');
     UIElements.multiViewPlaceholder = document.getElementById('multi-view-placeholder');
+
+    // NEW: Channel Selector Modal elements
+    UIElements.channelSelectorModal = document.getElementById('channel-selector-modal');
+    UIElements.channelSelectorCloseBtn = document.getElementById('channel-selector-close-btn');
+    UIElements.channelSelectorSearch = document.getElementById('channel-selector-search');
+    UIElements.channelSelectorList = document.getElementById('channel-selector-list');
+    UIElements.noChannelsMessage = document.getElementById('no-channels-message');
 };
