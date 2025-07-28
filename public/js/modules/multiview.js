@@ -60,23 +60,26 @@ export function isMultiViewActive() {
 export function cleanupMultiView() {
     if (grid) {
         console.log('[MultiView] Cleaning up all players and grid.');
-        grid.batchUpdate();
-        try {
-            grid.getGridItems().forEach(item => {
-                // MODIFIED: Added a safety check to prevent crash if gridstackNode is missing on cleanup.
-                if (item && item.gridstackNode) {
-                    const widgetId = item.gridstackNode.id;
-                    stopAndCleanupPlayer(widgetId);
-                }
-            });
-            grid.removeAll();
-        } finally {
-            grid.batchUpdate(false);
-        }
+
+        // First, destroy all active mpegts player instances to stop streams.
+        // We iterate over the players Map directly.
+        players.forEach((player, widgetId) => {
+            player.pause();
+            player.unload();
+            player.detachMediaElement();
+            player.destroy();
+            console.log(`[MultiView] Stream stopped for widget ${widgetId}`);
+        });
+
+        // After stopping streams, clear the grid UI entirely.
+        grid.removeAll();
     }
+
+    // Finally, reset all state variables related to Multi-View.
     players.clear();
     activePlayerId = null;
     channelSelectorCallback = null;
+    console.log('[MultiView] Cleanup complete.');
 }
 
 
