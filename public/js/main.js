@@ -6,7 +6,7 @@
  */
 
 import { appState, guideState, UIElements, initializeUIElements } from './modules/state.js';
-import { apiFetch } from './modules/api.js';
+import { apiFetch, fetchConfig } from './modules/api.js'; // IMPORTED fetchConfig
 import { checkAuthStatus, setupAuthEventListeners } from './modules/auth.js';
 import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './modules/guide.js';
 import { setupPlayerEventListeners } from './modules/player.js';
@@ -38,14 +38,13 @@ export async function initMainApp() {
 
     // 3. Load initial configuration and guide data
     try {
-        console.log('[MAIN] Fetching initial configuration from server...');
-        const response = await apiFetch(`/api/config?t=${Date.now()}`); // Add timestamp to prevent caching
-        if (!response || !response.ok) {
-            const errorText = response ? `Status: ${response.status} ${response.statusText}` : 'No response from server.';
-            throw new Error(`Could not load configuration from server. ${errorText}`);
+        console.log('[MAIN] Fetching initial configuration from server via api.js...');
+        // REFACTORED: Use the centralized fetchConfig from api.js
+        const config = await fetchConfig(); 
+        if (!config) {
+            throw new Error(`Could not load configuration from server. Check logs for details.`);
         }
 
-        const config = await response.json();
         console.log('[MAIN] Configuration loaded:', config);
         Object.assign(guideState.settings, config.settings || {}); // Merge server settings into guideState
 
