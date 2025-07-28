@@ -1,5 +1,8 @@
-// A Node.js server for the VINI PLAY IPTV Player.
-// Implements server-side EPG parsing, secure environment variables, and improved logging.
+/**
+ * server.js
+ * A Node.js server for the VINI PLAY IPTV Player.
+ * Implements server-side EPG parsing, secure environment variables, and improved logging.
+ */
 
 // Load environment variables from .env file
 require('dotenv').config();
@@ -273,7 +276,8 @@ function saveSettings(settings) {
     try {
         fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
         console.log('[SETTINGS] Settings saved successfully.');
-    } catch (e) {
+    }
+    catch (e) {
         console.error("[SETTINGS] Error saving settings:", e);
     }
 }
@@ -333,6 +337,11 @@ async function processAndMergeSources() {
 
     let mergedM3uContent = '#EXTM3U\n';
     const activeM3uSources = settings.m3uSources.filter(s => s.isActive);
+    
+    // NEW: Map to store the relationship between original EPG channel IDs and our unique M3U channel IDs
+    // This is crucial for matching EPG data to the correct channels on the client.
+    const epgIdToUniqueChannelIdMap = new Map(); 
+
     if (activeM3uSources.length === 0) {
         console.log('[PROCESS] No active M3U sources found.');
     }
@@ -364,23 +373,30 @@ async function processAndMergeSources() {
                 let line = lines[i].trim();
                 if (line.startsWith('#EXTINF:')) {
                     const tvgIdMatch = line.match(/tvg-id="([^"]*)"/);
-                    const tvgId = tvgIdMatch ? tvgIdMatch[1] : `no-id-${Math.random()}`; 
-                    const uniqueChannelId = `${source.id}_${tvgId}`;
+                    const originalTvgId = tvgIdMatch ? tvgIdMatch[1] : null; // Capture original tvg-id
+                    const uniqueChannelId = `${source.id}_${originalTvgId || `no-id-${Math.random().toString(36).substring(7)}`}`; // Ensure unique and fallback
 
                     const commaIndex = line.lastIndexOf(',');
                     const attributesPart = commaIndex !== -1 ? line.substring(0, commaIndex) : line;
                     const namePart = commaIndex !== -1 ? line.substring(commaIndex) : '';
 
                     let processedAttributes = attributesPart;
+                    // Always ensure tvg-id is present and updated to our unique ID
                     if (tvgIdMatch) {
                         processedAttributes = processedAttributes.replace(/tvg-id="[^"]*"/, `tvg-id="${uniqueChannelId}"`);
                     } else {
+                        // If tvg-id is missing, add it using the uniqueChannelId
                         const extinfEnd = processedAttributes.indexOf(' ') + 1;
                         processedAttributes = processedAttributes.slice(0, extinfEnd) + `tvg-id="${uniqueChannelId}" ` + processedAttributes.slice(extinfEnd);
                     }
                     
                     processedAttributes += ` vini-source="${source.name}"`;
                     line = processedAttributes + namePart;
+
+                    // Store the mapping for EPG lookup
+                    if (originalTvgId) {
+                        epgIdToUniqueChannelIdMap.set(originalTvgId, uniqueChannelId);
+                    }
                 }
                 if (line) {
                    processedContent += line + '\n';
@@ -414,7 +430,7 @@ async function processAndMergeSources() {
         console.log('[PROCESS] No active EPG sources found.');
     }
 
-    // NEW: Initialize min and max EPG dates
+    // Initialize min and max EPG dates
     let minEpgDate = null;
     let maxEpgDate = null;
 
@@ -452,9 +468,6 @@ async function processAndMergeSources() {
                 console.warn(`[EPG] No programs found in EPG source "${source.name}". Check XML structure.`);
             }
 
-            // Iterate over all M3U sources to ensure correct channel ID mapping
-            const m3uSourceProviders = settings.m3uSources.filter(m3u => m3u.isActive);
-
             for (const prog of programs) {
                 const originalChannelId = prog._attributes?.channel;
                 if (!originalChannelId) {
@@ -462,6 +475,14 @@ async function processAndMergeSources() {
                     continue;
                 }
                 
+                // NEW: Use the mapped unique channel ID from M3U processing
+                const uniqueChannelId = epgIdToUniqueChannelIdMap.get(originalChannelId);
+
+                if (!uniqueChannelId) {
+                    console.warn(`[EPG] Program for original channel ID "${originalChannelId}" not found in M3U mapping. Skipping.`);
+                    continue; // Skip if no matching channel was found in any active M3U source
+                }
+
                 // Parse program start and stop times
                 const progStartTime = parseEpgTime(prog._attributes.start, timezoneOffset);
                 const progStopTime = parseEpgTime(prog._attributes.stop, timezoneOffset);
@@ -474,23 +495,19 @@ async function processAndMergeSources() {
                     maxEpgDate = progStopTime;
                 }
 
-                for(const m3uSource of m3uSourceProviders) {
-                    const uniqueChannelId = `${m3uSource.id}_${originalChannelId}`;
-
-                    if (!mergedProgramData[uniqueChannelId]) {
-                        mergedProgramData[uniqueChannelId] = [];
-                    }
-
-                    const titleNode = prog.title && prog.title._cdata ? prog.title._cdata : (prog.title?._text || 'No Title');
-                    const descNode = prog.desc && prog.desc._cdata ? prog.desc._cdata : (prog.desc?._text || '');
-                    
-                    mergedProgramData[uniqueChannelId].push({
-                        start: progStartTime.toISOString(), // Use the parsed Date object
-                        stop: progStopTime.toISOString(),   // Use the parsed Date object
-                        title: titleNode.trim(),
-                        desc: descNode.trim()
-                    });
+                if (!mergedProgramData[uniqueChannelId]) {
+                    mergedProgramData[uniqueChannelId] = [];
                 }
+
+                const titleNode = prog.title && prog.title._cdata ? prog.title._cdata : (prog.title?._text || 'No Title');
+                const descNode = prog.desc && prog.desc._cdata ? prog.desc._cdata : (prog.desc?._text || '');
+                
+                mergedProgramData[uniqueChannelId].push({
+                    start: progStartTime.toISOString(), // Use the parsed Date object
+                    stop: progStopTime.toISOString(),   // Use the parsed Date object
+                    title: titleNode.trim(),
+                    desc: descNode.trim()
+                });
             }
             source.status = 'Success';
             source.statusMessage = 'Processed successfully.';
@@ -513,7 +530,7 @@ async function processAndMergeSources() {
         console.error(`[EPG] Error writing merged EPG JSON file: ${writeErr.message}`);
     }
     
-    // NEW: Save the calculated min and max EPG dates to settings
+    // Save the calculated min and max EPG dates to settings
     settings.epgMinDate = minEpgDate ? minEpgDate.toISOString() : null;
     settings.epgMaxDate = maxEpgDate ? maxEpgDate.toISOString() : null;
 
