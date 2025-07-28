@@ -386,7 +386,8 @@ export const navigateToProgramInGuide = (channelId, programStart, programId) => 
     // First, navigate to the TV Guide page
     navigate('/tvguide');
 
-    // Allow a small delay for the guide page to render and data to load
+    // Allow a small delay for the guide page to render and data to load.
+    // Increased this from 100ms to allow more time for route change and initial rendering.
     setTimeout(() => {
         const targetProgramStart = new Date(programStart);
         const currentGuideDate = new Date(guideState.currentDate);
@@ -400,9 +401,11 @@ export const navigateToProgramInGuide = (channelId, programStart, programId) => 
             handleSearchAndFilter(true); // Pass true to reset scroll to top of new day
         }
 
-        // After navigating and potentially changing date, wait for the guide to render/re-render,
-        // then find and click the program.
-        setTimeout(() => {
+        // Use a polling mechanism to wait for the program element to appear in the DOM.
+        // This is crucial for virtualized lists where elements are rendered on demand.
+        const maxAttempts = 20; // Try for up to 20 * 100ms = 2 seconds
+        let attempts = 0;
+        const findProgramInterval = setInterval(() => {
             let programElement;
             // Prioritize finding by unique programId which is most reliable
             if (programId) {
@@ -410,12 +413,14 @@ export const navigateToProgramInGuide = (channelId, programStart, programId) => 
             }
             // Fallback to channelId and programStart if unique programId is not found or available
             if (!programElement) {
-                console.warn(`[NOTIF_NAV] Program with unique ID "${programId}" not found or not primary. Falling back to channel ID and program start.`);
+                console.warn(`[NOTIF_NAV] Attempt ${attempts + 1}: Program with unique ID "${programId}" not found or not primary. Falling back to channel ID and program start.`);
                 programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programStart}"][data-channel-id="${channelId}"]`);
             }
 
-            if(programElement) {
-                console.log(`[NOTIF_NAV] Program element found. Scrolling to and clicking.`);
+            if (programElement) {
+                console.log(`[NOTIF_NAV] Program element found on attempt ${attempts + 1}. Scrolling to and clicking.`);
+                clearInterval(findProgramInterval); // Stop polling
+
                 // Scroll the guide container horizontally to make the program visible
                 const scrollLeft = programElement.offsetLeft - (UIElements.guideContainer.clientWidth / 4); // Position to the left of center
                 UIElements.guideContainer.scrollTo({ left: Math.max(0, scrollLeft), behavior: 'smooth' });
@@ -429,9 +434,13 @@ export const navigateToProgramInGuide = (channelId, programStart, programId) => 
                 setTimeout(() => { programElement.classList.remove('highlighted-search'); }, 2500); // Remove highlight after some time
 
             } else {
-                console.warn(`[NOTIF_NAV] Could not find program element in current guide view to open details. (Channel ID: ${channelId}, Program Start: ${programStart}, Program ID: ${programId}).`);
-                showNotification("Could not find program in guide to open details. It might be outside the current 48-hour guide window.", false, 4000);
+                attempts++;
+                if (attempts >= maxAttempts) {
+                    clearInterval(findProgramInterval); // Stop polling after max attempts
+                    console.warn(`[NOTIF_NAV] Max attempts reached. Could not find program element in current guide view to open details. (Channel ID: ${channelId}, Program Start: ${programStart}, Program ID: ${programId}).`);
+                    showNotification("Could not find program in guide to open details. It might be outside the current 48-hour guide window or took too long to render.", false, 6000);
+                }
             }
-        }, 500); // Increased delay to ensure the guide is fully rendered and virtualized elements exist
-    }, 100); // Initial delay for page navigation to ensure the guide page is active
+        }, 100); // Check every 100ms
+    }, 200); // Initial delay for page navigation (increased from 100ms)
 };
