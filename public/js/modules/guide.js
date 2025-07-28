@@ -271,42 +271,23 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
     if (guideState.scrollHandler) {
         guideContainer.removeEventListener('scroll', guideState.scrollHandler);
     }
-    guideState.scrollHandler = throttle(updateVisibleRows, 16); // Throttle to roughly 60fps
+    // NEW: Use a combined scroll handler for both vertical virtualization and horizontal date changing
+    guideState.scrollHandler = throttle(() => {
+        updateVisibleRows();
+        handleHorizontalScroll(guideContainer); // Check for horizontal scroll
+    }, 16); // Throttle to roughly 60fps
     guideContainer.addEventListener('scroll', guideState.scrollHandler);
 
     // Initial render and positioning
     if (resetScroll) {
         guideContainer.scrollTop = 0;
+        guideContainer.scrollLeft = 0; // Reset horizontal scroll too
     }
     updateVisibleRows();
     updateNowLine(guideStartUtc, resetScroll);
 
-    // --- Re-attach date navigation listeners ---
-    const prevDayBtn = UIElements.guideGrid.querySelector('#prev-day-btn');
-    const nowBtn = UIElements.guideGrid.querySelector('#now-btn');
-    const nextDayBtn = UIElements.guideGrid.querySelector('#next-day-btn');
-    
-    // Use .onclick to ensure we're not adding duplicate listeners on re-renders
-    if (prevDayBtn) prevDayBtn.onclick = () => {
-        guideState.currentDate.setDate(guideState.currentDate.getDate() - 1);
-        finalizeGuideLoad();
-    };
-    if (nowBtn) nowBtn.onclick = () => {
-        const now = new Date();
-        if (guideState.currentDate.toDateString() !== now.toDateString()) {
-            guideState.currentDate = now;
-            finalizeGuideLoad(true);
-        } else {
-            const guideStart = new Date(guideState.currentDate);
-            guideStart.setHours(0, 0, 0, 0);
-            const guideStartUtc = new Date(Date.UTC(guideStart.getUTCFullYear(), guideStart.getUTCMonth(), guideStart.getUTCDate()));
-            updateNowLine(guideStartUtc, true);
-        }
-    };
-    if (nextDayBtn) nextDayBtn.onclick = () => {
-        guideState.currentDate.setDate(guideState.currentDate.getDate() + 1);
-        finalizeGuideLoad();
-    };
+    // No need to re-attach prev/next day button listeners as they are removed.
+    // The "Now" button listener is handled in setupGuideEventListeners
 };
 
 /**
@@ -557,8 +538,70 @@ export const scrollToChannel = (channelId) => {
     });
 };
 
+/**
+ * Handles horizontal scrolling for infinite day navigation.
+ * When the user scrolls near the edges, it loads the next/previous day.
+ * @param {HTMLElement} guideContainer - The scrollable guide container.
+ */
+let isTransitioningDay = false;
+const handleHorizontalScroll = (guideContainer) => {
+    if (isTransitioningDay) return;
 
-// --- Event Listeners ---
+    const scrollLeft = guideContainer.scrollLeft;
+    const scrollWidth = guideContainer.scrollWidth;
+    const clientWidth = guideContainer.clientWidth;
+    const scrollThreshold = 100; // Pixels from edge to trigger load
+
+    // Normalize current date to midnight for comparison with min/max EPG dates
+    const currentDayStart = new Date(guideState.currentDate);
+    currentDayStart.setHours(0, 0, 0, 0);
+
+    let minEpgDate = null;
+    let maxEpgDate = null;
+
+    if (guideState.settings.epgMinDate) {
+        minEpgDate = new Date(guideState.settings.epgMinDate);
+        minEpgDate.setHours(0, 0, 0, 0);
+    }
+    if (guideState.settings.epgMaxDate) {
+        maxEpgDate = new Date(guideState.settings.epgMaxDate);
+        maxEpgDate.setHours(0, 0, 0, 0);
+    }
+
+    // Scroll to next day
+    if (scrollLeft + clientWidth >= scrollWidth - scrollThreshold) {
+        const nextDay = new Date(currentDayStart);
+        nextDay.setDate(nextDay.getDate() + 1);
+        if (!maxEpgDate || nextDay <= maxEpgDate) { // Only load next day if within EPG max date
+            console.log('[GUIDE_SCROLL] Scrolling to next day...');
+            isTransitioningDay = true;
+            guideState.currentDate.setDate(guideState.currentDate.getDate() + 1);
+            finalizeGuideLoad(true); // Re-render and reset scroll
+            setTimeout(() => isTransitioningDay = false, 1000); // Prevent rapid triggers
+        } else {
+            console.log('[GUIDE_SCROLL] Reached max EPG date. Cannot scroll further right.');
+        }
+    }
+    // Scroll to previous day
+    else if (scrollLeft <= scrollThreshold) {
+        const prevDay = new Date(currentDayStart);
+        prevDay.setDate(prevDay.getDate() - 1);
+        if (!minEpgDate || prevDay >= minEpgDate) { // Only load previous day if within EPG min date
+            console.log('[GUIDE_SCROLL] Scrolling to previous day...');
+            isTransitioningDay = true;
+            guideState.currentDate.setDate(guideState.currentDate.getDate() - 1);
+            finalizeGuideLoad(true); // Re-render and reset scroll
+            // After loading previous day, scroll to the far right to give the illusion of infinite scroll
+            setTimeout(() => {
+                guideContainer.scrollLeft = guideContainer.scrollWidth - clientWidth - 10; // Adjust slightly from edge
+                isTransitioningDay = false;
+            }, 100);
+        } else {
+            console.log('[GUIDE_SCROLL] Reached min EPG date. Cannot scroll further left.');
+        }
+    }
+};
+
 
 /**
  * Sets up all event listeners for the guide page.
@@ -577,6 +620,60 @@ export function setupGuideEventListeners() {
             UIElements.searchResultsContainer.classList.add('hidden');
         }
     });
+
+    // --- Date Navigation ---
+    UIElements.nowBtn.addEventListener('click', () => {
+        const now = new Date();
+        // Normalize now to midnight for comparison
+        const nowMidnight = new Date(now);
+        nowMidnight.setHours(0, 0, 0, 0);
+
+        const currentGuideMidnight = new Date(guideState.currentDate);
+        currentGuideMidnight.setHours(0, 0, 0, 0);
+
+        if (currentGuideMidnight.toDateString() !== nowMidnight.toDateString()) {
+            guideState.currentDate = now; // Set to current date to trigger re-render
+            finalizeGuideLoad(true); // Re-render and reset scroll
+        } else {
+            // If already on the current day, just scroll to the now line
+            const guideStart = new Date(guideState.currentDate);
+            guideStart.setHours(0, 0, 0, 0);
+            const guideStartUtc = new Date(Date.UTC(guideStart.getUTCFullYear(), guideStart.getUTCMonth(), guideStart.getUTCDate()));
+            updateNowLine(guideStartUtc, true); // Scroll to now line
+        }
+    });
+
+    // NEW: "Jump to Date" functionality
+    UIElements.jumpToDateBtn.addEventListener('click', () => {
+        // Set min and max dates for the date picker input based on EPG data
+        if (guideState.settings.epgMinDate) {
+            UIElements.datePickerInput.min = new Date(guideState.settings.epgMinDate).toISOString().split('T')[0];
+        }
+        if (guideState.settings.epgMaxDate) {
+            UIElements.datePickerInput.max = new Date(guideState.settings.epgMaxDate).toISOString().split('T')[0];
+        }
+
+        // Set the current value of the date picker to the current guide date
+        UIElements.datePickerInput.value = guideState.currentDate.toISOString().split('T')[0];
+        
+        UIElements.datePickerInput.showPicker(); // Programmatically open the date picker
+    });
+
+    UIElements.datePickerInput.addEventListener('change', (e) => {
+        const selectedDate = new Date(e.target.value);
+        // Normalize selected date to midnight
+        selectedDate.setHours(0, 0, 0, 0);
+
+        const currentGuideMidnight = new Date(guideState.currentDate);
+        currentGuideMidnight.setHours(0, 0, 0, 0);
+
+        // Only update if the selected date is different from the current guide date
+        if (selectedDate.toDateString() !== currentGuideMidnight.toDateString()) {
+            guideState.currentDate = selectedDate;
+            finalizeGuideLoad(true); // Re-render and reset scroll
+        }
+    });
+
 
     // --- Interactions (Clicks on the new grid) ---
     // Event delegation is used here on the guideGrid, which is now efficient
