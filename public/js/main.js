@@ -65,11 +65,13 @@ export async function initMainApp() {
 
         if (cachedChannels?.length > 0 && cachedPrograms) {
             console.log('[MAIN] Loaded guide data from cache. Finalizing guide load.');
+            // Pass `true` to `finalizeGuideLoad` to trigger initial scroll to "Now"
             guideState.channels = cachedChannels;
             guideState.programs = cachedPrograms;
-            finalizeGuideLoad(true); // true indicates first load
+            finalizeGuideLoad(true); // true indicates first load, scroll to now
         } else if (config.m3uContent) {
             console.log('[MAIN] No cached data or incomplete cache. Processing guide data from server config.');
+            // `handleGuideLoad` already calls `finalizeGuideLoad(true)`
             handleGuideLoad(config.m3uContent, config.epgContent);
         } else {
             console.log('[MAIN] No M3U content from server or cache. Displaying no data message.');
