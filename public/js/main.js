@@ -6,14 +6,13 @@
  */
 
 import { appState, guideState, UIElements, initializeUIElements } from './modules/state.js';
-import { apiFetch, fetchConfig } from './modules/api.js';
+import { apiFetch, fetchConfig } from './modules/api.js'; // IMPORTED fetchConfig
 import { checkAuthStatus, setupAuthEventListeners } from './modules/auth.js';
 import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './modules/guide.js';
 import { setupPlayerEventListeners } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
-import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu, showNotification, setupChannelSelectorEventListeners } from './modules/ui.js'; // NEW: Import setupChannelSelectorEventListeners
+import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu, showNotification } from './modules/ui.js';
 import { loadAndScheduleNotifications, subscribeUserToPush } from './modules/notification.js';
-import { setupMultiViewEventListeners } from './modules/multiViewPlayer.js';
 
 /**
  * Initializes the main application after successful authentication.
@@ -35,20 +34,19 @@ export async function initMainApp() {
     setupGuideEventListeners();
     setupPlayerEventListeners();
     setupSettingsEventListeners();
-    setupMultiViewEventListeners();
-    setupChannelSelectorEventListeners(); // NEW: Call to set up channel selector listeners
     console.log('[MAIN] All event listeners set up.');
 
     // 3. Load initial configuration and guide data
     try {
         console.log('[MAIN] Fetching initial configuration from server via api.js...');
-        const config = await fetchConfig();
+        // REFACTORED: Use the centralized fetchConfig from api.js
+        const config = await fetchConfig(); 
         if (!config) {
             throw new Error(`Could not load configuration from server. Check logs for details.`);
         }
 
         console.log('[MAIN] Configuration loaded:', config);
-        Object.assign(guideState.settings, config.settings || {});
+        Object.assign(guideState.settings, config.settings || {}); // Merge server settings into guideState
 
         // Restore UI dimensions from settings
         restoreDimensions();
@@ -69,7 +67,7 @@ export async function initMainApp() {
             console.log('[MAIN] Loaded guide data from cache. Finalizing guide load.');
             guideState.channels = cachedChannels;
             guideState.programs = cachedPrograms;
-            finalizeGuideLoad(true);
+            finalizeGuideLoad(true); // true indicates first load
         } else if (config.m3uContent) {
             console.log('[MAIN] No cached data or incomplete cache. Processing guide data from server config.');
             handleGuideLoad(config.m3uContent, config.epgContent);
@@ -78,7 +76,7 @@ export async function initMainApp() {
             UIElements.initialLoadingIndicator.classList.add('hidden');
             UIElements.noDataMessage.classList.remove('hidden');
         }
-
+        
         // Load the list of scheduled notifications for the UI
         console.log('[MAIN] Loading and scheduling notifications...');
         await loadAndScheduleNotifications();
@@ -96,8 +94,8 @@ export async function initMainApp() {
         console.error('[MAIN] Application initialization failed:', e);
         showNotification("Initialization failed: " + e.message, true);
         UIElements.initialLoadingIndicator.classList.add('hidden');
-        UIElements.noDataMessage.classList.remove('hidden');
-        switchTab('settings');
+        UIElements.noDataMessage.classList.remove('hidden'); // Ensure no data message is shown
+        switchTab('settings'); // Suggest going to settings to add sources
     }
 }
 
@@ -106,7 +104,7 @@ export async function initMainApp() {
  */
 function openDB() {
     return new Promise((resolve, reject) => {
-        const request = indexedDB.open('ViniPlayDB_v3', 1);
+        const request = indexedDB.open('ViniPlayDB_v3', 1); // Increment version for schema changes
         request.onerror = (event) => {
             console.error('[IndexedDB] Error opening database:', event.target.errorCode);
             reject("Error opening IndexedDB.");
@@ -182,10 +180,10 @@ function restoreDimensions() {
         UIElements.guideGrid.style.setProperty('--channel-col-width', `${guideState.settings.channelColumnWidth}px`);
         console.log(`[MAIN] Restored channel column width: ${guideState.settings.channelColumnWidth}px`);
     } else if (UIElements.guideGrid) {
-        // Set default if not in settings (or if it's the first run)
-        const defaultChannelWidth = window.innerWidth < 768 ? 64 : 180;
-        UIElements.guideGrid.style.setProperty('--channel-col-width', `${defaultChannelWidth}px`);
-        console.log(`[MAIN] Set default channel column width: ${defaultChannelWidth}px`);
+         // Set default if not in settings (or if it's the first run)
+         const defaultChannelWidth = window.innerWidth < 768 ? 64 : 180;
+         UIElements.guideGrid.style.setProperty('--channel-col-width', `${defaultChannelWidth}px`);
+         console.log(`[MAIN] Set default channel column width: ${defaultChannelWidth}px`);
     }
 }
 
@@ -197,7 +195,6 @@ function setupCoreEventListeners() {
     UIElements.tabGuide?.addEventListener('click', () => { console.log('[NAV] Desktop Guide tab clicked.'); switchTab('guide'); });
     UIElements.tabNotifications?.addEventListener('click', () => { console.log('[NAV] Desktop Notifications tab clicked.'); switchTab('notifications'); });
     UIElements.tabSettings?.addEventListener('click', () => { console.log('[NAV] Desktop Settings tab clicked.'); switchTab('settings'); });
-    UIElements.tabMultiView?.addEventListener('click', () => { console.log('[NAV] Desktop Multi-View tab clicked.'); switchTab('multiview'); });
 
     UIElements.mobileMenuToggle?.addEventListener('click', () => { console.log('[NAV] Mobile menu toggle clicked.'); openMobileMenu(); });
     UIElements.mobileMenuClose?.addEventListener('click', () => { console.log('[NAV] Mobile menu close clicked.'); closeMobileMenu(); });
@@ -205,10 +202,9 @@ function setupCoreEventListeners() {
     UIElements.mobileNavGuide?.addEventListener('click', () => { console.log('[NAV] Mobile Guide nav clicked.'); switchTab('guide'); });
     UIElements.mobileNavNotifications?.addEventListener('click', () => { console.log('[NAV] Mobile Notifications nav clicked.'); switchTab('notifications'); });
     UIElements.mobileNavSettings?.addEventListener('click', () => { console.log('[NAV] Mobile Settings nav clicked.'); switchTab('settings'); });
-    UIElements.mobileNavMultiView?.addEventListener('click', () => { console.log('[NAV] Mobile Multi-View nav clicked.'); switchTab('multiview'); });
     UIElements.mobileNavLogoutBtn?.addEventListener('click', () => {
         console.log('[NAV] Mobile Logout nav clicked.');
-        const logoutButton = document.getElementById('logout-btn');
+        const logoutButton = document.getElementById('logout-btn'); // Trigger desktop logout
         if (logoutButton) logoutButton.click();
         closeMobileMenu();
     });
