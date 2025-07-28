@@ -15,6 +15,7 @@ export const appState = {
     fuseChannels: null, // Fuse.js instance for channels
     fusePrograms: null, // Fuse.js instance for programs
     currentSourceTypeForEditor: 'url',
+    firstGuideRenderComplete: false, // NEW: Flag to track initial guide render and positioning
 };
 
 // State specific to the TV Guide
