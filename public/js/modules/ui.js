@@ -130,47 +130,6 @@ export const makeModalResizable = (handleEl, containerEl, minWidth, minHeight, s
 };
 
 /**
- * NEW: Makes a player slot resizable by dragging a handle.
- * (Simplified version of makeModalResizable, without saving to settings by default,
- * as player dimensions are more dynamic in a grid context)
- * @param {HTMLElement} handleEl - The handle element to drag.
- * @param {HTMLElement} containerEl - The player slot container element to resize.
- */
-export const makePlayerResizable = (handleEl, containerEl) => {
-    let startX, startY, startWidth, startHeight;
-
-    handleEl.addEventListener('mousedown', e => {
-        e.preventDefault();
-        e.stopPropagation(); // Prevent other parent click/drag events
-
-        startX = e.clientX;
-        startY = e.clientY;
-        startWidth = containerEl.offsetWidth;
-        startHeight = containerEl.offsetHeight;
-
-        const doResize = (e) => {
-            const newWidth = startWidth + e.clientX - startX;
-            const newHeight = startHeight + e.clientY - startY;
-
-            // Apply new dimensions, considering min-width/height from CSS or hardcoded
-            containerEl.style.width = `${Math.max(250, newWidth)}px`; // Min width as defined in CSS
-            containerEl.style.height = `${Math.max(150, newHeight)}px`; // Min height as defined in CSS
-        };
-
-        const stopResize = () => {
-            window.removeEventListener('mousemove', doResize);
-            window.removeEventListener('mouseup', stopResize);
-            document.body.style.cursor = ''; // Reset cursor
-        };
-
-        document.body.style.cursor = 'se-resize';
-        window.addEventListener('mousemove', doResize);
-        window.addEventListener('mouseup', stopResize);
-    }, false);
-};
-
-
-/**
  * Makes a column resizable horizontally by dragging a handle.
  * @param {HTMLElement} handleEl - The handle element to drag.
  * @param {HTMLElement} targetEl - The element whose width is being controlled (e.g., the grid container).
@@ -265,7 +224,6 @@ export const handleRouteChange = () => {
     const isGuide = path.startsWith('/tvguide') || path === '/';
     const isNotifications = path.startsWith('/notifications');
     const isSettings = path.startsWith('/settings');
-    const isMultiView = path.startsWith('/multiview'); // NEW
 
     // Close mobile menu if it's open when navigating
     closeMobileMenu();
@@ -274,13 +232,11 @@ export const handleRouteChange = () => {
     UIElements.tabGuide?.classList.toggle('active', isGuide);
     UIElements.tabNotifications?.classList.toggle('active', isNotifications);
     UIElements.tabSettings?.classList.toggle('active', isSettings);
-    UIElements.tabMultiView?.classList.toggle('active', isMultiView); // NEW
     
     // Toggle active state for mobile navigation buttons
     UIElements.mobileNavGuide?.classList.toggle('active', isGuide);
     UIElements.mobileNavNotifications?.classList.toggle('active', isNotifications);
     UIElements.mobileNavSettings?.classList.toggle('active', isSettings);
-    UIElements.mobileNavMultiView?.classList.toggle('active', isMultiView); // NEW
 
 
     // Show/hide the relevant page content
@@ -290,8 +246,6 @@ export const handleRouteChange = () => {
     UIElements.pageNotifications.classList.toggle('flex', isNotifications);
     UIElements.pageSettings.classList.toggle('hidden', !isSettings);
     UIElements.pageSettings.classList.toggle('flex', isSettings);
-    UIElements.pageMultiView.classList.toggle('hidden', !isMultiView); // NEW
-    UIElements.pageMultiView.classList.toggle('flex', isMultiView);     // NEW
     
     // Manage header visibility based on the active tab
     const appContainer = UIElements.appContainer; 
@@ -341,8 +295,8 @@ export const navigate = (path) => {
 };
 
 /**
- * Switches between the 'Guide', 'Notifications', 'Multi-View' and 'Settings' tabs.
- * @param {string} activeTab - The tab to switch to ('guide', 'notifications', 'multiview', or 'settings').
+ * Switches between the 'Guide', 'Notifications' and 'Settings' tabs.
+ * @param {string} activeTab - The tab to switch to ('guide', 'notifications', or 'settings').
  */
 export const switchTab = (activeTab) => {
     let newPath;
@@ -350,103 +304,8 @@ export const switchTab = (activeTab) => {
         newPath = '/tvguide';
     } else if (activeTab === 'notifications') {
         newPath = '/notifications';
-    } else if (activeTab === 'settings') {
+    } else {
         newPath = '/settings';
-    } else if (activeTab === 'multiview') { // NEW
-        newPath = '/multiview';
     }
     navigate(newPath);
-};
-
-// NEW: Channel Selector Modal Functions
-
-/**
- * Opens the channel selector modal and populates it with channels.
- * @param {object} fuseInstance - The Fuse.js instance for channels, or null to re-initialize it.
- * @param {string} initialSearchTerm - An optional initial search term.
- */
-export const openChannelSelectorModal = (fuseInstance, initialSearchTerm = '') => {
-    if (!UIElements.channelSelectorModal) {
-        console.error("Channel selector modal not found.");
-        return;
-    }
-    openModal(UIElements.channelSelectorModal);
-    UIElements.channelSelectorSearch.value = initialSearchTerm;
-
-    // Initialize Fuse.js for channel search within the modal if not already done
-    if (!appState.fuseChannels || !fuseInstance) {
-        appState.fuseChannels = new Fuse(guideState.channels, {
-            keys: ['name', 'displayName', 'source', 'chno'],
-            threshold: 0.4,
-            includeScore: true,
-        });
-    }
-
-    renderChannelSelectorList(initialSearchTerm);
-
-    // Set up event listeners for the channel selector modal
-    UIElements.channelSelectorCloseBtn.onclick = closeChannelSelectorModal;
-    UIElements.channelSelectorSearch.oninput = (e) => {
-        clearTimeout(appState.searchDebounceTimer);
-        appState.searchDebounceTimer = setTimeout(() => renderChannelSelectorList(e.target.value), 250);
-    };
-    UIElements.channelSelectorList.onclick = (e) => {
-        const channelItem = e.target.closest('.channel-item');
-        if (channelItem) {
-            const channelId = channelItem.dataset.channelId;
-            const selectedChannel = guideState.channels.find(ch => ch.id === channelId);
-            if (selectedChannel && appState.activeMultiViewPlayerSlot) {
-                appState.activeMultiViewPlayerSlot.playChannel(selectedChannel.url, selectedChannel.displayName || selectedChannel.name);
-                closeChannelSelectorModal();
-            } else {
-                showNotification("Error: Could not play channel or active player not set.", true);
-            }
-        }
-    };
-};
-
-/**
- * Closes the channel selector modal.
- */
-export const closeChannelSelectorModal = () => {
-    if (UIElements.channelSelectorModal) {
-        closeModal(UIElements.channelSelectorModal);
-        appState.activeMultiViewPlayerSlot = null; // Clear active slot reference
-        UIElements.channelSelectorSearch.value = ''; // Clear search
-        UIElements.channelSelectorList.innerHTML = ''; // Clear list
-    }
-};
-
-/**
- * Renders the list of channels in the channel selector modal based on a search term.
- * @param {string} searchTerm - The search term to filter channels.
- */
-export const renderChannelSelectorList = (searchTerm = '') => {
-    const listContainer = UIElements.channelSelectorList;
-    if (!listContainer) return;
-
-    let channelsToRender = [];
-    if (searchTerm && appState.fuseChannels) {
-        channelsToRender = appState.fuseChannels.search(searchTerm).map(result => result.item);
-    } else {
-        channelsToRender = guideState.channels;
-    }
-
-    if (channelsToRender.length === 0) {
-        UIElements.noChannelsMessage.classList.remove('hidden');
-        listContainer.innerHTML = ''; // Clear any existing items
-        return;
-    } else {
-        UIElements.noChannelsMessage.classList.add('hidden');
-    }
-
-    listContainer.innerHTML = channelsToRender.map(channel => `
-        <div class="channel-item flex items-center p-3 hover:bg-gray-700 cursor-pointer rounded-md" data-channel-id="${channel.id}">
-            <img src="${channel.logo}" onerror="this.onerror=null; this.src='https://placehold.co/40x40/1f2937/d1d5db?text=?';" class="w-10 h-10 object-contain mr-3 flex-shrink-0 rounded-md bg-gray-700">
-            <div class="overflow-hidden">
-                <p class="font-semibold text-white text-sm truncate">${channel.chno ? `[${channel.chno}] ` : ''}${channel.displayName || channel.name}</p>
-                <p class="text-gray-400 text-xs truncate">${channel.group} &bull; ${channel.source}</p>
-            </div>
-        </div>
-    `).join('');
 };
