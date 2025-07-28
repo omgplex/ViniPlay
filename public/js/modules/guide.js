@@ -40,14 +40,17 @@ export function handleGuideLoad(m3uContent, epgContent) {
         appState.db.transaction(['guideData'], 'readwrite').objectStore('guideData').put(guideState.programs, 'programs');
     }
 
-    finalizeGuideLoad(true);
+    // On initial load from `main.js`, we want to scroll to the "Now" line.
+    // For subsequent calls (e.g., from `process-sources`), it should also scroll.
+    // However, when changing days via infinite horizontal scroll, we don't want to re-scroll to "now".
+    finalizeGuideLoad(true); // Pass true to indicate initial/major load, which triggers scroll to "now"
 }
 
 /**
  * Finalizes the guide setup after data is loaded from any source (API or cache).
- * @param {boolean} isFirstLoad - Indicates if this is the initial load of the guide.
+ * @param {boolean} shouldScrollToNow - If true, scrolls the guide to the "now" line after rendering.
  */
-export function finalizeGuideLoad(isFirstLoad = false) {
+export function finalizeGuideLoad(shouldScrollToNow = false) {
     // Add favorite status to channels from user settings
     const favoriteIds = new Set(guideState.settings.favorites || []);
     guideState.channels.forEach(channel => {
@@ -108,7 +111,7 @@ export function finalizeGuideLoad(isFirstLoad = false) {
         includeScore: true,
     });
 
-    handleSearchAndFilter(isFirstLoad);
+    handleSearchAndFilter(shouldScrollToNow); // Pass shouldScrollToNow
 }
 
 // --- UI Rendering (REFACTORED FOR VIRTUALIZATION) ---
@@ -116,9 +119,9 @@ export function finalizeGuideLoad(isFirstLoad = false) {
 /**
  * Renders the guide using UI virtualization.
  * @param {Array<object>} channelsToRender - The filtered list of channels to display.
- * @param {boolean} resetScroll - If true, scrolls the guide to the top-left.
+ * @param {boolean} shouldScrollToNow - If true, scrolls the guide to the "now" line.
  */
-const renderGuide = (channelsToRender, resetScroll = false) => {
+const renderGuide = (channelsToRender, shouldScrollToNow = false) => {
     guideState.visibleChannels = channelsToRender;
     const totalRows = channelsToRender.length;
     const showNoData = totalRows === 0;
@@ -279,12 +282,15 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
     guideContainer.addEventListener('scroll', guideState.scrollHandler);
 
     // Initial render and positioning
-    if (resetScroll) {
-        guideContainer.scrollTop = 0;
-        guideContainer.scrollLeft = 0; // Reset horizontal scroll too
+    // Only scroll to "Now" if explicitly requested
+    if (shouldScrollToNow) {
+        guideContainer.scrollTop = 0; // Reset vertical scroll
+        updateNowLine(guideStartUtc, true); // Scroll horizontally to now
+    } else {
+        // If not scrolling to "now", ensure vertical scroll is maintained if possible,
+        // and only update now line position without a horizontal scroll
+        updateNowLine(guideStartUtc, false); 
     }
-    updateVisibleRows();
-    updateNowLine(guideStartUtc, resetScroll);
 
     // No need to re-attach prev/next day button listeners as they are removed.
     // The "Now" button listener is handled in setupGuideEventListeners
@@ -391,9 +397,9 @@ const populateSourceFilter = () => {
 
 /**
  * Filters channels based on dropdowns and rerenders the guide.
- * @param {boolean} isFirstLoad - Indicates if this is the initial load.
+ * @param {boolean} shouldScrollToNow - If true, scrolls the guide to the "now" line after rendering.
  */
-export function handleSearchAndFilter(isFirstLoad = false) {
+export function handleSearchAndFilter(shouldScrollToNow = false) {
     const searchTerm = UIElements.searchInput.value.trim();
     const selectedGroup = UIElements.groupFilter.value;
     const selectedSource = UIElements.sourceFilter.value;
@@ -440,7 +446,7 @@ export function handleSearchAndFilter(isFirstLoad = false) {
         UIElements.searchResultsContainer.classList.add('hidden');
     }
 
-    renderGuide(channelsForGuide, isFirstLoad);
+    renderGuide(channelsForGuide, shouldScrollToNow); // Pass shouldScrollToNow
 };
 
 /**
@@ -576,23 +582,34 @@ const handleHorizontalScroll = (guideContainer) => {
             console.log('[GUIDE_SCROLL] Scrolling to next day...');
             isTransitioningDay = true;
             guideState.currentDate.setDate(guideState.currentDate.getDate() + 1);
-            finalizeGuideLoad(true); // Re-render and reset scroll
-            setTimeout(() => isTransitioningDay = false, 1000); // Prevent rapid triggers
+            
+            // Re-render the guide for the new day, but DO NOT scroll to "now"
+            handleSearchAndFilter(false); 
+            
+            // After re-rendering, set scroll position to the beginning of the *new* timeline
+            setTimeout(() => {
+                guideContainer.scrollLeft = guideState.settings.channelColumnWidth + 10; // Just past the channel column
+                isTransitioningDay = false;
+            }, 100);
         } else {
             console.log('[GUIDE_SCROLL] Reached max EPG date. Cannot scroll further right.');
         }
     }
     // Scroll to previous day
-    else if (scrollLeft <= scrollThreshold) {
+    else if (scrollLeft <= scrollThreshold && scrollLeft > 0) { // Only trigger if scrolling left from a non-zero position
         const prevDay = new Date(currentDayStart);
         prevDay.setDate(prevDay.getDate() - 1);
         if (!minEpgDate || prevDay >= minEpgDate) { // Only load previous day if within EPG min date
             console.log('[GUIDE_SCROLL] Scrolling to previous day...');
             isTransitioningDay = true;
             guideState.currentDate.setDate(guideState.currentDate.getDate() - 1);
-            finalizeGuideLoad(true); // Re-render and reset scroll
+            
+            // Re-render the guide for the new day, but DO NOT scroll to "now"
+            handleSearchAndFilter(false); 
+
             // After loading previous day, scroll to the far right to give the illusion of infinite scroll
             setTimeout(() => {
+                // Wait for the new content to render, then jump to the far right
                 guideContainer.scrollLeft = guideContainer.scrollWidth - clientWidth - 10; // Adjust slightly from edge
                 isTransitioningDay = false;
             }, 100);
@@ -817,11 +834,17 @@ export function setupGuideEventListeners() {
              const dateDiff = Math.floor((progStart - guideStart) / (1000 * 60 * 60 * 24));
              if (dateDiff !== 0) {
                  guideState.currentDate.setDate(guideState.currentDate.getDate() + dateDiff);
-                 finalizeGuideLoad();
+                 finalizeGuideLoad(true); // Re-render and scroll to "now" on date change via search
              }
 
             setTimeout(() => {
-                const programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programItem.dataset.progStart}"][data-channel-id="${programItem.dataset.channelId}"]`);
+                let programElement;
+                if (programItem.dataset.programId) {
+                    programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-id="${programItem.dataset.programId}"][data-channel-id="${programItem.dataset.channelId}"]`);
+                } else {
+                    programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programItem.dataset.progStart}"][data-channel-id="${programItem.dataset.channelId}"]`);
+                }
+
                 if(programElement) {
                     const scrollLeft = programElement.offsetLeft - (UIElements.guideContainer.clientWidth / 4);
                     UIElements.guideContainer.scrollTo({ left: scrollLeft, behavior: 'smooth' });
