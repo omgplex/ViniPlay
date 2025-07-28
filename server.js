@@ -124,38 +124,35 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )`, (createErr) => {
                 if (createErr) console.error("[DB] Error creating 'notifications' table:", createErr.message);
-                else {
-                    console.log("[DB] 'notifications' table checked/created.");
+                else console.log("[DB] 'notifications' table checked/created.");
 
-                    // --- Database Migration & Indexing ---
-                    db.all("PRAGMA table_info(notifications)", (err, rows) => {
-                        if (err) {
-                            console.error("[DB_MIGRATE] Error checking notifications table info:", err);
-                            return;
-                        }
-                        const columnNames = rows.map(row => row.name);
-                        
-                        if (!columnNames.includes('status')) {
-                            db.run("ALTER TABLE notifications ADD COLUMN status TEXT DEFAULT 'pending'", (alterErr) => {
-                                if (alterErr) console.error("[DB_MIGRATE] Error adding 'status' column:", alterErr.message);
-                                else console.log("[DB_MIGRATE] Added 'status' column to 'notifications' table.");
-                            });
-                        }
+                // --- Database Migration: Add 'status' and 'triggeredAt' columns if they don't exist ---
+                db.all("PRAGMA table_info(notifications)", (err, rows) => { // Changed db.get to db.all
+                    if (err) {
+                        console.error("[DB_MIGRATION] Error checking notifications table info:", err.message);
+                        return;
+                    }
+                    const columnNames = rows.map(row => row.name);
+                    
+                    if (!columnNames.includes('status')) {
+                        db.run("ALTER TABLE notifications ADD COLUMN status TEXT DEFAULT 'pending'", (alterErr) => {
+                            if (alterErr) console.error("[DB_MIGRATION] Error adding 'status' column:", alterErr.message);
+                            else console.log("[DB_MIGRATION] Added 'status' column to 'notifications' table.");
+                        });
+                    } else {
+                        console.log("[DB_MIGRATION] 'status' column already exists in 'notifications' table.");
+                    }
 
-                        if (!columnNames.includes('triggeredAt')) {
-                            db.run("ALTER TABLE notifications ADD COLUMN triggeredAt TEXT", (alterErr) => {
-                                if (alterErr) console.error("[DB_MIGRATE] Error adding 'triggeredAt' column:", alterErr.message);
-                                else console.log("[DB_MIGRATE] Added 'triggeredAt' column to 'notifications' table.");
-                            });
-                        }
-                    });
-
-                    // Add an index to speed up the notification check query
-                    db.run("CREATE INDEX IF NOT EXISTS idx_notifications_check ON notifications(status, notificationTime)", (indexErr) => {
-                        if (indexErr) console.error("[DB_INDEX] Error creating index on 'notifications' table:", indexErr.message);
-                        else console.log("[DB_INDEX] Index on notifications(status, notificationTime) checked/created.");
-                    });
-                }
+                    if (!columnNames.includes('triggeredAt')) {
+                        db.run("ALTER TABLE notifications ADD COLUMN triggeredAt TEXT", (alterErr) => {
+                            if (alterErr) console.error("[DB_MIGRATION] Error adding 'triggeredAt' column:", alterErr.message);
+                            else console.log("[DB_MIGRATION] Added 'triggeredAt' column to 'notifications' table.");
+                        });
+                    } else {
+                        console.log("[DB_MIGRATION] 'triggeredAt' column already exists in 'notifications' table.");
+                    }
+                });
+                // --- End Database Migration ---
             });
             db.run(`CREATE TABLE IF NOT EXISTS push_subscriptions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -206,7 +203,7 @@ app.use(
 // --- Authentication Middleware ---
 const requireAuth = (req, res, next) => {
     if (req.session && req.session.userId) {
-        // console.log(`[AUTH] User ${req.session.username} (ID: ${req.session.userId}) authenticated for ${req.path}`);
+        console.log(`[AUTH] User ${req.session.username} (ID: ${req.session.userId}) authenticated for ${req.path}`);
         return next();
     } else {
         console.warn(`[AUTH] Authentication required for ${req.path}. Session invalid or missing.`);
@@ -216,7 +213,7 @@ const requireAuth = (req, res, next) => {
 
 const requireAdmin = (req, res, next) => {
     if (req.session && req.session.isAdmin) {
-        // console.log(`[AUTH] Admin user ${req.session.username} (ID: ${req.session.userId}) authorized for ${req.path}`);
+        console.log(`[AUTH] Admin user ${req.session.username} (ID: ${req.session.userId}) authorized for ${req.path}`);
         return next();
     } else {
         console.warn(`[AUTH] Admin privileges required for ${req.path}. User is not admin or session invalid.`);
@@ -226,7 +223,7 @@ const requireAdmin = (req, res, next) => {
 
 // --- Helper Functions ---
 function getSettings() {
-    // console.log('[SETTINGS] Attempting to load settings...');
+    console.log('[SETTINGS] Attempting to load settings...');
     if (!fs.existsSync(SETTINGS_PATH)) {
         console.log('[SETTINGS] settings.json not found, creating default settings.');
         const defaultSettings = {
@@ -257,7 +254,7 @@ function getSettings() {
         if (!settings.m3uSources) settings.m3uSources = [];
         if (!settings.epgSources) settings.epgSources = [];
         if (settings.notificationLeadTime === undefined) settings.notificationLeadTime = 10;
-        // console.log('[SETTINGS] Settings loaded successfully.');
+        console.log('[SETTINGS] Settings loaded successfully.');
         return settings;
     } catch (e) {
         console.error("[SETTINGS] Could not parse settings.json, returning default. Error:", e.message);
@@ -535,14 +532,14 @@ const scheduleEpgRefresh = () => {
 
 // --- Authentication API Endpoints ---
 app.get('/api/auth/needs-setup', (req, res) => {
-    // console.log('[AUTH_API] Received request for /api/auth/needs-setup');
+    console.log('[AUTH_API] Received request for /api/auth/needs-setup');
     db.get("SELECT COUNT(*) as count FROM users WHERE isAdmin = 1", [], (err, row) => {
         if (err) {
             console.error('[AUTH_API] Error checking admin user count:', err.message);
             return res.status(500).json({ error: err.message });
         }
         const needsSetup = row.count === 0;
-        // console.log(`[AUTH_API] Admin user count: ${row.count}. Needs setup: ${needsSetup}`);
+        console.log(`[AUTH_API] Admin user count: ${row.count}. Needs setup: ${needsSetup}`);
         res.json({ needsSetup });
     });
 });
@@ -635,12 +632,12 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 app.get('/api/auth/status', (req, res) => {
-    // console.log('[AUTH_API] Received request for /api/auth/status');
+    console.log('[AUTH_API] Received request for /api/auth/status');
     if (req.session && req.session.userId) {
-        // console.log(`[AUTH_API] User ${req.session.username} (ID: ${req.session.userId}) is logged in.`);
+        console.log(`[AUTH_API] User ${req.session.username} (ID: ${req.session.userId}) is logged in.`);
         res.json({ isLoggedIn: true, user: { username: req.session.username, isAdmin: req.session.isAdmin } });
     } else {
-        // console.log('[AUTH_API] No active session found. User is not logged in.');
+        console.log('[AUTH_API] No active session found. User is not logged in.');
         res.json({ isLoggedIn: false });
     }
 });
@@ -769,7 +766,7 @@ app.delete('/api/users/:id', requireAdmin, (req, res) => {
 
 // --- Protected IPTV API Endpoints ---
 app.get('/api/config', requireAuth, (req, res) => {
-    // console.log('[API] Fetching /api/config for user:', req.session.username);
+    console.log('[API] Fetching /api/config for user:', req.session.username);
     try {
         let config = { m3uContent: null, epgContent: null, settings: {} };
         let globalSettings = getSettings();
@@ -778,14 +775,14 @@ app.get('/api/config', requireAuth, (req, res) => {
         // Read merged M3U and EPG files
         if (fs.existsSync(MERGED_M3U_PATH)) {
             config.m3uContent = fs.readFileSync(MERGED_M3U_PATH, 'utf-8');
-            // console.log(`[API] Loaded M3U content from ${MERGED_M3U_PATH}.`);
+            console.log(`[API] Loaded M3U content from ${MERGED_M3U_PATH}.`);
         } else {
             console.log(`[API] No merged M3U file found at ${MERGED_M3U_PATH}.`);
         }
         if (fs.existsSync(MERGED_EPG_JSON_PATH)) {
             try {
                 config.epgContent = JSON.parse(fs.readFileSync(MERGED_EPG_JSON_PATH, 'utf-8'));
-                // console.log(`[API] Loaded EPG content from ${MERGED_EPG_JSON_PATH}.`);
+                console.log(`[API] Loaded EPG content from ${MERGED_EPG_JSON_PATH}.`);
             } catch (parseError) {
                 console.error(`[API] Error parsing merged EPG JSON from ${MERGED_EPG_JSON_PATH}: ${parseError.message}`);
                 config.epgContent = {};
@@ -1036,16 +1033,11 @@ app.post('/api/save/settings', requireAuth, async (req, res) => {
         for (const key in req.body) {
             // These keys are explicitly managed as user-specific on the client,
             // so they should not be written to the global settings.json
-            if (!['favorites', 'playerDimensions', 'programDetailsDimensions', 'recentChannels'].includes(key)) {
+            if (!['favorites', 'playerDimensions', 'programDetailsDimensions', 'recentChannels', 'notificationLeadTime'].includes(key)) {
                 updatedSettings[key] = req.body[key];
             } else {
-                 console.warn(`[SETTINGS_SAVE] Attempted to save user-specific key "${key}" to global settings. This is ignored.`);
+                console.warn(`[SETTINGS_SAVE] Attempted to save user-specific key "${key}" to global settings. This is ignored.`);
             }
-        }
-        
-        // This key IS global, so we handle it separately
-        if (req.body.notificationLeadTime !== undefined) {
-             updatedSettings.notificationLeadTime = req.body.notificationLeadTime;
         }
 
         saveSettings(updatedSettings);
@@ -1318,14 +1310,14 @@ app.get('/stream', requireAuth, (req, res) => {
     
     ffmpeg.stderr.on('data', (data) => {
         // Log FFMPEG errors to the server console, but don't send to client directly
-        // console.error(`[FFMPEG_ERROR] Stream: ${streamUrl} - ${data.toString().trim()}`);
+        console.error(`[FFMPEG_ERROR] Stream: ${streamUrl} - ${data.toString().trim()}`);
     });
 
     ffmpeg.on('close', (code) => {
         if (code !== 0) {
-            // console.log(`[STREAM] ffmpeg process for ${streamUrl} exited with code ${code}`);
+            console.log(`[STREAM] ffmpeg process for ${streamUrl} exited with code ${code}`);
         } else {
-            // console.log(`[STREAM] ffmpeg process for ${streamUrl} exited gracefully.`);
+            console.log(`[STREAM] ffmpeg process for ${streamUrl} exited gracefully.`);
         }
         if (!res.headersSent) { // Only end response if headers haven't been sent yet
              res.status(500).send('FFmpeg stream ended unexpectedly or failed to start.');
@@ -1349,41 +1341,34 @@ app.get('/stream', requireAuth, (req, res) => {
 
 
 async function checkAndSendNotifications() {
-    // Start performance timer
-    const perfStart = process.hrtime(); 
     console.log('[PUSH_CHECKER] Running scheduled notification check.');
-    
     try {
         const now = new Date();
         const nowIso = now.toISOString();
-
-        // Time the database query
-        const queryStart = process.hrtime();
+        // Select only pending notifications where notificationTime is due
         const dueNotifications = await new Promise((resolve, reject) => {
             db.all("SELECT * FROM notifications WHERE status = 'pending' AND notificationTime <= ?", [nowIso], (err, rows) => {
                 if (err) reject(err);
                 else resolve(rows);
             });
         });
-        const queryEnd = process.hrtime(queryStart);
-        console.log(`[PUSH_CHECKER_PERF] Database query took ${queryEnd[0]}s ${queryEnd[1] / 1000000}ms.`);
 
         if (dueNotifications.length > 0) {
             console.log(`[PUSH_CHECKER] Found ${dueNotifications.length} due notifications to process.`);
         } else {
-            const totalEnd = process.hrtime(perfStart);
-            console.log(`[PUSH_CHECKER_PERF] No due notifications. Total check time: ${totalEnd[0]}s ${totalEnd[1] / 1000000}ms.`);
-            return; // Exit early if no notifications are due
+            console.log('[PUSH_CHECKER] No due notifications found.');
         }
-        
-        const processingStart = process.hrtime();
+
         for (const notification of dueNotifications) {
-            // console.log(`[PUSH_CHECKER] Processing notification ID: ${notification.id} for "${notification.programTitle}".`);
+            console.log(`[PUSH_CHECKER] Processing notification ID: ${notification.id} for "${notification.programTitle}".`);
+            // Check if the program has already ended
             if (new Date(notification.programStop).getTime() <= now.getTime()) {
+                // Program has ended, mark notification as 'expired'
                 db.run("UPDATE notifications SET status = 'expired', triggeredAt = ? WHERE id = ?", [nowIso, notification.id], (err) => {
                     if (err) console.error(`[PUSH_CHECKER] Error marking notification ${notification.id} as expired:`, err.message);
                 });
-                continue;
+                console.log(`[PUSH_CHECKER] Notification for "${notification.programTitle}" (ID: ${notification.id}) expired. Program already ended.`);
+                continue; // Skip sending this notification
             }
 
             const subscriptions = await new Promise((resolve, reject) => {
@@ -1394,6 +1379,7 @@ async function checkAndSendNotifications() {
             });
 
             if (subscriptions.length === 0) {
+                console.log(`[PUSH_CHECKER] No active push subscriptions for user ${notification.user_id}. Marking notification ${notification.id} as expired.`);
                  db.run("UPDATE notifications SET status = 'expired', triggeredAt = ? WHERE id = ?", [nowIso, notification.id], (err) => {
                     if (err) console.error(`[PUSH_CHECKER] Error marking notification ${notification.id} as expired (no subscriptions):`, err.message);
                 });
@@ -1417,13 +1403,16 @@ async function checkAndSendNotifications() {
 
                 return webpush.sendNotification(pushSubscription, payload)
                     .then(() => {
+                        console.log(`[PUSH_CHECKER] Notification "${notification.programTitle}" (ID: ${notification.id}) sent to endpoint: ${sub.endpoint}`);
+                        // Mark notification as 'sent' after successful delivery
                         db.run("UPDATE notifications SET status = 'sent', triggeredAt = ? WHERE id = ?", [nowIso, notification.id], (err) => {
                             if (err) console.error(`[PUSH_CHECKER] Error updating notification ${notification.id} status to sent:`, err.message);
                         });
                     })
                     .catch(error => {
                         console.error(`[PUSH_CHECKER] Error sending notification ${notification.id} to ${sub.endpoint}:`, error.statusCode, error.body || error.message);
-                        if (error.statusCode === 410 || error.statusCode === 404) {
+                        if (error.statusCode === 410 || error.statusCode === 404) { // 410 Gone means subscription is no longer valid
+                            console.log(`[PUSH_CHECKER] Subscription expired or invalid (410/404). Deleting endpoint: ${sub.endpoint}`);
                             db.run("DELETE FROM push_subscriptions WHERE endpoint = ?", [sub.endpoint], (err) => {
                                 if (err) console.error(`[PUSH_CHECKER] Error deleting expired subscription ${sub.endpoint}:`, err.message);
                             });
@@ -1433,27 +1422,25 @@ async function checkAndSendNotifications() {
 
             await Promise.all(sendPromises);
         }
-        const processingEnd = process.hrtime(processingStart);
-        console.log(`[PUSH_CHECKER_PERF] Processing ${dueNotifications.length} notifications took ${processingEnd[0]}s ${processingEnd[1] / 1000000}ms.`);
-
     } catch (error) {
         console.error('[PUSH_CHECKER] Unhandled error in checkAndSendNotifications:', error);
-    } finally {
-        const totalEnd = process.hrtime(perfStart);
-        console.log(`[PUSH_CHECKER_PERF] Total check time for this run: ${totalEnd[0]}s ${totalEnd[1] / 1000000}ms.`);
     }
 }
 
 
 // --- Main Route Handling ---
 app.get('*', (req, res) => {
+    // This serves index.html for all non-file paths, enabling client-side routing.
+    // Ensure the path is relative to PUBLIC_DIR
     const filePath = path.join(PUBLIC_DIR, req.path);
 
+    // If the request path corresponds to an actual file in PUBLIC_DIR, serve it
     if(fs.existsSync(filePath) && fs.lstatSync(filePath).isFile()){
-        // console.log(`[HTTP] Serving static file: ${req.path}`);
+        console.log(`[HTTP] Serving static file: ${req.path}`);
         return res.sendFile(filePath);
     }
-    // console.log(`[HTTP] Serving index.html for path: ${req.path}`);
+    // Otherwise, serve index.html for client-side routing
+    console.log(`[HTTP] Serving index.html for path: ${req.path}`);
     res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 
@@ -1465,13 +1452,15 @@ app.listen(port, () => {
     console.log(` Serving frontend from: ${PUBLIC_DIR}`);
     console.log(`======================================================\n`);
 
+    // Initial processing of sources on server boot
     processAndMergeSources().then(() => {
         console.log('[INIT] Initial source processing complete.');
-        scheduleEpgRefresh();
+        scheduleEpgRefresh(); // Schedule subsequent refreshes
     }).catch(error => {
         console.error('[INIT] Initial source processing failed:', error.message);
     });
 
+    // Clear any existing interval to prevent duplicates on hot-reload (if applicable)
     if (notificationCheckInterval) clearInterval(notificationCheckInterval);
     notificationCheckInterval = setInterval(checkAndSendNotifications, 60000); // Check every minute
     console.log('[Push] Notification checker started. Will check for due notifications every minute.');
