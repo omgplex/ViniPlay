@@ -13,6 +13,7 @@ import { setupPlayerEventListeners } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
 import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu, showNotification } from './modules/ui.js';
 import { loadAndScheduleNotifications, subscribeUserToPush } from './modules/notification.js';
+import { setupMultiViewEventListeners } from './modules/multiViewPlayer.js'; // NEW import
 
 /**
  * Initializes the main application after successful authentication.
@@ -34,6 +35,7 @@ export async function initMainApp() {
     setupGuideEventListeners();
     setupPlayerEventListeners();
     setupSettingsEventListeners();
+    setupMultiViewEventListeners(); // NEW: Setup multi-view listeners
     console.log('[MAIN] All event listeners set up.');
 
     // 3. Load initial configuration and guide data
@@ -195,6 +197,7 @@ function setupCoreEventListeners() {
     UIElements.tabGuide?.addEventListener('click', () => { console.log('[NAV] Desktop Guide tab clicked.'); switchTab('guide'); });
     UIElements.tabNotifications?.addEventListener('click', () => { console.log('[NAV] Desktop Notifications tab clicked.'); switchTab('notifications'); });
     UIElements.tabSettings?.addEventListener('click', () => { console.log('[NAV] Desktop Settings tab clicked.'); switchTab('settings'); });
+    UIElements.tabMultiView?.addEventListener('click', () => { console.log('[NAV] Desktop Multi-View tab clicked.'); switchTab('multiview'); }); // NEW
 
     UIElements.mobileMenuToggle?.addEventListener('click', () => { console.log('[NAV] Mobile menu toggle clicked.'); openMobileMenu(); });
     UIElements.mobileMenuClose?.addEventListener('click', () => { console.log('[NAV] Mobile menu close clicked.'); closeMobileMenu(); });
@@ -202,6 +205,7 @@ function setupCoreEventListeners() {
     UIElements.mobileNavGuide?.addEventListener('click', () => { console.log('[NAV] Mobile Guide nav clicked.'); switchTab('guide'); });
     UIElements.mobileNavNotifications?.addEventListener('click', () => { console.log('[NAV] Mobile Notifications nav clicked.'); switchTab('notifications'); });
     UIElements.mobileNavSettings?.addEventListener('click', () => { console.log('[NAV] Mobile Settings nav clicked.'); switchTab('settings'); });
+    UIElements.mobileNavMultiView?.addEventListener('click', () => { console.log('[NAV] Mobile Multi-View nav clicked.'); switchTab('multiview'); }); // NEW
     UIElements.mobileNavLogoutBtn?.addEventListener('click', () => {
         console.log('[NAV] Mobile Logout nav clicked.');
         const logoutButton = document.getElementById('logout-btn'); // Trigger desktop logout
@@ -238,6 +242,7 @@ function setupCoreEventListeners() {
     } else {
         console.log('[MAIN] Channel column resize handle not applied (mobile or elements not found).');
     }
+    // Note: multi-view players will have their own makePlayerResizable called in multiViewPlayer.js
 }
 
 
