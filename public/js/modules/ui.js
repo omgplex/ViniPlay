@@ -7,6 +7,7 @@
 import { UIElements, appState, guideState } from './state.js';
 import { refreshUserList, updateUIFromSettings } from './settings.js';
 import { renderNotifications } from './notification.js'; // NEW: Import renderNotifications
+import { initMultiView } from './multiview.js';
 
 let confirmCallback = null;
 
@@ -222,6 +223,7 @@ export const closeMobileMenu = () => {
 export const handleRouteChange = () => {
     const path = window.location.pathname;
     const isGuide = path.startsWith('/tvguide') || path === '/';
+    const isMultiView = path.startsWith('/multiview');
     const isNotifications = path.startsWith('/notifications');
     const isSettings = path.startsWith('/settings');
 
@@ -230,11 +232,13 @@ export const handleRouteChange = () => {
 
     // Toggle active state for desktop navigation buttons
     UIElements.tabGuide?.classList.toggle('active', isGuide);
+    UIElements.tabMultiview?.classList.toggle('active', isMultiView);
     UIElements.tabNotifications?.classList.toggle('active', isNotifications);
     UIElements.tabSettings?.classList.toggle('active', isSettings);
     
     // Toggle active state for mobile navigation buttons
     UIElements.mobileNavGuide?.classList.toggle('active', isGuide);
+    UIElements.mobileNavMultiview?.classList.toggle('active', isMultiView);
     UIElements.mobileNavNotifications?.classList.toggle('active', isNotifications);
     UIElements.mobileNavSettings?.classList.toggle('active', isSettings);
 
@@ -242,6 +246,8 @@ export const handleRouteChange = () => {
     // Show/hide the relevant page content
     UIElements.pageGuide.classList.toggle('hidden', !isGuide);
     UIElements.pageGuide.classList.toggle('flex', isGuide);
+    UIElements.pageMultiview.classList.toggle('hidden', !isMultiView);
+    UIElements.pageMultiview.classList.toggle('flex', isMultiView);
     UIElements.pageNotifications.classList.toggle('hidden', !isNotifications);
     UIElements.pageNotifications.classList.toggle('flex', isNotifications);
     UIElements.pageSettings.classList.toggle('hidden', !isSettings);
@@ -278,6 +284,8 @@ export const handleRouteChange = () => {
             }
         } else if (isNotifications) {
             renderNotifications(); // NEW: Render notifications when navigating to the notifications page
+        } else if (isMultiView) {
+            initMultiView();
         }
     }
 };
@@ -295,13 +303,15 @@ export const navigate = (path) => {
 };
 
 /**
- * Switches between the 'Guide', 'Notifications' and 'Settings' tabs.
- * @param {string} activeTab - The tab to switch to ('guide', 'notifications', or 'settings').
+ * Switches between the 'Guide', 'Multi-View', 'Notifications' and 'Settings' tabs.
+ * @param {string} activeTab - The tab to switch to ('guide', 'multiview', 'notifications', or 'settings').
  */
 export const switchTab = (activeTab) => {
     let newPath;
     if (activeTab === 'guide') {
         newPath = '/tvguide';
+    } else if (activeTab === 'multiview') {
+        newPath = '/multiview';
     } else if (activeTab === 'notifications') {
         newPath = '/notifications';
     } else {
