@@ -6,7 +6,7 @@
  */
 
 import { appState, guideState, UIElements, initializeUIElements } from './modules/state.js';
-import { apiFetch, fetchConfig } from './modules/api.js';
+import { apiFetch, fetchConfig } from './modules/api.js'; // IMPORTED fetchConfig
 import { checkAuthStatus, setupAuthEventListeners } from './modules/auth.js';
 import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './modules/guide.js';
 import { setupPlayerEventListeners } from './modules/player.js';
@@ -39,7 +39,8 @@ export async function initMainApp() {
     // 3. Load initial configuration and guide data
     try {
         console.log('[MAIN] Fetching initial configuration from server via api.js...');
-        const config = await fetchConfig();
+        // REFACTORED: Use the centralized fetchConfig from api.js
+        const config = await fetchConfig(); 
         if (!config) {
             throw new Error(`Could not load configuration from server. Check logs for details.`);
         }
@@ -66,16 +67,16 @@ export async function initMainApp() {
             console.log('[MAIN] Loaded guide data from cache. Finalizing guide load.');
             guideState.channels = cachedChannels;
             guideState.programs = cachedPrograms;
-            finalizeGuideLoad(true); // true indicates first load, which will trigger scroll to "now"
+            finalizeGuideLoad(true); // true indicates first load
         } else if (config.m3uContent) {
             console.log('[MAIN] No cached data or incomplete cache. Processing guide data from server config.');
-            handleGuideLoad(config.m3uContent, config.epgContent); // This internally calls finalizeGuideLoad(true)
+            handleGuideLoad(config.m3uContent, config.epgContent);
         } else {
             console.log('[MAIN] No M3U content from server or cache. Displaying no data message.');
             UIElements.initialLoadingIndicator.classList.add('hidden');
             UIElements.noDataMessage.classList.remove('hidden');
         }
-
+        
         // Load the list of scheduled notifications for the UI
         console.log('[MAIN] Loading and scheduling notifications...');
         await loadAndScheduleNotifications();
@@ -88,16 +89,6 @@ export async function initMainApp() {
         // Handle initial route based on URL
         console.log('[MAIN] Handling initial route change.');
         handleRouteChange();
-
-        // Important: Set this flag *after* all initial rendering and potential scrolling/animations are done.
-        // The `updateNowLine` function's `setTimeout` handles setting this after the *initial* scroll.
-        // For cases where `updateNowLine` doesn't scroll (e.g., no live program), ensure it's set.
-        if (!appState.firstGuideRenderComplete) {
-            setTimeout(() => {
-                appState.firstGuideRenderComplete = true;
-                console.log('[MAIN] appState.firstGuideRenderComplete set to true (fallback).');
-            }, 1000); // A small delay to ensure rendering is complete
-        }
 
     } catch (e) {
         console.error('[MAIN] Application initialization failed:', e);
@@ -185,16 +176,14 @@ function restoreDimensions() {
         if (height) UIElements.programDetailsContainer.style.height = `${height}px`;
         console.log(`[MAIN] Restored program details dimensions: ${width}x${height}`);
     }
-    if (UIElements.guideGrid) { // Check UIElements.guideGrid directly
-        if (guideState.settings.channelColumnWidth) {
-            UIElements.guideGrid.style.setProperty('--channel-col-width', `${guideState.settings.channelColumnWidth}px`);
-            console.log(`[MAIN] Restored channel column width: ${guideState.settings.channelColumnWidth}px`);
-        } else {
-             // Set default if not in settings (or if it's the first run)
-             const defaultChannelWidth = window.innerWidth < 768 ? 64 : 180;
-             UIElements.guideGrid.style.setProperty('--channel-col-width', `${defaultChannelWidth}px`);
-             console.log(`[MAIN] Set default channel column width: ${defaultChannelWidth}px`);
-        }
+    if (guideState.settings.channelColumnWidth && UIElements.guideGrid) {
+        UIElements.guideGrid.style.setProperty('--channel-col-width', `${guideState.settings.channelColumnWidth}px`);
+        console.log(`[MAIN] Restored channel column width: ${guideState.settings.channelColumnWidth}px`);
+    } else if (UIElements.guideGrid) {
+         // Set default if not in settings (or if it's the first run)
+         const defaultChannelWidth = window.innerWidth < 768 ? 64 : 180;
+         UIElements.guideGrid.style.setProperty('--channel-col-width', `${defaultChannelWidth}px`);
+         console.log(`[MAIN] Set default channel column width: ${defaultChannelWidth}px`);
     }
 }
 
@@ -269,7 +258,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('[APP_START] Service Worker registration failed:', error);
                 showNotification('Failed to register service worker for notifications.', true);
             });
-    } else {a
+    } else {
         console.warn('[APP_START] Push messaging is not supported in this browser environment.');
         showNotification('Push notifications are not supported by your browser.', false, 5000);
     }
