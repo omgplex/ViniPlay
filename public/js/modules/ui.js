@@ -7,9 +7,10 @@
 import { UIElements, appState, guideState } from './state.js';
 import { refreshUserList, updateUIFromSettings } from './settings.js';
 import { renderNotifications } from './notification.js'; // NEW: Import renderNotifications
-import { initMultiView } from './multiview.js';
+import { initMultiView, isMultiViewActive, cleanupMultiView } from './multiview.js';
 
 let confirmCallback = null;
+let currentPage = '/'; // ADDED: To track the current page for navigation logic
 
 /**
  * Shows a notification message at the top-right of the screen.
@@ -221,7 +222,37 @@ export const closeMobileMenu = () => {
  * Handles client-side routing by showing/hiding pages based on the URL path.
  */
 export const handleRouteChange = () => {
+    const wasMultiView = currentPage.startsWith('/multiview');
     const path = window.location.pathname;
+    
+    // If leaving multiview and players are active, ask for confirmation.
+    if (wasMultiView && !path.startsWith('/multiview')) {
+        if (isMultiViewActive()) {
+            showConfirm(
+                'Leave Multi-View?',
+                'Leaving this page will stop all streams and clear your current layout. Are you sure?',
+                () => {
+                    cleanupMultiView();
+                    proceedWithRouteChange(path);
+                }
+            );
+            // Stop navigation until user confirms
+            window.history.pushState({}, currentPage, window.location.origin + currentPage);
+            return; 
+        } else {
+            // If no players are active, just clean up without asking.
+            cleanupMultiView();
+        }
+    }
+
+    proceedWithRouteChange(path);
+};
+
+/**
+ * The core logic for switching pages after any checks have passed.
+ * @param {string} path - The new path to render.
+ */
+function proceedWithRouteChange(path) {
     const isGuide = path.startsWith('/tvguide') || path === '/';
     const isMultiView = path.startsWith('/multiview');
     const isNotifications = path.startsWith('/notifications');
@@ -241,7 +272,6 @@ export const handleRouteChange = () => {
     UIElements.mobileNavMultiview?.classList.toggle('active', isMultiView);
     UIElements.mobileNavNotifications?.classList.toggle('active', isNotifications);
     UIElements.mobileNavSettings?.classList.toggle('active', isSettings);
-
 
     // Show/hide the relevant page content
     UIElements.pageGuide.classList.toggle('hidden', !isGuide);
@@ -288,7 +318,10 @@ export const handleRouteChange = () => {
             initMultiView();
         }
     }
-};
+    // Update the current page tracker
+    currentPage = path;
+}
+
 
 /**
  * Pushes a new state to the browser history and triggers a route change.
