@@ -15,7 +15,6 @@ export const appState = {
     fuseChannels: null, // Fuse.js instance for channels
     fusePrograms: null, // Fuse.js instance for programs
     currentSourceTypeForEditor: 'url',
-    firstGuideRenderComplete: false, // NEW: Flag to track initial guide render and positioning
 };
 
 // State specific to the TV Guide
@@ -26,8 +25,6 @@ export const guideState = {
         // Add a default for channelColumnWidth
         channelColumnWidth: window.innerWidth < 768 ? 64 : 180, // Default based on screen size
         notificationLeadTime: 10, // NEW: Default notification lead time in minutes
-        epgMinDate: null, // NEW: To store the earliest date available in EPG
-        epgMaxDate: null  // NEW: To store the latest date available in EPG
     }, // This will hold both GLOBAL and USER settings, merged.
     guideDurationHours: 48,
     hourWidthPixels: window.innerWidth < 768 ? 200 : 300,
@@ -89,10 +86,6 @@ export const initializeUIElements = () => {
     // NEW: Past Notifications section elements
     UIElements.pastNotificationsList = document.getElementById('past-notifications-list');
     UIElements.noPastNotificationsMessage = document.getElementById('no-past-notifications-message');
-
-    // NEW: Date Picker elements
-    UIElements.jumpToDateBtn = document.getElementById('jump-to-date-btn');
-    UIElements.datePickerInput = document.getElementById('date-picker-input');
 
     // Removed: UIElements.resetFilterBtn as the button is removed from HTML
 };
