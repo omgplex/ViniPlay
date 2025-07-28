@@ -338,8 +338,7 @@
             color: #6b7280; /* gray-500 */
             cursor: pointer;
             width: 100%;
-            /* MODIFIED: Replaced height with align-self to ensure it fills the flex parent correctly. */
-            align-self: stretch;
+            height: 100%; /* CHANGED: This makes it fill the parent container vertically */
             transition: background-color 0.2s;
         }
         .player-placeholder:hover {
