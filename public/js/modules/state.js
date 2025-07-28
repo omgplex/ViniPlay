@@ -25,6 +25,7 @@ export const guideState = {
         // Add a default for channelColumnWidth
         channelColumnWidth: window.innerWidth < 768 ? 64 : 180, // Default based on screen size
         notificationLeadTime: 10, // NEW: Default notification lead time in minutes
+        multiviewLayouts: [], // ADDED: To store saved layouts for the user
     }, // This will hold both GLOBAL and USER settings, merged.
     guideDurationHours: 48,
     hourWidthPixels: window.innerWidth < 768 ? 200 : 300,
