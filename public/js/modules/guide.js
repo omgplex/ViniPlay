@@ -7,11 +7,11 @@
  */
 
 import { appState, guideState, UIElements } from './state.js';
-import { saveUserSetting, apiFetch } from './api.js'; // Added apiFetch
+import { saveUserSetting } from './api.js';
 import { parseM3U } from './utils.js';
 import { playChannel } from './player.js';
 import { showNotification, openModal, closeModal } from './ui.js';
-import { addOrRemoveNotification, findNotificationForProgram } from './notification.js';
+import { addOrRemoveNotification, findNotificationForProgram } from './notification.js'; // NEW: Import notification functions
 
 // --- Virtualization Constants ---
 const ROW_HEIGHT = 96; // Height in pixels of a single channel row (.channel-info + .timeline-row)
@@ -21,65 +21,33 @@ const OVERSCAN_COUNT = 5; // Number of extra rows to render above and below the 
 
 /**
  * Handles loading guide data from the server response.
- * For initial load, clears existing data. For subsequent loads (e.g., infinite scroll), merges new data.
  * @param {string} m3uContent - The M3U playlist content.
  * @param {object} epgContent - The parsed EPG JSON data.
- * @param {Date} dateLoadedFor - The specific date (start of day) this EPG content corresponds to.
- * @param {boolean} isInitialLoad - True if this is the very first load of the application.
  */
-export function handleGuideLoad(m3uContent, epgContent, dateLoadedFor = new Date(), isInitialLoad = false) {
-    if (isInitialLoad) {
+export function handleGuideLoad(m3uContent, epgContent) {
+    if (!m3uContent || m3uContent.trim() === '#EXTM3U') {
         guideState.channels = [];
-        guideState.programCache = {}; // Clear program cache on initial full load
-        guideState.loadedDates.clear(); // Clear loaded dates on initial full load
-        // Populate channels from M3U content on initial load
-        if (!m3uContent || m3uContent.trim() === '#EXTM3U') {
-            guideState.channels = [];
-        } else {
-            guideState.channels = parseM3U(m3uContent);
-        }
+        guideState.programs = {};
+    } else {
+        guideState.channels = parseM3U(m3uContent);
+        guideState.programs = epgContent || {};
     }
 
-    // Merge EPG content into the program cache
-    if (epgContent && dateLoadedFor) {
-        // Mark the date as loaded
-        const dateKey = dateLoadedFor.toISOString().slice(0, 10); // "YYYY-MM-DD"
-        guideState.loadedDates.add(dateKey);
-
-        for (const channelId in epgContent) {
-            if (!guideState.programCache[channelId]) {
-                guideState.programCache[channelId] = [];
-            }
-            // Filter out duplicates and merge
-            const existingProgramStarts = new Set(guideState.programCache[channelId].map(p => p.start));
-            epgContent[channelId].forEach(newProg => {
-                if (!existingProgramStarts.has(newProg.start)) {
-                    guideState.programCache[channelId].push(newProg);
-                }
-            });
-            // Keep programs sorted by start time
-            guideState.programCache[channelId].sort((a, b) => new Date(a.start) - new Date(b.start));
-        }
-    }
-
-    // Cache the loaded data in IndexedDB (channels always, programs are incremental)
+    // Cache the loaded data in IndexedDB
+    // This is a "fire and forget" operation for performance
     if (appState.db) {
         appState.db.transaction(['guideData'], 'readwrite').objectStore('guideData').put(guideState.channels, 'channels');
-        appState.db.transaction(['guideData'], 'readwrite').objectStore('guideData').put(guideState.programCache, 'programCache');
-        appState.db.transaction(['guideData'], 'readwrite').objectStore('guideData').put(Array.from(guideState.loadedDates), 'loadedDates');
+        appState.db.transaction(['guideData'], 'readwrite').objectStore('guideData').put(guideState.programs, 'programs');
     }
 
-    // Only finalize if not already doing so from another call
-    if (!guideState.loadingEpgData) { // Prevent re-finalizing if background load is happening
-        finalizeGuideLoad(isInitialLoad);
-    }
+    finalizeGuideLoad(true);
 }
 
 /**
  * Finalizes the guide setup after data is loaded from any source (API or cache).
- * @param {boolean} isInitialAppLoad - Indicates if this is the initial load of the guide, to reset scroll.
+ * @param {boolean} isFirstLoad - Indicates if this is the initial load of the guide.
  */
-export function finalizeGuideLoad(isInitialAppLoad = false) {
+export function finalizeGuideLoad(isFirstLoad = false) {
     // Add favorite status to channels from user settings
     const favoriteIds = new Set(guideState.settings.favorites || []);
     guideState.channels.forEach(channel => {
@@ -96,29 +64,29 @@ export function finalizeGuideLoad(isInitialAppLoad = false) {
     populateGroupFilter();
     populateSourceFilter();
 
-    // Re-initialize Fuse.js for fuzzy searching channels
+    // Initialize Fuse.js for fuzzy searching channels
     appState.fuseChannels = new Fuse(guideState.channels, {
         keys: ['name', 'displayName', 'source', 'chno'],
         threshold: 0.4,
         includeScore: true,
     });
 
-    // Prepare program data for searching (only programs from the currently viewed date range)
-    const allProgramsForSearch = [];
+    // Prepare program data for searching
+    const allPrograms = [];
     const guideStart = new Date(guideState.currentDate);
-    guideStart.setHours(0, 0, 0, 0); // Start of current selected day
-    const guideEnd = new Date(guideStart.getTime() + guideState.guideDurationHours * 3600 * 1000); // End of current selected day's window
+    guideStart.setHours(0, 0, 0, 0);
+    const guideEnd = new Date(guideStart.getTime() + guideState.guideDurationHours * 3600 * 1000);
 
-    for (const channelId in guideState.programCache) {
+    for (const channelId in guideState.programs) {
         const channel = guideState.channels.find(c => c.id === channelId);
         if (channel) {
-            guideState.programCache[channelId].forEach(prog => {
+            guideState.programs[channelId].forEach(prog => {
                 const progStart = new Date(prog.start);
                 const progStop = new Date(prog.stop);
-                // Only include programs within the current guide's *conceptual* view for search index
-                if (progStop < guideStart || progStart > guideEnd) return;
+                // Only include programs within the current guide view
+                if (progStop < guideStart || progStart > guideEnd) return; // Corrected logic to filter out programs completely outside view
                     
-                allProgramsForSearch.push({
+                allPrograms.push({
                     ...prog,
                     channel: {
                         id: channel.id,
@@ -126,86 +94,24 @@ export function finalizeGuideLoad(isInitialAppLoad = false) {
                         logo: channel.logo,
                         source: channel.source,
                     },
+                    // Ensure a programId is generated for programs in the search index
                     programId: `${channel.id}-${progStart.toISOString()}-${progStop.toISOString()}`
                 });
             });
         }
     }
 
-    // Re-initialize Fuse.js for fuzzy searching programs
-    appState.fusePrograms = new Fuse(allProgramsForSearch, {
+    // Initialize Fuse.js for fuzzy searching programs
+    appState.fusePrograms = new Fuse(allPrograms, {
         keys: ['title'],
         threshold: 0.4,
         includeScore: true,
     });
 
-    handleSearchAndFilter(isInitialAppLoad); // Pass isInitialAppLoad to control initial scroll
+    handleSearchAndFilter(isFirstLoad);
 }
 
-/**
- * Formats a Date object to "YYYY-MM-DD" string.
- * @param {Date} date - The date to format.
- * @returns {string} The formatted date string.
- */
-const formatDateToKey = (date) => date.toISOString().slice(0, 10);
-
-/**
- * Fetches EPG data for a specific date from the server.
- * @param {Date} date - The date for which to fetch EPG data.
- * @returns {Promise<object|null>} The EPG data, or null on failure.
- */
-async function fetchEpgForDate(date) {
-    const dateKey = formatDateToKey(date);
-    if (guideState.loadedDates.has(dateKey) || guideState.loadingEpgData) {
-        console.log(`[EPG_FETCH] EPG for ${dateKey} already loaded or currently loading. Skipping.`);
-        return null;
-    }
-
-    guideState.loadingEpgData = true; // Set flag to prevent concurrent calls
-    showNotification(`Loading guide data for ${dateKey}...`, false, 3000);
-
-    try {
-        // Request specific date's EPG data from the server.
-        // We'll need a new API endpoint for this or modify the existing one.
-        // For now, let's simulate by re-fetching config and filtering,
-        // but ideally the backend would serve specific date ranges.
-        // For infinite scroll, the backend would need to accept a date parameter.
-        const response = await apiFetch(`/api/config?date=${dateKey}&t=${Date.now()}`); // Assuming backend can handle 'date' param
-        if (!response || !response.ok) {
-            throw new Error('Failed to fetch EPG data for date.');
-        }
-        const config = await response.json();
-        
-        // Ensure that config.epgContent only contains programs for the requested date.
-        // This is a client-side filter for demonstration; ideally, backend handles this.
-        const filteredEpgContent = {};
-        if (config.epgContent) {
-            const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
-            const endOfDay = new Date(startOfDay.getTime() + 24 * 3600 * 1000);
-
-            for (const channelId in config.epgContent) {
-                filteredEpgContent[channelId] = config.epgContent[channelId].filter(prog => {
-                    const progStart = new Date(prog.start);
-                    const progStop = new Date(prog.stop);
-                    return (progStart < endOfDay && progStop > startOfDay);
-                });
-            }
-        }
-        
-        guideState.loadingEpgData = false;
-        showNotification(`Guide data for ${dateKey} loaded.`);
-        handleGuideLoad(config.m3uContent, filteredEpgContent, date); // Merge this new data
-        return filteredEpgContent;
-    } catch (error) {
-        guideState.loadingEpgData = false;
-        console.error(`[EPG_FETCH] Error fetching EPG for ${dateKey}:`, error);
-        showNotification(`Failed to load guide data for ${dateKey}.`, true);
-        return null;
-    }
-}
-
-
-// --- UI Rendering (REFACTORED FOR VIRTUALIZATION & INFINITE SCROLL) ---
+// --- UI Rendering (REFACTORED FOR VIRTUALIZATION) ---
 
 /**
  * Renders the guide using UI virtualization.
@@ -228,50 +134,21 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
     }
 
     // --- Static Header/Time Bar Setup (Done once per full render) ---
-    // The "currentDate" here still represents the selected date (e.g., from date picker or prev/next day buttons)
-    // For infinite scroll, the timeline itself will span multiple days.
-    const guideDisplayStart = new Date(guideState.currentDate);
-    guideDisplayStart.setHours(0, 0, 0, 0);
-    const guideDisplayEnd = new Date(guideDisplayStart.getTime() + guideState.guideDurationHours * 3600 * 1000);
-
+    const guideStart = new Date(guideState.currentDate);
+    guideStart.setHours(0, 0, 0, 0);
+    // Create a stable UTC reference for midnight
+    const guideStartUtc = new Date(Date.UTC(guideStart.getUTCFullYear(), guideStart.getUTCMonth(), guideStart.getUTCDate()));
+    const timelineWidth = guideState.guideDurationHours * guideState.hourWidthPixels;
+    UIElements.guideGrid.style.setProperty('--timeline-width', `${timelineWidth}px`);
     UIElements.guideDateDisplay.textContent = guideState.currentDate.toLocaleDateString([], { weekday: 'short', month: 'long', day: 'numeric' });
 
-    // Calculate the overall timeline width based on the range of *loaded* dates in `programCache`
-    // This is a simplified approach for now. A more robust solution would track the min/max program times.
-    let minTime = new Date(guideState.currentDate);
-    minTime.setHours(0, 0, 0, 0); // Start from midnight of current day
-    let maxTime = new Date(minTime.getTime() + guideState.guideDurationHours * 3600 * 1000); // End 48 hours later
-
-    // Extend min/max based on loadedDates (for infinite scroll)
-    if (guideState.loadedDates.size > 0) {
-        const sortedLoadedDates = Array.from(guideState.loadedDates).sort();
-        const earliestLoadedDateKey = sortedLoadedDates[0];
-        const latestLoadedDateKey = sortedLoadedDates[sortedLoadedDates.length - 1];
-        
-        const earliestDate = new Date(earliestLoadedDateKey);
-        earliestDate.setHours(0,0,0,0);
-        const latestDate = new Date(latestLoadedDateKey);
-        latestDate.setHours(23,59,59,999); // End of the latest loaded day
-
-        minTime = new Date(Math.min(minTime.getTime(), earliestDate.getTime()));
-        maxTime = new Date(Math.max(maxTime.getTime(), latestDate.getTime()));
-    }
-
-    const totalGuideHours = (maxTime.getTime() - minTime.getTime()) / 3600000;
-    const timelineWidth = totalGuideHours * guideState.hourWidthPixels;
-    UIElements.guideGrid.style.setProperty('--timeline-width', `${timelineWidth}px`);
-
-    // Populate Time Bar (based on the full *logical* range of the timeline)
+    // Populate Time Bar
     const timeBarCellEl = UIElements.guideGrid.querySelector('.time-bar-cell');
     if (timeBarCellEl) {
         timeBarCellEl.innerHTML = '';
-        const startOfTimebar = minTime; // Use the absolute start of the loaded timeline
-        const endOfTimebar = maxTime;
-
-        for (let i = startOfTimebar.getTime(); i < endOfTimebar.getTime(); i += 3600 * 1000) {
-            const time = new Date(i);
-            const left = ((time.getTime() - startOfTimebar.getTime()) / 3600000) * guideState.hourWidthPixels;
-            timeBarCellEl.innerHTML += `<div class="absolute top-0 bottom-0 flex items-center justify-start px-2 text-xs text-gray-400 border-r border-gray-700/50" style="left: ${left}px; width: ${guideState.hourWidthPixels}px;">${time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>`;
+        for (let i = 0; i < guideState.guideDurationHours; i++) {
+            const time = new Date(guideStartUtc.getTime() + i * 3600 * 1000);
+            timeBarCellEl.innerHTML += `<div class="absolute top-0 bottom-0 flex items-center justify-start px-2 text-xs text-gray-400 border-r border-gray-700/50" style="left: ${i * guideState.hourWidthPixels}px; width: ${guideState.hourWidthPixels}px;">${time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>`;
         }
         timeBarCellEl.style.width = `${timelineWidth}px`;
     }
@@ -280,23 +157,27 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
     const guideContainer = UIElements.guideContainer;
     const guideGrid = UIElements.guideGrid;
 
+    // Ensure the main grid container is clear of old virtual content
     let contentWrapper = guideGrid.querySelector('#virtual-content-wrapper');
     if (contentWrapper) {
         guideGrid.removeChild(contentWrapper);
     }
 
+    // This wrapper acts as a spacer, creating the full scrollable height.
     contentWrapper = document.createElement('div');
     contentWrapper.id = 'virtual-content-wrapper';
-    contentWrapper.style.gridColumn = '1 / -1';
+    contentWrapper.style.gridColumn = '1 / -1'; // Span across both grid columns
     contentWrapper.style.position = 'relative';
     contentWrapper.style.height = `${totalRows * ROW_HEIGHT}px`;
 
+    // This container holds the visible rows and will be moved with `transform`.
     const rowContainer = document.createElement('div');
     rowContainer.id = 'virtual-row-container';
     rowContainer.style.position = 'absolute';
     rowContainer.style.width = '100%';
     rowContainer.style.top = '0';
     rowContainer.style.left = '0';
+    // The row container needs to be a subgrid to align with the main grid's columns
     rowContainer.style.display = 'grid';
     rowContainer.style.gridTemplateColumns = 'var(--channel-col-width, 180px) 1fr';
 
@@ -315,13 +196,11 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
         const sourceColorMap = new Map();
         let colorIndex = 0;
 
-        // Determine the start time for calculating program positions relative to the *entire loaded timeline*
-        const absoluteTimelineStart = minTime;
-
         for (let i = startIndex; i < endIndex; i++) {
             const channel = channelsToRender[i];
             const channelName = channel.displayName || channel.name;
 
+            // Assign a consistent color to each source for the badge
             if (!sourceColorMap.has(channel.source)) {
                 sourceColorMap.set(channel.source, sourceColors[colorIndex % sourceColors.length]);
                 colorIndex++;
@@ -330,6 +209,7 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
             const sourceBadgeHTML = guideState.channelSources.size > 1 ? `<span class="source-badge ${sourceBadgeColor} text-white">${channel.source}</span>` : '';
             const chnoBadgeHTML = channel.chno ? `<span class="chno-badge">${channel.chno}</span>` : '';
 
+            // Sticky Channel Info Cell
             const channelInfoHTML = `
                 <div class="channel-info p-2 flex items-center justify-between cursor-pointer" data-url="${channel.url}" data-name="${channelName}" data-id="${channel.id}">
                     <div class="flex items-center overflow-hidden flex-grow min-w-0">
@@ -346,33 +226,35 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
                 </div>
             `;
 
+            // Scrollable Timeline Row
             let programsHTML = '';
             const now = new Date();
-            // Programs are rendered based on their position relative to the absolute start of the loaded timeline
-            (guideState.programCache[channel.id] || []).forEach(prog => {
+            const guideEnd = new Date(guideStartUtc.getTime() + guideState.guideDurationHours * 3600 * 1000);
+            (guideState.programs[channel.id] || []).forEach(prog => {
                 const progStart = new Date(prog.start);
                 const progStop = new Date(prog.stop);
-                
-                // Only render programs that are actually within the total loaded time span
-                if (progStop.getTime() < absoluteTimelineStart.getTime() || progStart.getTime() > maxTime.getTime()) return;
+                if (progStop < guideStartUtc || progStart > guideEnd) return;
 
-                const durationMs = progStop.getTime() - progStart.getTime();
+                const durationMs = progStop - progStart;
                 if (durationMs <= 0) return;
 
-                // Calculate position relative to the absolute start of the entire virtual timeline
-                const left = ((progStart.getTime() - absoluteTimelineStart.getTime()) / 3600000) * guideState.hourWidthPixels;
+                const left = ((progStart.getTime() - guideStartUtc.getTime()) / 3600000) * guideState.hourWidthPixels;
                 const width = (durationMs / 3600000) * guideState.hourWidthPixels;
                 const isLive = now >= progStart && now < progStop;
                 const progressWidth = isLive ? ((now - progStart) / durationMs) * 100 : 0;
                 
+                // Construct the unique programId using channel.id, program start, and program stop
                 const uniqueProgramId = `${channel.id}-${progStart.toISOString()}-${progStop.toISOString()}`;
 
+                // NEW: Check if this program has ANY notification (pending, sent, or expired)
+                // We're iterating through all user notifications to see if this program ID exists.
                 const hasNotification = guideState.userNotifications.some(n =>
                     n.channelId === channel.id &&
                     n.programId === uniqueProgramId
                 );
                 const notificationClass = hasNotification ? 'has-notification' : '';
 
+                // Added data-prog-id attribute as requested
                 programsHTML += `<div class="programme-item absolute top-1 bottom-1 bg-gray-800 rounded-md p-2 overflow-hidden flex flex-col justify-center z-5 ${isLive ? 'live' : ''} ${progStop < now ? 'past' : ''} ${notificationClass}" style="left:${left}px; width:${Math.max(0, width - 2)}px" data-channel-url="${channel.url}" data-channel-id="${channel.id}" data-channel-name="${channelName}" data-prog-title="${prog.title}" data-prog-desc="${prog.desc}" data-prog-start="${progStart.toISOString()}" data-prog-stop="${progStop.toISOString()}" data-prog-id="${uniqueProgramId}"><div class="programme-progress" style="width:${progressWidth}%"></div><p class="prog-title text-white font-semibold truncate relative z-10">${prog.title}</p><p class="prog-time text-gray-400 truncate relative z-10">${progStart.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p></div>`;
             });
             const timelineRowHTML = `<div class="timeline-row" style="width: ${timelineWidth}px;">${programsHTML}</div>`;
@@ -382,35 +264,6 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
 
         rowContainer.innerHTML = rowsHTML;
         rowContainer.style.transform = `translateY(${startIndex * ROW_HEIGHT}px)`;
-
-        // Check for infinite scroll boundaries
-        const scrollLeft = guideContainer.scrollLeft;
-        const scrollWidth = guideContainer.scrollWidth;
-        const clientWidth = guideContainer.clientWidth;
-
-        const scrollThreshold = 0.15; // 15% from either end
-
-        // Load previous day
-        if (scrollLeft < scrollWidth * scrollThreshold && !guideState.loadingEpgData) {
-            const firstLoadedDate = new Date(Array.from(guideState.loadedDates).sort()[0]);
-            const prevDay = new Date(firstLoadedDate);
-            prevDay.setDate(prevDay.getDate() - 1);
-            console.log(`[INFINITE_SCROLL] Nearing left edge, loading previous day: ${formatDateToKey(prevDay)}`);
-            fetchEpgForDate(prevDay).then(() => {
-                // Adjust scroll position to account for new content prepended
-                const oldScrollWidth = scrollWidth;
-                const newScrollWidth = (totalGuideHours + 24) * guideState.hourWidthPixels; // Assuming 24 more hours
-                guideContainer.scrollLeft += (newScrollWidth - oldScrollWidth);
-            });
-        }
-        // Load next day
-        else if (scrollLeft + clientWidth > scrollWidth * (1 - scrollThreshold) && !guideState.loadingEpgData) {
-            const lastLoadedDate = new Date(Array.from(guideState.loadedDates).sort().reverse()[0]);
-            const nextDay = new Date(lastLoadedDate);
-            nextDay.setDate(nextDay.getDate() + 1);
-            console.log(`[INFINITE_SCROLL] Nearing right edge, loading next day: ${formatDateToKey(nextDay)}`);
-            fetchEpgForDate(nextDay);
-        }
     };
 
     // Attach scroll listener
@@ -421,45 +274,56 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
     guideContainer.addEventListener('scroll', guideState.scrollHandler);
 
     // Initial render and positioning
-    if (resetScroll) { // FIX: Replaced isInitialAppLoad with resetScroll
+    if (resetScroll) {
         guideContainer.scrollTop = 0;
-        // Position the timeline to center on 'Now' or the current day if possible
-        const now = new Date();
-        const nowTimeOffsetPixels = ((now.getTime() - minTime.getTime()) / 3600000) * guideState.hourWidthPixels;
-        const channelInfoColWidth = guideState.settings.channelColumnWidth;
-        const scrollLeft = nowTimeOffsetPixels - (guideContainer.clientWidth / 2) + (channelInfoColWidth / 2);
-        guideContainer.scrollLeft = Math.max(0, scrollLeft);
     }
+    updateVisibleRows();
+    updateNowLine(guideStartUtc, resetScroll);
 
-    updateNowLine(minTime, resetScroll); // FIX: Replaced isInitialAppLoad || resetScroll with just resetScroll
+    // --- Re-attach date navigation listeners ---
+    const prevDayBtn = UIElements.guideGrid.querySelector('#prev-day-btn');
+    const nowBtn = UIElements.guideGrid.querySelector('#now-btn');
+    const nextDayBtn = UIElements.guideGrid.querySelector('#next-day-btn');
+    
+    // Use .onclick to ensure we're not adding duplicate listeners on re-renders
+    if (prevDayBtn) prevDayBtn.onclick = () => {
+        guideState.currentDate.setDate(guideState.currentDate.getDate() - 1);
+        finalizeGuideLoad();
+    };
+    if (nowBtn) nowBtn.onclick = () => {
+        const now = new Date();
+        if (guideState.currentDate.toDateString() !== now.toDateString()) {
+            guideState.currentDate = now;
+            finalizeGuideLoad(true);
+        } else {
+            const guideStart = new Date(guideState.currentDate);
+            guideStart.setHours(0, 0, 0, 0);
+            const guideStartUtc = new Date(Date.UTC(guideStart.getUTCFullYear(), guideStart.getUTCMonth(), guideStart.getUTCDate()));
+            updateNowLine(guideStartUtc, true);
+        }
+    };
+    if (nextDayBtn) nextDayBtn.onclick = () => {
+        guideState.currentDate.setDate(guideState.currentDate.getDate() + 1);
+        finalizeGuideLoad();
+    };
 };
 
 /**
  * Updates the position of the "now" line and program states (live, past).
- * @param {Date} absoluteTimelineStart - The absolute start time of the entire loaded timeline in UTC.
+ * @param {Date} guideStartUtc - The start time of the current guide view in UTC.
  * @param {boolean} shouldScroll - If true, scrolls the timeline to the now line.
  */
-const updateNowLine = (absoluteTimelineStart, shouldScroll = false) => {
+const updateNowLine = (guideStartUtc, shouldScroll = false) => {
     const nowLineEl = document.getElementById('now-line');
     if (!nowLineEl) return;
 
     const now = new Date();
-    const nowValue = now.getTime(); // Use getTime() for milliseconds
-
-    // Calculate total loaded duration for now-line visibility
-    let maxTimeForNowLine = new Date(absoluteTimelineStart.getTime() + guideState.guideDurationHours * 3600 * 1000);
-    if (guideState.loadedDates.size > 0) {
-        const latestLoadedDateKey = Array.from(guideState.loadedDates).sort().reverse()[0];
-        const latestDate = new Date(latestLoadedDateKey);
-        latestDate.setHours(23,59,59,999);
-        maxTimeForNowLine = new Date(Math.max(maxTimeForNowLine.getTime(), latestDate.getTime()));
-    }
-
-
+    const nowValue = now.getTime(); // Use getTime() for UTC milliseconds
+    const guideEnd = new Date(guideStartUtc.getTime() + guideState.guideDurationHours * 3600 * 1000);
     const channelInfoColWidth = guideState.settings.channelColumnWidth;
 
-    if (nowValue >= absoluteTimelineStart.getTime() && nowValue <= maxTimeForNowLine.getTime()) {
-        const leftOffsetInScrollableArea = ((nowValue - absoluteTimelineStart.getTime()) / 3600000) * guideState.hourWidthPixels;
+    if (nowValue >= guideStartUtc.getTime() && nowValue <= guideEnd.getTime()) {
+        const leftOffsetInScrollableArea = ((nowValue - guideStartUtc.getTime()) / 3600000) * guideState.hourWidthPixels;
         nowLineEl.style.left = `${channelInfoColWidth + leftOffsetInScrollableArea}px`;
         nowLineEl.classList.remove('hidden');
         if (shouldScroll) {
@@ -469,16 +333,18 @@ const updateNowLine = (absoluteTimelineStart, shouldScroll = false) => {
                 let scrollLeft;
 
                 if (isMobile) {
+                    // Refined calculation to center the NOW line visually, accounting for the fixed channel column
                     scrollLeft = (channelInfoColWidth + leftOffsetInScrollableArea) - (UIElements.guideContainer.clientWidth / 2);
                 } else {
+                    // For desktop, position now line to the left of center, allowing to see upcoming programs
                     scrollLeft = leftOffsetInScrollableArea - (UIElements.guideContainer.clientWidth / 4);
                 }
                 
                 UIElements.guideContainer.scrollTo({
-                    left: Math.max(0, scrollLeft),
+                    left: Math.max(0, scrollLeft), // Ensure scroll position is not negative
                     behavior: 'smooth'
                 });
-            }, 500);
+            }, 500); // Increased delay for better rendering stability
         }        
     } else {
         nowLineEl.classList.add('hidden');
@@ -504,7 +370,7 @@ const updateNowLine = (absoluteTimelineStart, shouldScroll = false) => {
     });
 
     // Schedule next update for the "now" line
-    setTimeout(() => updateNowLine(absoluteTimelineStart, false), 60000);
+    setTimeout(() => updateNowLine(guideStartUtc, false), 60000);
 };
 
 // --- Filtering and Searching ---
@@ -543,9 +409,9 @@ const populateSourceFilter = () => {
 
 /**
  * Filters channels based on dropdowns and rerenders the guide.
- * @param {boolean} resetScroll - Indicates if the guide should reset its horizontal scroll.
+ * @param {boolean} isFirstLoad - Indicates if this is the initial load.
  */
-export function handleSearchAndFilter(resetScroll = false) {
+export function handleSearchAndFilter(isFirstLoad = false) {
     const searchTerm = UIElements.searchInput.value.trim();
     const selectedGroup = UIElements.groupFilter.value;
     const selectedSource = UIElements.sourceFilter.value;
@@ -592,7 +458,7 @@ export function handleSearchAndFilter(resetScroll = false) {
         UIElements.searchResultsContainer.classList.add('hidden');
     }
 
-    renderGuide(channelsForGuide, resetScroll);
+    renderGuide(channelsForGuide, isFirstLoad);
 };
 
 /**
@@ -648,25 +514,17 @@ const renderSearchResults = (channelResults, programResults) => {
  */
 const throttle = (func, limit) => {
     let inThrottle;
-    let lastFunc;
-    let lastRan;
     return function() {
-        const context = this;
         const args = arguments;
-        if (!lastRan) {
+        const context = this;
+        if (!inThrottle) {
             func.apply(context, args);
-            lastRan = Date.now();
-        } else {
-            clearTimeout(lastFunc);
-            lastFunc = setTimeout(function() {
-                if ((Date.now() - lastRan) >= limit) {
-                    func.apply(context, args);
-                    lastRan = Date.now();
-                }
-            }, limit - (Date.now() - lastRan));
+            inThrottle = true;
+            setTimeout(() => inThrottle = false, limit);
         }
     };
 };
+
 
 // --- Event Listeners ---
 
@@ -688,56 +546,29 @@ export function setupGuideEventListeners() {
         }
     });
 
-    // --- Date Navigation ---
-    UIElements.prevDayBtn.addEventListener('click', () => {
-        guideState.currentDate.setDate(guideState.currentDate.getDate() - 1);
-        handleSearchAndFilter(true); // Reset scroll on date change
-    });
-    UIElements.nowBtn.addEventListener('click', () => {
-        const now = new Date();
-        if (guideState.currentDate.toDateString() !== now.toDateString()) {
-            guideState.currentDate = now;
-        }
-        handleSearchAndFilter(true); // Reset scroll on "Now"
-    });
-    UIElements.nextDayBtn.addEventListener('click', () => {
-        guideState.currentDate.setDate(guideState.currentDate.getDate() + 1);
-        handleSearchAndFilter(true); // Reset scroll on date change
-    });
-    
-    // NEW: Jump to Date Picker
-    UIElements.jumpToDateBtn.addEventListener('click', () => {
-        UIElements.datePickerInput.value = formatDateToKey(guideState.currentDate); // Set initial value
-        UIElements.datePickerInput.showPicker(); // Open the native date picker
-    });
-
-    UIElements.datePickerInput.addEventListener('change', (e) => {
-        const selectedDate = new Date(e.target.value);
-        if (!isNaN(selectedDate.getTime())) { // Check for valid date
-            guideState.currentDate = selectedDate;
-            handleSearchAndFilter(true); // Re-render and reset scroll to start of selected day
-        }
-    });
-
-
     // --- Interactions (Clicks on the new grid) ---
+    // Event delegation is used here on the guideGrid, which is now efficient
+    // because only visible rows are in the DOM at any time.
     UIElements.guideGrid.addEventListener('click', (e) => {
         const favoriteStar = e.target.closest('.favorite-star');
         const channelInfo = e.target.closest('.channel-info');
         const progItem = e.target.closest('.programme-item');
 
         if (favoriteStar) {
-            e.stopPropagation();
+            e.stopPropagation(); // Prevent the channel click from firing
             const channelId = favoriteStar.dataset.channelId;
             const channel = guideState.channels.find(c => c.id === channelId);
             if (!channel) return;
 
+            // Toggle favorite state and update UI
             channel.isFavorite = !channel.isFavorite;
             favoriteStar.classList.toggle('favorited', channel.isFavorite);
 
+            // Update settings and save to server
             guideState.settings.favorites = guideState.channels.filter(c => c.isFavorite).map(c => c.id);
             saveUserSetting('favorites', guideState.settings.favorites);
 
+            // If currently viewing favorites, re-filter the list
             if (UIElements.groupFilter.value === 'favorites') {
                 handleSearchAndFilter();
             }
@@ -749,6 +580,7 @@ export function setupGuideEventListeners() {
         }
 
         if (progItem) {
+            // Populate and show the program details modal
             const channelId = progItem.dataset.channelId;
             const programData = {
                 title: progItem.dataset.progTitle,
@@ -756,7 +588,7 @@ export function setupGuideEventListeners() {
                 start: progItem.dataset.progStart,
                 stop: progItem.dataset.progStop,
                 channelId: channelId,
-                programId: progItem.dataset.progId,
+                programId: progItem.dataset.progId, // This now correctly retrieves the unique ID
             };
 
             const channelData = guideState.channels.find(c => c.id === channelId);
@@ -775,29 +607,27 @@ export function setupGuideEventListeners() {
                 closeModal(UIElements.programDetailsModal);
             };
 
+            // NEW: Notification button logic - Show button if program is not yet finished
             const now = new Date();
             const programStopTime = new Date(programData.stop).getTime();
             const isProgramRelevantForNotification = programStopTime > now.getTime();
             
+            // Pass programData object directly to findNotificationForProgram
+            // This now looks for PENDING notifications to decide the button state
             const notification = findNotificationForProgram(programData, channelId);
 
             if (isProgramRelevantForNotification) {
                 UIElements.programDetailsNotifyBtn.classList.remove('hidden');
-                // Ensure text and class changes don't cause layout shifts
-                if (notification) {
-                    UIElements.programDetailsNotifyBtn.textContent = 'Notification Set';
-                    UIElements.programDetailsNotifyBtn.classList.remove('bg-yellow-600', 'hover:bg-yellow-700');
-                    UIElements.programDetailsNotifyBtn.classList.add('bg-gray-600', 'hover:bg-gray-500');
-                } else {
-                    UIElements.programDetailsNotifyBtn.textContent = 'Notify Me';
-                    UIElements.programDetailsNotifyBtn.classList.remove('bg-gray-600', 'hover:bg-gray-500');
-                    UIElements.programDetailsNotifyBtn.classList.add('bg-yellow-600', 'hover:bg-yellow-700');
-                }
-                UIElements.programDetailsNotifyBtn.disabled = !notification && Notification.permission === 'denied';
+                UIElements.programDetailsNotifyBtn.textContent = notification ? 'Notification Set' : 'Notify Me';
+                UIElements.programDetailsNotifyBtn.disabled = !notification && Notification.permission === 'denied'; // Disable if notif already denied
+                UIElements.programDetailsNotifyBtn.classList.toggle('bg-yellow-600', !notification);
+                UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-yellow-700', !notification);
+                UIElements.programDetailsNotifyBtn.classList.toggle('bg-gray-600', !!notification);
+                UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-gray-500', !!notification);
 
                 UIElements.programDetailsNotifyBtn.onclick = async () => {
                     await addOrRemoveNotification({
-                        id: notification ? notification.id : null,
+                        id: notification ? notification.id : null, // Pass existing ID if updating/removing
                         channelId: programData.channelId,
                         channelName: channelName,
                         channelLogo: channelLogo,
@@ -805,20 +635,16 @@ export function setupGuideEventListeners() {
                         programStart: programData.start,
                         programStop: programData.stop,
                         programDesc: programData.desc,
-                        programId: programData.programId
+                        programId: programData.programId // Unique ID for program within channel
                     });
                     // Re-render button state after action
-                    const updatedNotification = findNotificationForProgram(programData, channelId);
-                    if (updatedNotification) {
-                        UIElements.programDetailsNotifyBtn.textContent = 'Notification Set';
-                        UIElements.programDetailsNotifyBtn.classList.remove('bg-yellow-600', 'hover:bg-yellow-700');
-                        UIElements.programDetailsNotifyBtn.classList.add('bg-gray-600', 'hover:bg-gray-500');
-                    } else {
-                        UIElements.programDetailsNotifyBtn.textContent = 'Notify Me';
-                        UIElements.programDetailsNotifyBtn.classList.remove('bg-gray-600', 'hover:bg-gray-500');
-                        UIElements.programDetailsNotifyBtn.classList.add('bg-yellow-600', 'hover:bg-yellow-700');
-                    }
-                    UIElements.programDetailsNotifyBtn.disabled = !updatedNotification && Notification.permission === 'denied';
+                    const updatedNotification = findNotificationForProgram(programData, channelId); // Re-check for pending notification
+                    UIElements.programDetailsNotifyBtn.textContent = updatedNotification ? 'Notification Set' : 'Notify Me';
+                    UIElements.programDetailsNotifyBtn.classList.toggle('bg-yellow-600', !updatedNotification);
+                    UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-yellow-700', !updatedNotification);
+                    UIElements.programDetailsNotifyBtn.classList.toggle('bg-gray-600', !!updatedNotification);
+                    UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-gray-500', !!updatedNotification);
+                    // Also re-render the guide to update the visual indicator
                     handleSearchAndFilter(false); 
                 };
             } else {
@@ -868,15 +694,7 @@ export function setupGuideEventListeners() {
             setTimeout(() => {
                 const programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programItem.dataset.progStart}"][data-channel-id="${programItem.dataset.channelId}"]`);
                 if(programElement) {
-                    // Recalculate offset based on potentially expanded timeline
-                    let minTime = new Date(guideState.currentDate);
-                    minTime.setHours(0,0,0,0);
-                    if (guideState.loadedDates.size > 0) {
-                        minTime = new Date(Math.min(minTime.getTime(), new Date(Array.from(guideState.loadedDates).sort()[0]).setHours(0,0,0,0)));
-                    }
-                    const programAbsoluteOffset = ((new Date(programItem.dataset.progStart).getTime() - minTime.getTime()) / 3600000) * guideState.hourWidthPixels;
-
-                    const scrollLeft = programAbsoluteOffset - (UIElements.guideContainer.clientWidth / 4);
+                    const scrollLeft = programElement.offsetLeft - (UIElements.guideContainer.clientWidth / 4);
                     UIElements.guideContainer.scrollTo({ left: scrollLeft, behavior: 'smooth' });
 
                     programElement.style.transition = 'outline 0.5s';
