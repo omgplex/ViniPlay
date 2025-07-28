@@ -63,8 +63,11 @@ export function cleanupMultiView() {
         grid.batchUpdate();
         try {
             grid.getGridItems().forEach(item => {
-                const widgetId = item.gridstackNode.id;
-                stopAndCleanupPlayer(widgetId);
+                // MODIFIED: Added a safety check to prevent crash if gridstackNode is missing on cleanup.
+                if (item && item.gridstackNode) {
+                    const widgetId = item.gridstackNode.id;
+                    stopAndCleanupPlayer(widgetId);
+                }
             });
             grid.removeAll();
         } finally {
@@ -75,6 +78,7 @@ export function cleanupMultiView() {
     activePlayerId = null;
     channelSelectorCallback = null;
 }
+
 
 /**
  * Adjusts the grid's background pattern size to match the current column layout.
@@ -537,15 +541,14 @@ async function saveLayout(e) {
         return;
     }
 
-    const layoutData = grid.save(false);
-    layoutData.forEach(widget => {
-        const el = document.getElementById(widget.id);
-        if (el) {
-            widget.channelId = el.dataset.channelId;
-            widget.channelName = el.dataset.channelName;
-            widget.channelLogo = el.dataset.channelLogo;
-        }
-    });
+    // MODIFIED: Only save position and dimension data, not channel info.
+    const layoutData = grid.save(false).map(w => ({
+        x: w.x,
+        y: w.y,
+        w: w.w,
+        h: w.h,
+        id: w.id // Keep the ID to maintain widget consistency
+    }));
 
     const res = await apiFetch('/api/multiview/layouts', {
         method: 'POST',
@@ -557,9 +560,10 @@ async function saveLayout(e) {
         showNotification('Layout saved successfully!');
         closeModal(UIElements.saveLayoutModal);
         UIElements.saveLayoutForm.reset();
-        loadLayouts();
+        loadLayouts(); // Refresh the dropdown with the new layout
     }
 }
+
 
 /**
  * Loads a selected layout from the dropdown onto the grid.
@@ -581,9 +585,9 @@ function loadSelectedLayout() {
             cleanupMultiView();
             grid.batchUpdate();
             try {
+                // MODIFIED: Load layout with empty players. Channel data is no longer stored in the layout.
                 layout.layout_data.forEach(widgetData => {
-                    const channel = guideState.channels.find(c => c.id === widgetData.channelId);
-                    addPlayerWidget(channel, widgetData);
+                    addPlayerWidget(null, widgetData); // Pass null for channel
                 });
             } finally {
                 grid.batchUpdate(false);
