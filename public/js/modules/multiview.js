@@ -168,22 +168,148 @@ function addPlayerWidget(channel = null, layout = {}) {
             <video class="hidden w-full h-full object-contain" muted></video>
         </div>
     `;
-    return widgetHTML;
+    // newWidgetEl is the .grid-stack-item that Gridstack creates
+    const newWidgetEl = grid.addWidget({
+        id: widgetId, // Gridstack wants an ID on the grid-stack-item itself
+        content: widgetHTML, // Pass HTML string to Gridstack
+        w: layout.w || 4,
+        h: layout.h || 3,
+        x: layout.x,
+        y: layout.y
+    }); 
+
+    // Find the content div inside the newly added widget and attach listeners
+    // This is the Gridstack-managed .grid-stack-item-content
+    const widgetContentEl = newWidgetEl.querySelector('.grid-stack-item-content');
+    if (widgetContentEl) {
+        attachWidgetEventListeners(widgetContentEl, widgetId);
+    }
+
+    if (channel) {
+        playChannelInWidget(widgetId, channel, widgetContentEl);
+    }
+    return newWidgetEl;
 }
+
+/**
+ * Removes the most recently added player from the grid.
+ */
+function removeLastPlayer() {
+    const items = grid.getGridItems();
+    if (items.length > 0) {
+        // Sort items by creation time (using timestamp from ID) to be sure
+        const sortedItems = items.sort((a, b) => {
+            const timeA = parseInt((a.gridstackNode.id || '0').split('-')[1]);
+            const timeB = parseInt((b.gridstackNode.id || '0').split('-')[1]);
+            return timeA - timeB;
+        });
+        const lastItem = sortedItems[sortedItems.length - 1];
+        if (lastItem) {
+            // The widgetId is stored on the player-placeholder now, not gridstackNode directly
+            // We need to retrieve it from the DOM element that Gridstack holds
+            const playerPlaceholder = lastItem.querySelector('.player-placeholder');
+            const widgetId = playerPlaceholder ? playerPlaceholder.id : lastItem.gridstackNode.id; // Fallback if not found
+            
+            stopAndCleanupPlayer(widgetId);
+            grid.removeWidget(lastItem);
+            console.log(`[MultiView] Removed last player: ${widgetId}`);
+        }
+    } else {
+        showNotification("No players to remove.", false);
+    }
+}
+
+
+/**
+ * Applies a predefined layout to the player grid.
+ * This function now CLEARS the grid and creates empty players in the specified layout.
+ * @param {'auto'|'2x2'|'1x3'} layoutName - The name of the layout to apply.
+ */
+function applyPresetLayout(layoutName) {
+    // Clear the current grid first, after confirmation
+    showConfirm(
+        `Apply '${layoutName}' Layout?`,
+        "This will stop all current streams and apply the new layout. Are you sure?",
+        () => {
+            cleanupMultiView(); // Clears all players and the grid
+            grid.batchUpdate();
+            try {
+                let layout = [];
+                if (layoutName === '2x2') {
+                    layout = [
+                        {x: 0, y: 0, w: 6, h: 5}, {x: 6, y: 0, w: 6, h: 5},
+                        {x: 0, y: 5, w: 6, h: 5}, {x: 6, y: 5, w: 6, h: 5}
+                    ];
+                } else if (layoutName === '1x3') {
+                     layout = [
+                        {x: 0, y: 0, w: 8, h: 8}, // Large player
+                        {x: 8, y: 0, w: 4, h: 2.66}, {x: 8, y: 2.66, w: 4, h: 2.66}, {x: 8, y: 5.32, w: 4, h: 2.66}
+                     ];
+                } else if (layoutName === 'auto') {
+                    addPlayerWidget();
+                    return;
+                }
+
+                // Add empty widgets based on the chosen layout
+                layout.forEach(widgetLayout => {
+                    addPlayerWidget(null, widgetLayout);
+                });
+
+            } finally {
+                grid.batchUpdate(false);
+            }
+        }
+    );
+}
+
+/**
+ * Creates the inner HTML for a new player widget.
+ * @param {string} widgetId - The unique ID for this widget.
+ * @returns {string} The HTML content string for the widget.
+ */
+// This function is now correctly placed to return only the inner HTML Gridstack expects
+// It was previously misidentified in the user's provided snippet as "deleted"
+// but it's essential for creating the player content.
+/*
+function createPlayerWidgetHTML(widgetId) {
+    // This function now returns a simple string, not a DOM element.
+    const content = `
+        <div class="player-header">
+            <span class="player-header-title">No Channel</span>
+            <div class="player-controls">
+                <button class="select-channel-btn" title="Select Channel"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg></button>
+                <button class="mute-btn" title="Mute"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" id="mute-icon-${widgetId}"><path d="M5.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h3.5a.75.75 0 00.75-.75V3.75A.75.75 0 009.25 3h-3.5zM14.25 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h3.5a.75.75 0 00.75-.75V3.75a.75.75 0 00-.75-.75h-3.5z"></path></svg></button>
+                <input type="range" min="0" max="1" step="0.05" value="0.5" class="volume-slider">
+                <button class="fullscreen-btn" title="Fullscreen"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M3 8.75A.75.75 0 013.75 8h4.5a.75.75 0 010 1.5h-3.25v3.25a.75.75 0 01-1.5 0V8.75zM11.25 3a.75.75 0 01.75.75v3.25h3.25a.75.75 0 010 1.5h-4.5a.75.75 0 01-.75-.75V3.75A.75.75 0 0111.25 3zM8.75 17a.75.75 0 01-.75-.75v-3.25H4.75a.75.75 0 010-1.5h4.5a.75.75 0 01.75.75v4.5a.75.75 0 01-.75.75zM17 11.25a.75.75 0 01-.75.75h-3.25v3.25a.75.75 0 01-1.5 0v-4.5a.75.75 0 01.75-.75h4.5a.75.75 0 01.75.75z"></path></svg></button>
+                <button class="stop-btn" title="Stop Channel"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2H5z"></path></svg></button>
+                <button class="remove-widget-btn" title="Remove Player"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" /></svg></button>
+            </div>
+        </div>
+        <div class="player-body">
+            <div class="player-placeholder">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <span>Click to Select Channel</span>
+            </div>
+            <video class="hidden w-full h-full object-contain" muted></video>
+        </div>
+    `;
+    return content;
+}
+*/ // End of original createPlayerWidgetHTML, which is now replaced by the inlined content above
 
 /**
  * Attaches event listeners to the controls within a player widget.
  * @param {HTMLElement} widgetContentEl - The widget's .grid-stack-item-content element.
- * @param {string} widgetId - The unique ID of the widget.
+ * @param {string} widgetId - The unique ID of the widget (now assigned to player-placeholder).
  */
 function attachWidgetEventListeners(widgetContentEl, widgetId) {
-    // The widgetId should now be on the .player-placeholder div,
-    // not on grid-stack-item-content. So we need to query for it.
+    // The widgetId is now on the .player-placeholder div, so query for it correctly.
     const playerPlaceholderEl = widgetContentEl.querySelector(`.player-placeholder[id="${widgetId}"]`);
     const videoEl = widgetContentEl.querySelector('video');
     const gridStackItem = widgetContentEl.closest('.grid-stack-item'); // This still points to the overall item
 
     const openSelector = () => {
+        // Callback needs the gridstackItemContentEl as the parent container
         channelSelectorCallback = (channel) => playChannelInWidget(widgetId, channel, widgetContentEl);
         populateChannelSelector();
         openModal(UIElements.multiviewChannelSelectorModal);
@@ -196,7 +322,6 @@ function attachWidgetEventListeners(widgetContentEl, widgetId) {
     } else {
         console.warn(`[MultiView] Player placeholder with ID ${widgetId} not found for click event.`);
     }
-
 
     widgetContentEl.querySelector('.stop-btn').addEventListener('click', (e) => {
         e.stopPropagation();
@@ -214,7 +339,7 @@ function attachWidgetEventListeners(widgetContentEl, widgetId) {
     widgetContentEl.querySelector('.mute-btn').addEventListener('click', (e) => {
         e.stopPropagation();
         videoEl.muted = !videoEl.muted;
-        const muteIcon = document.getElementById(`mute-icon-${widgetId}`);
+        const muteIcon = document.getElementById(`mute-icon-${widgetId}`); // ID is on player-placeholder
         if (muteIcon) {
             muteIcon.innerHTML = videoEl.muted
                 ? `<path fill-rule="evenodd" d="M10 1a.75.75 0 00-1.06.04L4.854 5.146A.75.75 0 004.5 5.5v9a.75.75 0 00.22.53l5.43 5.43a.75.75 0 001.28-.53V1.5A.75.75 0 0010 1zM8.5 6.54v6.92L5.25 10.21V5.79L8.5 6.54zM12.5 5a.75.75 0 01.75.75v8.5a.75.75 0 01-1.5 0v-8.5a.75.75 0 01.75-.75zM15.5 5a.75.75 0 01.75.75v8.5a.75.75 0 01-1.5 0v-8.5a.75.75 0 01.75-.75z" clip-rule="evenodd" />`
@@ -244,27 +369,25 @@ function attachWidgetEventListeners(widgetContentEl, widgetId) {
 
 /**
  * Sets the currently active player, highlighting it and handling audio.
- * @param {string} widgetId - The ID of the widget to set as active.
+ * @param {string} widgetId - The ID of the player-placeholder to set as active.
  */
 function setActivePlayer(widgetId) {
     if (activePlayerId === widgetId) return;
 
-    // Deactivate previous player
-    if (activePlayerId) {
-        // Find the actual grid-stack-item-content for the old active ID
-        const oldActiveWidgetContent = document.querySelector(`.grid-stack-item-content[id="${activePlayerId}"]`) ||
-                                      document.querySelector(`.grid-stack-item-content .player-placeholder[id="${activePlayerId}"]`)?.closest('.grid-stack-item-content');
-        if (oldActiveWidgetContent) {
-            oldActiveWidgetContent.classList.remove('active-player');
-            const oldVideo = oldActiveWidgetContent.querySelector('video');
-            if (oldVideo) oldVideo.muted = true;
-        }
+    // Find the actual grid-stack-item-content elements for old and new.
+    // The activePlayerId is the ID of the player-placeholder.
+    const oldActivePlaceholder = document.getElementById(activePlayerId);
+    const oldActiveWidgetContent = oldActivePlaceholder ? oldActivePlaceholder.closest('.grid-stack-item-content') : null;
+    
+    if (oldActiveWidgetContent) {
+        oldActiveWidgetContent.classList.remove('active-player');
+        const oldVideo = oldActiveWidgetContent.querySelector('video');
+        if (oldVideo) oldVideo.muted = true;
     }
     
-    // Activate new player
-    // Find the actual grid-stack-item-content for the new active ID
-    const newActiveWidgetContent = document.querySelector(`.grid-stack-item-content[id="${widgetId}"]`) ||
-                                   document.querySelector(`.grid-stack-item-content .player-placeholder[id="${widgetId}"]`)?.closest('.grid-stack-item-content');
+    const newActivePlaceholder = document.getElementById(widgetId);
+    const newActiveWidgetContent = newActivePlaceholder ? newActivePlaceholder.closest('.grid-stack-item-content') : null;
+
     if (newActiveWidgetContent) {
         newActiveWidgetContent.classList.add('active-player');
         const videoEl = newActiveWidgetContent.querySelector('video');
@@ -277,18 +400,17 @@ function setActivePlayer(widgetId) {
 
 /**
  * Starts playing a selected channel in a specific player widget.
- * @param {string} widgetId - The ID of the target widget.
+ * @param {string} widgetId - The ID of the target player-placeholder.
  * @param {object} channel - The channel object with id, name, and url.
  * @param {HTMLElement} gridstackItemContentEl - The player widget's actual content container (.grid-stack-item-content).
  */
 function playChannelInWidget(widgetId, channel, gridstackItemContentEl) {
     if (!gridstackItemContentEl) return;
 
-    // The widgetId now refers to the player-placeholder, but the content is relative to gridstackItemContentEl
     stopAndCleanupPlayer(widgetId, false); // Stop previous stream if any
 
     const videoEl = gridstackItemContentEl.querySelector('video');
-    const playerPlaceholderEl = gridstackItemContentEl.querySelector('.player-placeholder');
+    const playerPlaceholderEl = gridstackItemContentEl.querySelector(`.player-placeholder[id="${widgetId}"]`); // Get specific placeholder
     const titleEl = gridstackItemContentEl.querySelector('.player-header-title');
 
     titleEl.textContent = channel.name;
@@ -298,7 +420,9 @@ function playChannelInWidget(widgetId, channel, gridstackItemContentEl) {
     gridstackItemContentEl.dataset.channelName = channel.name;
 
     videoEl.classList.remove('hidden');
-    playerPlaceholderEl.classList.add('hidden'); // Hide the placeholder
+    if (playerPlaceholderEl) {
+        playerPlaceholderEl.classList.add('hidden'); // Hide the specific placeholder
+    }
 
     const profileId = guideState.settings.activeStreamProfileId;
     const userAgentId = guideState.settings.activeUserAgentId;
@@ -320,7 +444,7 @@ function playChannelInWidget(widgetId, channel, gridstackItemContentEl) {
             url: streamUrlToPlay
         });
         
-        players.set(widgetId, player); // Map widgetId to player instance
+        players.set(widgetId, player); // Map player-placeholder's widgetId to player instance
         player.attachMediaElement(videoEl);
         player.load();
         player.play().catch(err => {
@@ -338,7 +462,7 @@ function playChannelInWidget(widgetId, channel, gridstackItemContentEl) {
 
 /**
  * Stops the stream and cleans up resources for a specific player widget.
- * @param {string} widgetId - The ID of the widget.
+ * @param {string} widgetId - The ID of the player-placeholder.
  * @param {boolean} resetUI - If true, resets the widget's UI to the placeholder state.
  */
 function stopAndCleanupPlayer(widgetId, resetUI = true) {
@@ -353,18 +477,22 @@ function stopAndCleanupPlayer(widgetId, resetUI = true) {
     }
 
     if (resetUI) {
-        // Find the actual grid-stack-item-content that contains this widgetId
-        const widgetContentEl = document.querySelector(`.grid-stack-item-content .player-placeholder[id="${widgetId}"]`)?.closest('.grid-stack-item-content');
+        // Find the player-placeholder element directly by its ID
+        const playerPlaceholderEl = document.getElementById(widgetId);
+        // Then find its containing grid-stack-item-content
+        const widgetContentEl = playerPlaceholderEl ? playerPlaceholderEl.closest('.grid-stack-item-content') : null;
 
         if (widgetContentEl) {
             const videoEl = widgetContentEl.querySelector('video');
-            const playerPlaceholderEl = widgetContentEl.querySelector('.player-placeholder');
             
             videoEl.src = "";
             videoEl.removeAttribute('src');
             videoEl.load();
             videoEl.classList.add('hidden');
-            playerPlaceholderEl.classList.remove('hidden'); // Show the placeholder
+            
+            if (playerPlaceholderEl) {
+                playerPlaceholderEl.classList.remove('hidden'); // Show the placeholder
+            }
             widgetContentEl.querySelector('.player-header-title').textContent = 'No Channel';
             
             // Clear data attributes as well
@@ -475,7 +603,9 @@ async function saveLayout(e) {
         y: w.y,
         w: w.w,
         h: w.h,
-        id: w.id // Keep the ID to maintain widget consistency
+        // The widget.id from Gridstack is from grid-stack-item, not player-placeholder.
+        // We need to retrieve the actual player-placeholder ID
+        id: w.el.querySelector('.player-placeholder')?.id || w.id // Ensure we save the player-placeholder's ID
     }));
 
     const res = await apiFetch('/api/multiview/layouts', {
