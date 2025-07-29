@@ -223,78 +223,81 @@ function removeLastPlayer() {
 function applyPresetLayout(layoutName) {
     const numPlayers = grid.getGridItems().length;
 
-    // For 'auto' layout, if no players exist, we add one. Otherwise, we ask for confirmation.
+    // Special case for 'auto' layout: if the grid is empty, it should just add one player.
     if (layoutName === 'auto' && numPlayers === 0) {
         addPlayerWidget();
         return;
     }
 
-    if (numPlayers === 0) {
-        showNotification(`Add some players first to apply the '${layoutName}' layout.`, false);
-        return;
-    }
+    // The core logic for creating the layout.
+    const createLayout = () => {
+        cleanupMultiView(); // Clears any existing players and the grid.
 
-    // This version of the function is destructive: it clears the board and creates a new layout of empty players.
-    showConfirm(
-        `Apply '${layoutName}' Layout?`,
-        "This will stop all current streams and apply the new layout with empty players. Are you sure?",
-        () => {
-            cleanupMultiView(); // Clears all players and the grid
-            
-            let layout = [];
+        let layout = [];
 
-            if (layoutName === 'auto') {
-                let cols, rows;
-                if (numPlayers <= 1) { cols = 1; rows = 1; }
-                else if (numPlayers === 2) { cols = 2; rows = 1; }
-                else if (numPlayers === 3) { cols = 3; rows = 1; }
-                else if (numPlayers === 4) { cols = 2; rows = 2; }
-                else if (numPlayers >= 5 && numPlayers <= 6) { cols = 3; rows = 2; }
-                else { cols = 3; rows = 3; } // For 7-9 players
+        if (layoutName === 'auto') {
+            // This part only runs if numPlayers > 0 because of the check above.
+            let cols, rows;
+            if (numPlayers <= 1) { cols = 1; rows = 1; }
+            else if (numPlayers === 2) { cols = 2; rows = 1; }
+            else if (numPlayers === 3) { cols = 3; rows = 1; }
+            else if (numPlayers === 4) { cols = 2; rows = 2; }
+            else if (numPlayers >= 5 && numPlayers <= 6) { cols = 3; rows = 2; }
+            else { cols = 3; rows = 3; } // For 7-9 players
 
-                const widgetWidth = Math.floor(12 / cols);
-                const totalGridHeight = 9; // Use a consistent height that divides well
-                const widgetHeight = Math.floor(totalGridHeight / rows);
+            const widgetWidth = Math.floor(12 / cols);
+            const totalGridHeight = 9;
+            const widgetHeight = Math.floor(totalGridHeight / rows);
 
-                for (let i = 0; i < numPlayers; i++) {
-                    const row = Math.floor(i / cols);
-                    const col = i % cols;
-                    layout.push({
-                        x: col * widgetWidth,
-                        y: row * widgetHeight,
-                        w: widgetWidth,
-                        h: widgetHeight
-                    });
-                }
-
-            } else if (layoutName === '2x2') {
-                layout = [
-                    {x: 0, y: 0, w: 6, h: 5}, {x: 6, y: 0, w: 6, h: 5},
-                    {x: 0, y: 5, w: 6, h: 5}, {x: 6, y: 5, w: 6, h: 5}
-                ];
-            } else if (layoutName === '1x3') {
-                 // Corrected heights and positions to prevent overlap
-                 const largeHeight = 9;
-                 const smallHeight = 3;
-                 layout = [
-                    { x: 0, y: 0, w: 8, h: largeHeight },      // Large player
-                    { x: 8, y: 0, w: 4, h: smallHeight },        // Top small
-                    { x: 8, y: smallHeight, w: 4, h: smallHeight },    // Middle small
-                    { x: 8, y: smallHeight * 2, w: 4, h: smallHeight } // Bottom small
-                 ];
-            }
-
-            grid.batchUpdate();
-            try {
-                // Add empty widgets based on the chosen layout
-                layout.forEach(widgetLayout => {
-                    addPlayerWidget(null, widgetLayout);
+            for (let i = 0; i < numPlayers; i++) {
+                const row = Math.floor(i / cols);
+                const col = i % cols;
+                layout.push({
+                    x: col * widgetWidth,
+                    y: row * widgetHeight,
+                    w: widgetWidth,
+                    h: widgetHeight
                 });
-            } finally {
-                grid.commit();
             }
+        } else if (layoutName === '2x2') {
+            layout = [
+                {x: 0, y: 0, w: 6, h: 5}, {x: 6, y: 0, w: 6, h: 5},
+                {x: 0, y: 5, w: 6, h: 5}, {x: 6, y: 5, w: 6, h: 5}
+            ];
+        } else if (layoutName === '1x3') {
+             // Corrected heights and positions to prevent overlap
+             const largeHeight = 9;
+             const smallHeight = 3;
+             layout = [
+                { x: 0, y: 0, w: 8, h: largeHeight },      // Large player
+                { x: 8, y: 0, w: 4, h: smallHeight },        // Top small
+                { x: 8, y: smallHeight, w: 4, h: smallHeight },    // Middle small
+                { x: 8, y: smallHeight * 2, w: 4, h: smallHeight } // Bottom small
+             ];
         }
-    );
+
+        grid.batchUpdate();
+        try {
+            layout.forEach(widgetLayout => {
+                addPlayerWidget(null, widgetLayout);
+            });
+        } finally {
+            grid.commit();
+        }
+    };
+
+    // If there are existing players, ask for confirmation before clearing them.
+    if (numPlayers > 0) {
+        showConfirm(
+            `Apply '${layoutName}' Layout?`,
+            "This will stop all current streams and apply the new layout with empty players. Are you sure?",
+            createLayout // The callback function to run on confirmation
+        );
+    } else {
+        // If the grid is empty, just create the layout directly without confirmation.
+        // This handles the user's request for 2x2 and 1x3 on an empty grid.
+        createLayout();
+    }
 }
 
 /**
