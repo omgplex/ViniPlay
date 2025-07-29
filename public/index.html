@@ -316,17 +316,20 @@
         .player-controls button:hover { color: white; background-color: #4b5563; }
         .player-controls .volume-slider { width: 60px; height: 4px; accent-color: #3b82f6; }
 
-        /* MODIFIED: Added flex-direction: column to make .player-placeholder fill height */
+        /* MODIFIED: Force player-body to fill vertical space */
         .player-body {
             flex-grow: 1;
+            flex-shrink: 0; /* ADDED: Prevent shrinking below content, combined with flex-grow it's flex: 1 0 auto; */
+            flex-basis: auto; /* ADDED: Explicitly set basis to auto, combined with flex-grow and flex-shrink it's flex: 1 0 auto; */
+            height: auto; /* Ensure flex-grow dominates */
             position: relative;
             background-color: black;
             display: flex;
-            flex-direction: column; /* ADDED: This ensures the main axis is vertical */
+            flex-direction: column;
             align-items: center;
             justify-content: center;
         }
-        /* MODIFIED: Added flex-grow, min-height, flex-shrink, and overflow to .player-placeholder */
+        /* MODIFIED: Force player-placeholder to fill vertical space within player-body */
         .player-placeholder {
             display: flex;
             flex-direction: column;
@@ -336,11 +339,12 @@
             color: #6b7280; /* gray-500 */
             cursor: pointer;
             width: 100%;
-            height: 100%;
-            flex-grow: 1; /* ADDED: Allows the placeholder to grow and fill available vertical space */
-            flex-shrink: 0; /* ADDED: Prevents the placeholder from shrinking below its desired size */
-            min-height: 0; /* ADDED: Prevents content from forcing a minimum height */
-            overflow: hidden; /* ADDED: Clips content if it overflows, ensuring the element adheres to its size */
+            height: auto; /* Ensure flex-grow dominates */
+            flex-grow: 1;
+            flex-shrink: 0; /* ADDED: Prevent shrinking below content, combined with flex-grow it's flex: 1 0 auto; */
+            flex-basis: auto; /* ADDED: Explicitly set basis to auto, combined with flex-grow and flex-shrink it's flex: 1 0 auto; */
+            min-height: 0;
+            overflow: hidden;
             transition: background-color 0.2s;
         }
         .player-placeholder:hover {
