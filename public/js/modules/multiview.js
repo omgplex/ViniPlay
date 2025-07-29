@@ -192,6 +192,7 @@ function addPlayerWidget(channel = null, layout = {}) {
 function removeLastPlayer() {
     const items = grid.getGridItems();
     if (items.length > 0) {
+        // Sort items by creation time (using timestamp from ID) to be sure
         const sortedItems = items.sort((a, b) => {
             const timeA = parseInt((a.gridstackNode.id || '0').split('-')[1]);
             const timeB = parseInt((b.gridstackNode.id || '0').split('-')[1]);
@@ -199,8 +200,10 @@ function removeLastPlayer() {
         });
         const lastItem = sortedItems[sortedItems.length - 1];
         if (lastItem) {
+            // The widgetId is stored on the player-placeholder now, not gridstackNode directly
+            // We need to retrieve it from the DOM element that Gridstack holds
             const playerPlaceholder = lastItem.querySelector('.player-placeholder');
-            const widgetId = playerPlaceholder ? playerPlaceholder.id : lastItem.gridstackNode.id;
+            const widgetId = playerPlaceholder ? playerPlaceholder.id : lastItem.gridstackNode.id; // Fallback if not found
             
             stopAndCleanupPlayer(widgetId);
             grid.removeWidget(lastItem);
@@ -211,88 +214,123 @@ function removeLastPlayer() {
     }
 }
 
+
 /**
- * Applies a predefined or calculated layout to the existing player widgets.
- * This function is non-destructive and preserves the currently playing streams.
+ * Applies a predefined layout to the player grid.
+ * This function now CLEARS the grid and creates empty players in the specified layout.
  * @param {'auto'|'2x2'|'1x3'} layoutName - The name of the layout to apply.
  */
 function applyPresetLayout(layoutName) {
-    const items = grid.getGridItems();
-    const numPlayers = items.length;
+    const numPlayers = grid.getGridItems().length;
 
-    if (numPlayers === 0) {
-        showNotification("Add some players before applying a layout.", false);
+    // For 'auto' layout, if no players exist, we add one. Otherwise, we ask for confirmation.
+    if (layoutName === 'auto' && numPlayers === 0) {
+        addPlayerWidget();
         return;
     }
 
-    let layout = [];
-    let targetPlayerCount = numPlayers;
-
-    if (layoutName === 'auto') {
-        let cols, rows;
-        if (numPlayers <= 1) { cols = 1; rows = 1; }
-        else if (numPlayers === 2) { cols = 2; rows = 1; }
-        else if (numPlayers === 3) { cols = 3; rows = 1; }
-        else if (numPlayers === 4) { cols = 2; rows = 2; }
-        else if (numPlayers >= 5 && numPlayers <= 6) { cols = 3; rows = 2; }
-        else { cols = 3; rows = 3; } // For 7-9 players
-
-        const widgetWidth = Math.floor(12 / cols);
-        const totalGridHeight = 8; // Target a total height of 8 cells
-        const widgetHeight = Math.floor(totalGridHeight / rows);
-
-        for (let i = 0; i < numPlayers; i++) {
-            const row = Math.floor(i / cols);
-            const col = i % cols;
-            layout.push({
-                x: col * widgetWidth,
-                y: row * widgetHeight,
-                w: widgetWidth,
-                h: widgetHeight
-            });
-        }
-    } else if (layoutName === '2x2') {
-        targetPlayerCount = 4;
-        if (numPlayers < targetPlayerCount) {
-             showNotification(`You need at least ${targetPlayerCount} players for the 2x2 layout.`, false, 4000);
-             return;
-        }
-        layout = [
-            {x: 0, y: 0, w: 6, h: 4}, {x: 6, y: 0, w: 6, h: 4},
-            {x: 0, y: 4, w: 6, h: 4}, {x: 6, y: 4, w: 6, h: 4}
-        ];
-    } else if (layoutName === '1x3') {
-        targetPlayerCount = 4;
-        if (numPlayers < targetPlayerCount) {
-            showNotification(`You need at least ${targetPlayerCount} players for the 1x3 layout.`, false, 4000);
-            return;
-        }
-        const largeHeight = 8;
-        const smallHeight1 = 3;
-        const smallHeight2 = 2;
-        const smallHeight3 = 3;
-        layout = [
-            { x: 0, y: 0, w: 8, h: largeHeight }, // Large player
-            { x: 8, y: 0, w: 4, h: smallHeight1 }, // Top small
-            { x: 8, y: smallHeight1, w: 4, h: smallHeight2 }, // Middle small
-            { x: 8, y: smallHeight1 + smallHeight2, w: 4, h: smallHeight3 } // Bottom small
-        ];
+    if (numPlayers === 0) {
+        showNotification(`Add some players first to apply the '${layoutName}' layout.`, false);
+        return;
     }
 
-    console.log(`[MultiView] Applying layout '${layoutName}'. Found ${numPlayers} players. Target layout size: ${layout.length}`);
-    grid.batchUpdate();
-    try {
-        const itemsToUpdate = items.slice(0, targetPlayerCount);
-        itemsToUpdate.forEach((item, index) => {
-            if (layout[index]) {
-                grid.update(item, layout[index]);
+    // This version of the function is destructive: it clears the board and creates a new layout of empty players.
+    showConfirm(
+        `Apply '${layoutName}' Layout?`,
+        "This will stop all current streams and apply the new layout with empty players. Are you sure?",
+        () => {
+            cleanupMultiView(); // Clears all players and the grid
+            
+            let layout = [];
+
+            if (layoutName === 'auto') {
+                let cols, rows;
+                if (numPlayers <= 1) { cols = 1; rows = 1; }
+                else if (numPlayers === 2) { cols = 2; rows = 1; }
+                else if (numPlayers === 3) { cols = 3; rows = 1; }
+                else if (numPlayers === 4) { cols = 2; rows = 2; }
+                else if (numPlayers >= 5 && numPlayers <= 6) { cols = 3; rows = 2; }
+                else { cols = 3; rows = 3; } // For 7-9 players
+
+                const widgetWidth = Math.floor(12 / cols);
+                const totalGridHeight = 9; // Use a consistent height that divides well
+                const widgetHeight = Math.floor(totalGridHeight / rows);
+
+                for (let i = 0; i < numPlayers; i++) {
+                    const row = Math.floor(i / cols);
+                    const col = i % cols;
+                    layout.push({
+                        x: col * widgetWidth,
+                        y: row * widgetHeight,
+                        w: widgetWidth,
+                        h: widgetHeight
+                    });
+                }
+
+            } else if (layoutName === '2x2') {
+                layout = [
+                    {x: 0, y: 0, w: 6, h: 5}, {x: 6, y: 0, w: 6, h: 5},
+                    {x: 0, y: 5, w: 6, h: 5}, {x: 6, y: 5, w: 6, h: 5}
+                ];
+            } else if (layoutName === '1x3') {
+                 // Corrected heights and positions to prevent overlap
+                 const largeHeight = 9;
+                 const smallHeight = 3;
+                 layout = [
+                    { x: 0, y: 0, w: 8, h: largeHeight },      // Large player
+                    { x: 8, y: 0, w: 4, h: smallHeight },        // Top small
+                    { x: 8, y: smallHeight, w: 4, h: smallHeight },    // Middle small
+                    { x: 8, y: smallHeight * 2, w: 4, h: smallHeight } // Bottom small
+                 ];
             }
-        });
-    } finally {
-        grid.commit();
-    }
+
+            grid.batchUpdate();
+            try {
+                // Add empty widgets based on the chosen layout
+                layout.forEach(widgetLayout => {
+                    addPlayerWidget(null, widgetLayout);
+                });
+            } finally {
+                grid.commit();
+            }
+        }
+    );
 }
 
+/**
+ * Creates the inner HTML for a new player widget.
+ * @param {string} widgetId - The unique ID for this widget.
+ * @returns {string} The HTML content string for the widget.
+ */
+// This function is now correctly placed to return only the inner HTML Gridstack expects
+// It was previously misidentified in the user's provided snippet as "deleted"
+// but it's essential for creating the player content.
+/*
+function createPlayerWidgetHTML(widgetId) {
+    // This function now returns a simple string, not a DOM element.
+    const content = `
+        <div class="player-header">
+            <span class="player-header-title">No Channel</span>
+            <div class="player-controls">
+                <button class="select-channel-btn" title="Select Channel"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg></button>
+                <button class="mute-btn" title="Mute"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" id="mute-icon-${widgetId}"><path d="M5.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h3.5a.75.75 0 00.75-.75V3.75A.75.75 0 009.25 3h-3.5zM14.25 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h3.5a.75.75 0 00.75-.75V3.75a.75.75 0 00-.75-.75h-3.5z"></path></svg></button>
+                <input type="range" min="0" max="1" step="0.05" value="0.5" class="volume-slider">
+                <button class="fullscreen-btn" title="Fullscreen"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M3 8.75A.75.75 0 013.75 8h4.5a.75.75 0 010 1.5h-3.25v3.25a.75.75 0 01-1.5 0V8.75zM11.25 3a.75.75 0 01.75.75v3.25h3.25a.75.75 0 010 1.5h-4.5a.75.75 0 01-.75-.75V3.75A.75.75 0 0111.25 3zM8.75 17a.75.75 0 01-.75-.75v-3.25H4.75a.75.75 0 010-1.5h4.5a.75.75 0 01.75.75v4.5a.75.75 0 01-.75.75zM17 11.25a.75.75 0 01-.75.75h-3.25v3.25a.75.75 0 01-1.5 0v-4.5a.75.75 0 01.75-.75h4.5a.75.75 0 01.75.75z"></path></svg></button>
+                <button class="stop-btn" title="Stop Channel"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2H5z"></path></svg></button>
+                <button class="remove-widget-btn" title="Remove Player"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" /></svg></button>
+            </div>
+        </div>
+        <div class="player-body">
+            <div class="player-placeholder">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <span>Click to Select Channel</span>
+            </div>
+            <video class="hidden w-full h-full object-contain" muted></video>
+        </div>
+    `;
+    return content;
+}
+*/ // End of original createPlayerWidgetHTML, which is now replaced by the inlined content above
 
 /**
  * Attaches event listeners to the controls within a player widget.
