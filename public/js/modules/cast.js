@@ -5,7 +5,8 @@
 
 import { showNotification } from './ui.js';
 import { UIElements } from './state.js';
-// NEW: Import stopAndCleanupPlayer from player.js
+import { apiFetch } from './api.js'; // NEW: Import apiFetch
+// NEW: Import stopAndCleanupPlayer from player.js (aliased for clarity)
 import { stopAndCleanupPlayer as stopLocalPlayer } from './player.js';
 
 const APPLICATION_ID = 'CC1AD845'; // Default Media Receiver App ID
@@ -18,7 +19,7 @@ export const castState = {
     playerController: null,
     currentMedia: null,
     localPlayerState: {
-        streamUrl: null,
+        streamUrl: null, // This is the base stream URL from player.js (without token)
         name: null,
         logo: null
     }
@@ -107,8 +108,16 @@ function handleSessionStateChange(event) {
             console.log(`[CAST_DEBUG] Current Cast session acquired:`, castState.session);
             showNotification(`Casting to ${castState.session.getCastDevice().friendlyName}`, false, 4000);
             
-            // REMOVED: Automatic loading from localPlayerState moved to player.js
-            stopLocalPlayer(true); 
+            // FIX START: Call initiateCastPlayback directly here
+            if (castState.localPlayerState.streamUrl) {
+                console.log('[CAST_DEBUG] Local player state has content. Initiating Cast playback via initiateCastPlayback.');
+                // Ensure local player is stopped first
+                stopLocalPlayer(true); 
+                initiateCastPlayback();
+            } else {
+                console.log('[CAST_DEBUG] No localPlayerState content to auto-cast. User needs to select a channel or restart playback.');
+            }
+            // FIX END
             
             break;
         case cast.framework.SessionState.SESSION_RESUMED:
@@ -117,8 +126,14 @@ function handleSessionStateChange(event) {
             castState.isCasting = true;
             console.log(`[CAST_DEBUG] Resumed Cast session acquired:`, castState.session);
             showNotification(`Casting to ${castState.session.getCastDevice().friendlyName}`, false, 4000);
-            // REMOVED: Automatic loading from localPlayerState moved to player.js
-            stopLocalPlayer(true);
+            
+            // FIX START: Call initiateCastPlayback here too for resumed sessions
+            if (castState.localPlayerState.streamUrl) {
+                console.log('[CAST_DEBUG] Local player state has content. Resuming Cast playback via initiateCastPlayback.');
+                stopLocalPlayer(true);
+                initiateCastPlayback();
+            }
+            // FIX END
             break;
         case cast.framework.SessionState.SESSION_ENDED:
             console.log('[CAST_DEBUG] SESSION_ENDED: Casting session has ended.');
@@ -203,6 +218,50 @@ function updatePlayerUI() {
     }
 }
 
+/**
+ * NEW: Initiates playback on the Cast device, including fetching an authentication token.
+ * This function is called by player.js or when a Cast session starts/resumes.
+ */
+export async function initiateCastPlayback() {
+    if (!castState.localPlayerState.streamUrl || !castState.session) {
+        console.warn('[CAST_DEBUG] initiateCastPlayback called without a valid stream URL in localPlayerState or no active session.');
+        showNotification('No media selected or Cast session not active.', true);
+        return;
+    }
+
+    let streamUrlToCast = castState.localPlayerState.streamUrl;
+    const { name, logo } = castState.localPlayerState;
+
+    console.log(`[CAST_DEBUG] initiateCastPlayback: Preparing to cast "${name}".`);
+
+    // Fetch authentication token
+    try {
+        const tokenRes = await apiFetch('/api/stream-token');
+        if (tokenRes && tokenRes.ok) {
+            const { token } = await tokenRes.json();
+            streamUrlToCast += `&token=${encodeURIComponent(token)}`;
+            console.log('[CAST_DEBUG] Successfully fetched stream token. Appended to URL for Cast device.');
+        } else {
+            const errorData = tokenRes ? await tokenRes.json() : { error: 'Unknown token error.' };
+            showNotification(`Failed to get stream token for Cast: ${errorData.error}`, true);
+            console.error('[CAST_DEBUG] Failed to get stream token for Cast:', errorData);
+            return; // Abort if token cannot be obtained
+        }
+    } catch (error) {
+        showNotification('Network error while getting stream token for Cast.', true);
+        console.error('[CAST_DEBUG] Network error fetching stream token for Cast:', error);
+        return; // Abort on network errors
+    }
+
+    // Now, call the internal loadMedia with the tokenized URL
+    loadMedia(streamUrlToCast, name, logo);
+
+    // Ensure the modal is open and shows the correct title
+    openModal(UIElements.videoModal);
+    UIElements.videoTitle.textContent = name;
+    console.log(`[CAST_DEBUG] Video modal opened and title set to: "${name}" for casting.`);
+}
+
 
 /**
  * Loads a media stream onto the connected Cast device.
@@ -223,10 +282,8 @@ export function loadMedia(url, name, logo) {
     console.log(`[CAST_DEBUG] Converted relative URL to absolute for Cast: ${absoluteUrl}`);
 
     console.log(`[CAST_DEBUG] Creating MediaInfo object for URL: ${absoluteUrl}`);
-    // FIX START: Explicitly set contentUrl as it's what the receiver primarily uses.
     const mediaInfo = new chrome.cast.media.MediaInfo(absoluteUrl, 'video/mp2t'); 
     mediaInfo.contentUrl = absoluteUrl; // Explicitly set contentUrl
-    // FIX END
     mediaInfo.streamType = chrome.cast.media.StreamType.LIVE;
     mediaInfo.metadata = new chrome.cast.media.TvShowMediaMetadata(); // Or GenericMediaMetadata
     mediaInfo.metadata.title = name;
