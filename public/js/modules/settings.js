@@ -34,13 +34,14 @@ const renderSourceTable = (sourceType) => {
     tbody.innerHTML = '';
 
     if (sources.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-gray-500 py-4">No ${sourceType.toUpperCase()} sources added.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-gray-500 py-4">No ${sourceType.toUpperCase()} sources added.</td></tr>`;
         return;
     }
 
     sources.forEach(source => {
         const pathDisplay = source.type === 'file' ? (source.path.split('/').pop() || source.path.split('\\').pop()) : source.path;
         const lastUpdated = new Date(source.lastUpdated).toLocaleString();
+        const refreshText = source.refreshHours > 0 ? `Every ${source.refreshHours}h` : 'Disabled';
         const tr = document.createElement('tr');
         tr.dataset.sourceId = source.id;
         tr.innerHTML = `
@@ -49,6 +50,7 @@ const renderSourceTable = (sourceType) => {
             <td class="max-w-xs truncate" title="${pathDisplay}">${pathDisplay}</td>
             <td><span class="text-xs font-medium text-gray-400">${source.statusMessage || 'N/A'}</span></td>
             <td>${lastUpdated}</td>
+            <td>${source.type === 'url' ? refreshText : 'N/A'}</td>
             <td>
                 <label class="switch">
                     <input type="checkbox" class="activate-switch" ${source.isActive ? 'checked' : ''}>
@@ -79,14 +81,12 @@ export const updateUIFromSettings = () => {
     // Ensure settings have default values if not present
     // The channelColumnWidth default is now set in state.js
     settings.timezoneOffset = settings.timezoneOffset ?? Math.round(-(new Date().getTimezoneOffset() / 60));
-    settings.autoRefresh = settings.autoRefresh || 0;
     settings.searchScope = settings.searchScope || 'channels_programs';
     // NEW: Ensure notificationLeadTime has a default value
     settings.notificationLeadTime = settings.notificationLeadTime ?? 10; 
 
     // Update dropdowns and inputs
     UIElements.timezoneOffsetSelect.value = settings.timezoneOffset;
-    UIElements.autoRefreshSelect.value = settings.autoRefresh;
     UIElements.searchScopeSelect.value = settings.searchScope;
     // NEW: Set value for notification lead time input
     UIElements.notificationLeadTimeInput.value = settings.notificationLeadTime;
@@ -183,6 +183,9 @@ const openSourceEditor = (sourceType, source = null) => {
     UIElements.sourceEditorType.value = sourceType;
     UIElements.sourceEditorName.value = source ? source.name : '';
     UIElements.sourceEditorIsActive.checked = source ? source.isActive : true;
+    // NEW: Set the refresh interval dropdown
+    UIElements.sourceEditorRefreshInterval.value = source ? (source.refreshHours || 0) : 0;
+
 
     let isFile = source ? source.type === 'file' : false;
     currentSourceTypeForEditor = isFile ? 'file' : 'url';
@@ -316,6 +319,8 @@ export function setupSettingsEventListeners() {
         formData.append('sourceType', sourceType);
         formData.append('name', UIElements.sourceEditorName.value);
         formData.append('isActive', UIElements.sourceEditorIsActive.checked);
+        // NEW: Append the refresh interval value
+        formData.append('refreshHours', UIElements.sourceEditorRefreshInterval.value);
         
         if (currentSourceTypeForEditor === 'url') {
             formData.append('url', UIElements.sourceEditorUrl.value);
@@ -385,7 +390,6 @@ export function setupSettingsEventListeners() {
     UIElements.epgSourcesTbody.addEventListener('click', (e) => handleSourceTableClick(e, 'epg'));
 
     // --- General Settings ---
-    UIElements.autoRefreshSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { autoRefresh: parseInt(e.target.value, 10) }));
     UIElements.timezoneOffsetSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { timezoneOffset: parseInt(e.target.value, 10) }));
     UIElements.searchScopeSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { searchScope: e.target.value }));
     // NEW: Event listener for notification lead time
