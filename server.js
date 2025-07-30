@@ -22,7 +22,7 @@ const webpush = require('web-push');
 const app = express();
 const port = 8998;
 const saltRounds = 10;
-let epgRefreshTimeout = null;
+const sourceRefreshTimers = new Map(); // NEW: Manages individual source refresh timers
 let notificationCheckInterval = null;
 
 // --- Configuration ---
@@ -247,7 +247,6 @@ function getSettings() {
             activeUserAgentId: `default-ua-${Date.now()}`,
             activeStreamProfileId: 'ffmpeg-default',
             searchScope: 'channels_programs',
-            autoRefresh: 0,
             timezoneOffset: Math.round(-(new Date().getTimezoneOffset() / 60)),
             notificationLeadTime: 10
         };
@@ -264,6 +263,10 @@ function getSettings() {
         // Ensure defaults for new settings if existing file doesn't have them
         if (!settings.m3uSources) settings.m3uSources = [];
         if (!settings.epgSources) settings.epgSources = [];
+        // Ensure each source has a refreshHours property
+        settings.m3uSources.forEach(s => { if (s.refreshHours === undefined) s.refreshHours = 0; });
+        settings.epgSources.forEach(s => { if (s.refreshHours === undefined) s.refreshHours = 0; });
+
         if (settings.notificationLeadTime === undefined) settings.notificationLeadTime = 10;
         console.log('[SETTINGS] Settings loaded successfully.');
         return settings;
@@ -278,6 +281,8 @@ function saveSettings(settings) {
     try {
         fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
         console.log('[SETTINGS] Settings saved successfully.');
+        // After saving, immediately update the background refresh schedules
+        updateAndScheduleSourceRefreshes();
     } catch (e) {
         console.error("[SETTINGS] Error saving settings:", e);
     }
@@ -502,44 +507,68 @@ async function processAndMergeSources() {
         console.error(`[EPG] Error writing merged EPG JSON file: ${writeErr.message}`);
     }
     
-    saveSettings(settings); // Save settings with updated status and lastUpdated for sources
-    console.log('[PROCESS] Finished processing and merging all active sources.');
-    return { success: true, message: 'Sources merged successfully.'};
+    // This function no longer saves settings itself. The caller should do it.
+    // This prevents recursive calls from updateAndScheduleSourceRefreshes -> saveSettings -> processAndMergeSources
+    return { success: true, message: 'Sources merged successfully.', updatedSettings: settings };
 }
 
 
-const scheduleEpgRefresh = () => {
-    clearTimeout(epgRefreshTimeout);
-    let settings = getSettings();
-    const refreshHours = parseInt(settings.autoRefresh, 10);
-    
-    if (refreshHours > 0) {
-        console.log(`[EPG_REFRESH] Scheduling EPG refresh every ${refreshHours} hours.`);
-        epgRefreshTimeout = setTimeout(async () => {
-            console.log('[EPG_REFRESH] Triggering scheduled EPG refresh...');
-            const activeEpgUrlSources = settings.epgSources.filter(s => s.isActive && s.type === 'url');
-            if (activeEpgUrlSources.length === 0) {
-                console.log('[EPG_REFRESH] No active URL-based EPG sources to refresh. Skipping download phase.');
+// --- NEW: Per-Source Refresh Scheduler ---
+const updateAndScheduleSourceRefreshes = () => {
+    console.log('[SCHEDULER] Updating and scheduling all source refreshes...');
+    const settings = getSettings();
+    const allSources = [...(settings.m3uSources || []), ...(settings.epgSources || [])];
+    const activeUrlSources = new Set();
+
+    // Schedule new or updated timers
+    allSources.forEach(source => {
+        if (source.type === 'url' && source.isActive && source.refreshHours > 0) {
+            activeUrlSources.add(source.id);
+            // If a timer already exists, clear it to reschedule with potentially new interval
+            if (sourceRefreshTimers.has(source.id)) {
+                clearTimeout(sourceRefreshTimers.get(source.id));
             }
-            for(const source of activeEpgUrlSources) {
-                try {
-                    console.log(`[EPG_REFRESH] Refreshing ${source.name} from ${source.path}`);
-                    const content = await fetchUrlContent(source.path);
-                    const epgFilePath = path.join(SOURCES_DIR, `epg_${source.id}.xml`);
-                    fs.writeFileSync(epgFilePath, content);
-                    console.log(`[EPG_REFRESH] EPG for ${source.name} updated.`);
-                } catch(error) {
-                     console.error(`[EPG_REFRESH] Scheduled refresh for ${source.name} failed:`, error.message);
-                }
-            }
-            await processAndMergeSources(); // Re-process all sources (including refreshed ones)
-            scheduleEpgRefresh(); // Reschedule for next interval
+
+            console.log(`[SCHEDULER] Scheduling refresh for "${source.name}" (ID: ${source.id}) every ${source.refreshHours} hours.`);
             
-        }, refreshHours * 3600 * 1000);
-    } else {
-        console.log('[EPG_REFRESH] EPG auto-refresh is disabled.');
+            const scheduleNext = () => {
+                const timeoutId = setTimeout(async () => {
+                    console.log(`[SCHEDULER_RUN] Auto-refresh triggered for "${source.name}".`);
+                    try {
+                        // The processAndMergeSources function already handles fetching from URLs.
+                        // We just need to trigger it and then save the updated statuses.
+                        const result = await processAndMergeSources();
+                        if(result.success) {
+                            // We need to save the settings with updated lastUpdated timestamps.
+                            // Use a version of saveSettings that doesn't re-trigger this scheduler to avoid loops.
+                            fs.writeFileSync(SETTINGS_PATH, JSON.stringify(result.updatedSettings, null, 2));
+                            console.log(`[SCHEDULER_RUN] Successfully refreshed and processed sources for "${source.name}".`);
+                        }
+                    } catch (error) {
+                        console.error(`[SCHEDULER_RUN] Auto-refresh for "${source.name}" failed:`, error.message);
+                    }
+                    // Reschedule for the next interval
+                    scheduleNext();
+                }, source.refreshHours * 3600 * 1000);
+
+                sourceRefreshTimers.set(source.id, timeoutId);
+            };
+
+            scheduleNext();
+        }
+    });
+
+    // Clean up timers for sources that are no longer scheduled
+    for (const [sourceId, timeoutId] of sourceRefreshTimers.entries()) {
+        if (!activeUrlSources.has(sourceId)) {
+            console.log(`[SCHEDULER] Clearing obsolete refresh timer for source ID: ${sourceId}`);
+            clearTimeout(timeoutId);
+            sourceRefreshTimers.delete(sourceId);
+        }
     }
+    console.log(`[SCHEDULER] Finished scheduling. Active timers: ${sourceRefreshTimers.size}`);
 };
+
 
 // --- Authentication API Endpoints ---
 app.get('/api/auth/needs-setup', (req, res) => {
@@ -849,7 +878,7 @@ const upload = multer({
 
 
 app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, res) => {
-    const { sourceType, name, url, isActive, id } = req.body;
+    const { sourceType, name, url, isActive, id, refreshHours } = req.body;
     console.log(`[SOURCES_API] ${id ? 'Updating' : 'Adding'} source. Type: ${sourceType}, Name: ${name}`);
 
     if (!sourceType || !name) {
@@ -873,6 +902,7 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
         console.log(`[SOURCES_API] Found existing source for update: ${sourceToUpdate.name}`);
         sourceToUpdate.name = name;
         sourceToUpdate.isActive = isActive === 'true';
+        sourceToUpdate.refreshHours = parseInt(refreshHours, 10) || 0;
         sourceToUpdate.lastUpdated = new Date().toISOString();
 
         if (req.file) { // New file uploaded
@@ -923,6 +953,7 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
             type: req.file ? 'file' : 'url',
             path: req.file ? req.file.path : url,
             isActive: isActive === 'true',
+            refreshHours: parseInt(refreshHours, 10) || 0,
             lastUpdated: new Date().toISOString(),
             status: 'Pending',
             statusMessage: 'Source added. Process to load data.'
@@ -1021,8 +1052,14 @@ app.post('/api/process-sources', requireAuth, async (req, res) => {
     console.log('[API] Received request to /api/process-sources (manual trigger).');
     try {
         const result = await processAndMergeSources();
-        console.log('[API] Source processing completed (manual trigger).');
-        res.json(result);
+        if (result.success) {
+            // Manually save settings here because processAndMergeSources no longer does it
+            fs.writeFileSync(SETTINGS_PATH, JSON.stringify(result.updatedSettings, null, 2));
+            console.log('[API] Source processing completed and settings saved (manual trigger).');
+            res.json({ success: true, message: 'Sources merged successfully.'});
+        } else {
+            res.status(500).json({ error: result.message || 'Failed to process sources.' });
+        }
     }
     catch (error) {
         console.error("[API] Error during manual source processing:", error);
@@ -1037,14 +1074,13 @@ app.post('/api/save/settings', requireAuth, async (req, res) => {
         let currentSettings = getSettings();
         
         const oldTimezone = currentSettings.timezoneOffset;
-        const oldRefresh = currentSettings.autoRefresh;
 
         // Merge incoming settings, ensuring we don't accidentally save user-specific settings as global
         const updatedSettings = { ...currentSettings };
         for (const key in req.body) {
             // These keys are explicitly managed as user-specific on the client,
             // so they should not be written to the global settings.json
-            if (!['favorites', 'playerDimensions', 'programDetailsDimensions', 'recentChannels', 'notificationLeadTime', 'multiviewLayouts'].includes(key)) {
+            if (!['favorites', 'playerDimensions', 'programDetailsDimensions', 'recentChannels', 'multiviewLayouts'].includes(key)) {
                 updatedSettings[key] = req.body[key];
             } else {
                 console.warn(`[SETTINGS_SAVE] Attempted to save user-specific key "${key}" to global settings. This is ignored.`);
@@ -1053,14 +1089,14 @@ app.post('/api/save/settings', requireAuth, async (req, res) => {
 
         saveSettings(updatedSettings);
         
-        // Trigger re-processing or rescheduling if relevant settings changed
+        // Trigger re-processing if timezone changed
         if (updatedSettings.timezoneOffset !== oldTimezone) {
             console.log("[API] Timezone setting changed, re-processing sources.");
-            await processAndMergeSources();
-        }
-        if (updatedSettings.autoRefresh !== oldRefresh) {
-            console.log("[API] Auto-refresh setting changed, rescheduling EPG refresh.");
-            scheduleEpgRefresh();
+            const result = await processAndMergeSources();
+             if (result.success) {
+                // Manually save settings here after processing
+                fs.writeFileSync(SETTINGS_PATH, JSON.stringify(result.updatedSettings, null, 2));
+             }
         }
 
         res.json({ success: true, message: 'Settings saved.', settings: getSettings() }); // Return the full, current global settings
@@ -1522,9 +1558,13 @@ app.listen(port, () => {
     console.log(`======================================================\n`);
 
     // Initial processing of sources on server boot
-    processAndMergeSources().then(() => {
+    processAndMergeSources().then((result) => {
         console.log('[INIT] Initial source processing complete.');
-        scheduleEpgRefresh(); // Schedule subsequent refreshes
+        if(result.success) {
+             // Manually save settings here after processing
+             fs.writeFileSync(SETTINGS_PATH, JSON.stringify(result.updatedSettings, null, 2));
+        }
+        updateAndScheduleSourceRefreshes(); // Schedule subsequent refreshes for all sources
     }).catch(error => {
         console.error('[INIT] Initial source processing failed:', error.message);
     });
