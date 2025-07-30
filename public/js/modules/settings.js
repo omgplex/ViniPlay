@@ -41,7 +41,7 @@ const renderSourceTable = (sourceType) => {
     sources.forEach(source => {
         const pathDisplay = source.type === 'file' ? (source.path.split('/').pop() || source.path.split('\\').pop()) : source.path;
         const lastUpdated = new Date(source.lastUpdated).toLocaleString();
-        const refreshText = source.refreshHours > 0 ? `Every ${source.refreshHours}h` : 'Disabled';
+        const refreshText = source.type === 'url' && source.refreshHours > 0 ? `Every ${source.refreshHours}h` : 'Disabled';
         const tr = document.createElement('tr');
         tr.dataset.sourceId = source.id;
         tr.innerHTML = `
@@ -50,7 +50,7 @@ const renderSourceTable = (sourceType) => {
             <td class="max-w-xs truncate" title="${pathDisplay}">${pathDisplay}</td>
             <td><span class="text-xs font-medium text-gray-400">${source.statusMessage || 'N/A'}</span></td>
             <td>${lastUpdated}</td>
-            <td>${source.type === 'url' ? refreshText : 'N/A'}</td>
+            <td>${refreshText}</td>
             <td>
                 <label class="switch">
                     <input type="checkbox" class="activate-switch" ${source.isActive ? 'checked' : ''}>
@@ -79,16 +79,13 @@ export const updateUIFromSettings = () => {
     const settings = guideState.settings;
 
     // Ensure settings have default values if not present
-    // The channelColumnWidth default is now set in state.js
     settings.timezoneOffset = settings.timezoneOffset ?? Math.round(-(new Date().getTimezoneOffset() / 60));
     settings.searchScope = settings.searchScope || 'channels_programs';
-    // NEW: Ensure notificationLeadTime has a default value
     settings.notificationLeadTime = settings.notificationLeadTime ?? 10; 
 
     // Update dropdowns and inputs
     UIElements.timezoneOffsetSelect.value = settings.timezoneOffset;
     UIElements.searchScopeSelect.value = settings.searchScope;
-    // NEW: Set value for notification lead time input
     UIElements.notificationLeadTimeInput.value = settings.notificationLeadTime;
 
     // Render tables
@@ -183,15 +180,15 @@ const openSourceEditor = (sourceType, source = null) => {
     UIElements.sourceEditorType.value = sourceType;
     UIElements.sourceEditorName.value = source ? source.name : '';
     UIElements.sourceEditorIsActive.checked = source ? source.isActive : true;
-    // NEW: Set the refresh interval dropdown
     UIElements.sourceEditorRefreshInterval.value = source ? (source.refreshHours || 0) : 0;
-
 
     let isFile = source ? source.type === 'file' : false;
     currentSourceTypeForEditor = isFile ? 'file' : 'url';
+    
     UIElements.sourceEditorTypeBtnUrl.classList.toggle('bg-blue-600', !isFile);
     UIElements.sourceEditorTypeBtnFile.classList.toggle('bg-blue-600', isFile);
     UIElements.sourceEditorUrlContainer.classList.toggle('hidden', isFile);
+    UIElements.sourceEditorRefreshContainer.classList.toggle('hidden', isFile);
     UIElements.sourceEditorFileContainer.classList.add('hidden');
 
     if (source) {
@@ -300,6 +297,7 @@ export function setupSettingsEventListeners() {
         UIElements.sourceEditorTypeBtnUrl.classList.add('bg-blue-600');
         UIElements.sourceEditorTypeBtnFile.classList.remove('bg-blue-600');
         UIElements.sourceEditorUrlContainer.classList.remove('hidden');
+        UIElements.sourceEditorRefreshContainer.classList.remove('hidden');
         UIElements.sourceEditorFileContainer.classList.add('hidden');
     });
     UIElements.sourceEditorTypeBtnFile.addEventListener('click', () => {
@@ -307,6 +305,7 @@ export function setupSettingsEventListeners() {
         UIElements.sourceEditorTypeBtnUrl.classList.remove('bg-blue-600');
         UIElements.sourceEditorTypeBtnFile.classList.add('bg-blue-600');
         UIElements.sourceEditorUrlContainer.classList.add('hidden');
+        UIElements.sourceEditorRefreshContainer.classList.add('hidden');
         UIElements.sourceEditorFileContainer.classList.remove('hidden');
     });
 
@@ -319,11 +318,10 @@ export function setupSettingsEventListeners() {
         formData.append('sourceType', sourceType);
         formData.append('name', UIElements.sourceEditorName.value);
         formData.append('isActive', UIElements.sourceEditorIsActive.checked);
-        // NEW: Append the refresh interval value
-        formData.append('refreshHours', UIElements.sourceEditorRefreshInterval.value);
         
         if (currentSourceTypeForEditor === 'url') {
             formData.append('url', UIElements.sourceEditorUrl.value);
+            formData.append('refreshHours', UIElements.sourceEditorRefreshInterval.value);
         } else if (UIElements.sourceEditorFile.files[0]) {
             formData.append('sourceFile', UIElements.sourceEditorFile.files[0]);
         } else if (!id) {
