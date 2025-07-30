@@ -113,7 +113,11 @@ export const initializeUIElements = () => {
     UIElements.saveLayoutName = document.getElementById('save-layout-name');
     UIElements.saveLayoutCancelBtn = document.getElementById('save-layout-cancel-btn');
     UIElements.multiviewChannelFilter = document.getElementById('multiview-channel-filter');
+    
+    // **FIX**: Explicitly add settings buttons that were not being picked up
+    UIElements.addM3uBtn = document.getElementById('add-m3u-btn');
+    UIElements.addEpgBtn = document.getElementById('add-epg-btn');
+    UIElements.processSourcesBtnContent = document.getElementById('process-sources-btn-content');
 
-
-    // Removed: UIElements.resetFilterBtn as the button is removed from HTML
+    // Removed: UIElements.autoRefreshSelect as it is no longer in the HTML
 };
