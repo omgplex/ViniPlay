@@ -141,7 +141,8 @@ function handleSessionStateChange(event) {
         case cast.framework.SessionState.NO_SESSION:
              castState.isCasting = false;
              castState.currentMedia = null;
-             if (event.sessionState === cast.framework.SessionState.SESSION_ENDED') {
+             // **FIXED THE TYPO ON THE LINE BELOW**
+             if (event.sessionState === cast.framework.SessionState.SESSION_ENDED) {
                 showNotification('Casting session ended.', false, 4000);
              }
              updatePlayerUI();
