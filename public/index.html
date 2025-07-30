@@ -363,8 +363,8 @@
 
         /* --- NEW: Cast Button Style --- */
         google-cast-launcher {
-            width: 20px; /* Match PiP icon size */
-            height: 20px;
+            width: 24px; /* Slightly larger for better touch target */
+            height: 24px;
             --cast-button-color: #9ca3af; /* gray-400 */
             cursor: pointer;
             vertical-align: middle;
@@ -372,7 +372,6 @@
         }
         google-cast-launcher:hover {
             --cast-button-color: #ffffff; /* white */
-            transform: scale(1.1);
         }
     </style>
 </head>
@@ -768,16 +767,23 @@
         <div id="video-modal-container" class="bg-gray-900 rounded-lg shadow-xl max-h-[90vh] flex flex-col" style="width: 896px; height: 504px;">
             <div class="flex justify-between items-center p-3 border-b border-gray-700 flex-shrink-0">
                 <h3 id="video-title" class="text-lg font-semibold text-white truncate"></h3>
-                <div class="flex items-center gap-4">
-                    <!-- NEW: Google Cast Button -->
-                    <div class="p-2 rounded-md hover:bg-gray-700">
-                        <google-cast-launcher id="cast-btn"></google-cast-launcher>
-                    </div>
+                <div class="flex items-center gap-2">
+                    <!-- MODIFIED: Simplified Google Cast Button, removed wrapper and ID -->
+                    <google-cast-launcher class="text-gray-400 hover:text-white p-2 rounded-md hover:bg-gray-700"></google-cast-launcher>
                     <button id="pip-btn" class="text-gray-400 hover:text-white p-2 rounded-md hover:bg-gray-700" title="Picture-in-Picture"><svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M12.5 5.5h-5a1 1 0 00-1 1v2.5a.5.5 0 001 0v-2a.5.5 0 01.5-.5h4a.5.5 0 01.5.5v4a.5.5 0 01-.5.5h-2a.5.5 0 000 1h2.5a1 1 0 001-1v-5a1 1 0 00-1-1z"></path><path d="M3.5 3A1.5 1.5 0 002 4.5v11A1.5 1.5 0 003.5 17h13a1.5 1.5 0 001.5-1.5v-11A1.5 1.5 0 0016.5 3h-13zm0 1h13a.5.5 0 01.5.5v11a.5.5 0 01-.5.5h-13a.5.5 0 01-.5-.5v-11a.5.5 0 01.5-.5z"></path></svg></button>
-                    <button id="close-modal" class="text-gray-400 hover:text-white p-2 text-2xl leading-none font-bold">&times;</button>
+                    <button id="close-modal" class="text-gray-400 hover:text-white text-2xl leading-none font-bold">&times;</button>
                 </div>
             </div>
-            <div class="flex-grow p-1 bg-black"><video id="videoElement" controls autoplay class="w-full h-full"></video></div>
+            <!-- MODIFIED: Added a container for the video element and a new one for the cast status message -->
+            <div id="video-content" class="flex-grow p-1 bg-black relative">
+                <video id="videoElement" controls autoplay class="w-full h-full"></video>
+                <!-- NEW: This element will show when casting -->
+                <div id="cast-status" class="hidden absolute inset-0 flex-col items-center justify-center bg-black text-white p-4">
+                    <svg class="w-16 h-16 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1"><path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                    <p id="cast-status-text" class="text-lg font-semibold"></p>
+                    <p id="cast-status-channel" class="text-sm text-gray-400"></p>
+                </div>
+            </div>
             <div id="video-resize-handle" class="resize-handle"></div>
         </div>
     </div>
