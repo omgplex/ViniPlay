@@ -96,7 +96,14 @@ export const playChannel = async (url, name, channelId) => { // MODIFIED: Added 
     console.log('[PLAYER_DEBUG] Found stream profile:', profile);
     
     // Determine the final URL to play based on the stream profile (direct redirect or server proxy)
-    let streamUrlToPlay = profile.command === 'redirect' ? url : `/stream?url=${encodeURIComponent(url)}&profileId=${profileId}&userAgentId=${userAgentId}`;
+    // FIX START: Declare streamUrlToPlay with 'let' so it can be reassigned/modified
+    let streamUrlToPlay; 
+    if (profile.command === 'redirect') {
+        streamUrlToPlay = url; 
+    } else {
+        streamUrlToPlay = `/stream?url=${encodeURIComponent(url)}&profileId=${profileId}&userAgentId=${userAgentId}`;
+    }
+    // FIX END
     console.log(`[PLAYER_DEBUG] Calculated base streamUrlToPlay: ${streamUrlToPlay}`);
 
     const channel = guideState.channels.find(c => c.id === channelId);
@@ -114,7 +121,9 @@ export const playChannel = async (url, name, channelId) => { // MODIFIED: Added 
             const tokenRes = await apiFetch('/api/stream-token');
             if (tokenRes && tokenRes.ok) {
                 const { token } = await tokenRes.json();
+                // FIX START: Append token to the CORRECT streamUrlToPlay variable
                 streamUrlToPlay += `&token=${encodeURIComponent(token)}`;
+                // FIX END
                 console.log('[PLAYER_DEBUG] Successfully fetched stream token. Appended to URL.');
             } else {
                 const errorData = tokenRes ? await tokenRes.json() : { error: 'Unknown token error.' };
