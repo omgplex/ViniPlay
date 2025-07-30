@@ -1,83 +1,89 @@
-ViniPlay 📺
-A powerful, self-hosted web-based media player for M3U and EPG files, with advanced features for a modern viewing experience.
+<div align="center">
 
-🔗 Repository
+# ViniPlay
 
-ViniPlay transforms your M3U playlists and EPG XML files into a comprehensive, personalized TV guide and streaming platform, accessible directly in your browser. Its robust Node.js backend handles on-the-fly transcoding with FFMPEG, ensuring seamless playback and resolving common browser compatibility and CORS issues.
+A simple, self-hosted IPTV player with a clean web interface and powerful backend transcoding using FFMPEG.
 
-What sets ViniPlay apart is its commitment to a modern user experience, incorporating features typically found in commercial streaming services into a self-hosted solution. Enjoy managing users, receiving notifications, and even sharing your viewing experience.
-
-<!-- It's highly recommended to add a screenshot or a GIF of your app in action -->
-
-<p align="center">
-<img src="https://www.google.com/search?q=https://placehold.co/700x400/e0e7ff/4f46e5%3Ftext%3DViniPlay%2BScreenshot%2BComing%2BSoon" alt="ViniPlay Screenshot">
-<br>
-<em>A sneak peek of ViniPlay in action!</em>
+<p>
+    <img src="https://img.shields.io/badge/docker-ready-blue.svg?style=for-the-badge&logo=docker" alt="Docker Ready">
+    <img src="https://img.shields.io/badge/platform-node-green.svg?style=for-the-badge&logo=node.js" alt="Node.js Backend">
+    <img src="https://img.shields.io/github/license/YOUR_GITHUB_USERNAME/viniplay?style=for-the-badge" alt="License">
 </p>
 
-⚙️ What Can ViniPlay Do?
-User Management: Create and manage multiple user accounts, allowing different profiles and personalized settings.
+</div>
 
-Notifications: Receive real-time alerts for program changes, system updates, or shared content.
+---
 
-Multiplayer & Sharing: Share your viewing session with friends or family, enabling a collaborative experience.
+This project allows you to load M3U playlists and EPG XML files to create a personalized TV guide and stream channels directly in your browser. The backend server handles stream fetching and on-the-fly transcoding, resolving common browser compatibility and CORS issues.
 
-Cast Functionality: Cast your content to compatible devices for a larger screen experience.
+<!-- It's highly recommended to add a screenshot or a GIF of your app in action -->
+<!-- 
+<div align="center">
+    <img src="URL_TO_YOUR_SCREENSHOT.png" alt="ARDO IPTV Player Screenshot" width="700">
+</div> 
+-->
 
-DOM Virtualization: Enjoy a smooth and performant user interface, even with large EPG datasets.
+---
 
-M3U & EPG Support: Easily upload your M3U playlists and EPG XML files, from local storage or remote URLs.
+## ✨ Features
 
-FFMPEG Transcoding: The backend uses ffmpeg to transcode streams on-the-fly, ensuring broad browser compatibility and resolving CORS issues.
+* **TV Guide Interface:** A clean, responsive EPG (Electronic Program Guide) view.
+* **M3U & EPG Support:** Load channels and guide data from local files or remote URLs.
+* **FFMPEG Transcoding:** The Node.js backend uses `ffmpeg` to transcode streams, ensuring broad browser compatibility.
+* **Dockerized:** The entire application is bundled into a single, easy-to-deploy Docker image.
+* **Favorites & Recents:** Mark your favorite channels and quickly access recently watched ones.
+* **Search:** Instantly search through both channels and program listings.
+* **Picture-in-Picture:** Continue watching your stream while you browse other tabs.
 
-Dockerized Deployment: The entire application is packaged into a single, easy-to-deploy Docker image.
+---
 
-Favorites & Recents: Mark your favorite channels for quick access and easily resume recently watched ones.
+## 🚀 How to Run
 
-Instant Search: Quickly find channels and programs within your extensive listings.
+This application is distributed as a Docker image. To run it, you will need [Docker](https://docs.docker.com/get-docker/) installed on your system.
 
-Picture-in-Picture: Continue watching your stream in a floating window while you browse other tabs or applications.
+1.  **Log in to GitHub Container Registry**
 
-Real-time Updates: Leverage onSnapshot listeners with Firestore for real-time updates across users and features.
+    You first need to authenticate your Docker client with GHCR. You only need to do this once.
+    ```bash
+    docker login ghcr.io -u YOUR_GITHUB_USERNAME
+    ```
+    > **Note:** You will be prompted for a password. You must use a GitHub Personal Access Token (PAT) with the `read:packages` scope. You can generate one [here](https://github.com/settings/tokens/new?scopes=read:packages).
 
-🚀 How to Install and Run ViniPlay
-ViniPlay is distributed as a Docker image, making deployment straightforward. You'll need Docker installed on your system to get started.
+2.  **Pull the Docker Image**
 
-1. Install Docker
-If you don't have Docker installed, follow the official documentation for your operating system:
+    Pull the latest version of the player from the GitHub Container Registry.
+    ```bash
+    docker pull ghcr.io/YOUR_GITHUB_USERNAME/viniplay:latest
+    ```
 
-➡️ Get Docker Here
+3.  **Run the Container**
 
-2. Authenticate with GitHub Container Registry (GHCR)
-You'll need to authenticate your Docker client with GHCR. This is a one-time setup.
+    Start the container, mapping port `8998` to your host machine.
+    ```bash
+    docker run -d -p 8998:8998 --name viniplay ghcr.io/YOUR_GITHUB_USERNAME/viniplay:latest
+    ```
 
-docker login ghcr.io -u YOUR_GITHUB_USERNAME
+Remember to replace **YOUR_GITHUB_USERNAME** in the commands above with your actual GitHub username.
 
-Note: When prompted for a password, you must use a GitHub Personal Access Token (PAT) with the read:packages scope. You can generate one here.
+Once the container is running, you can access your IPTV player by navigating to **[http://localhost:8998](http://localhost:8998)** in your web browser.
 
-3. Pull the Docker Image
-Fetch the latest version of the ViniPlay Docker image from GHCR:
 
-docker pull ghcr.io/YOUR_GITHUB_USERNAME/viniplay:latest
 
-4. Run the Container
-Start the ViniPlay container, mapping port 8998 on your host machine to the container's internal port:
 
-docker run -d -p 8998:8998 --name viniplay ghcr.io/YOUR_GITHUB_USERNAME/viniplay:latest
 
-Remember to replace YOUR_GITHUB_USERNAME with your actual GitHub username in the commands above.
 
-🌐 Access ViniPlay
-Once the container is running successfully, you can access your ViniPlay media player by navigating to the following address in your web browser:
+```text
+public/
+├── js/
+│   ├── main.js       // The new, lean entry point
+│   └── modules/
+│       ├── api.js        // For all fetch requests to the backend
+│       ├── auth.js       // Handles the entire authentication flow
+│       ├── guide.js      // All logic for the TV Guide
+│       ├── player.js     // Video player logic
+│       ├── settings.js   // Logic for the settings page
+│       ├── state.js      // Shared application state and UI elements
+│       ├── ui.js         // General UI functions (modals, notifications)
+│       └── utils.js      // Helper functions like the M3U parser
+└── index.html
 
-http://localhost:8998
-
-👋 Contributing
-ViniPlay is an open-source project, and contributions are welcome! Feel free to open issues for bug reports or feature requests, and pull requests for any improvements.
-
-For more details, check out the CONTRIBUTING.md guide (if available in your repository).
-
-📄 License
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-© 2025 YOUR_GITHUB_USERNAME. All rights reserved.
