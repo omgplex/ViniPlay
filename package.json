@@ -19,6 +19,7 @@
     "dotenv": "^16.4.5",
     "xml-js": "^1.6.11",
     "fuse.js": "^7.0.0",
-    "web-push": "^3.6.7"
+    "web-push": "^3.6.7",
+    "jsonwebtoken": "^9.0.2"
   }
 }
