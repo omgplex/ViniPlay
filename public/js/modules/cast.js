@@ -5,6 +5,7 @@
 
 import { showNotification, showConfirm } from './ui.js';
 import { UIElements, appState } from './state.js';
+import { stopLocalPlayerForCasting } from './player.js'; // **NEW**: Import the dedicated stop function
 
 const APPLICATION_ID = 'CC1AD845'; // Default Media Receiver App ID
 
@@ -53,8 +54,7 @@ function initializeCastApi() {
         autoJoinPolicy: chrome.cast.AutoJoinPolicy.TAB_AND_ORIGIN_SCOPED
     });
 
-    // --- **NEW**: Enable verbose debugging from the Cast Receiver ---
-    // This will print detailed logs from the Chromecast directly into the browser console.
+    // Enable verbose debugging from the Cast Receiver
     cast.framework.CastContext.getInstance().setLogLevel(cast.framework.LoggerLevel.DEBUG);
 
     castContext.addEventListener(
@@ -65,15 +65,13 @@ function initializeCastApi() {
     castState.player = new cast.framework.RemotePlayer();
     castState.playerController = new cast.framework.RemotePlayerController(castState.player);
     
-    // --- **NEW**: Add detailed event listeners for debugging the remote player ---
     addRemotePlayerListeners(castState.playerController);
     
     console.log('[CAST] Cast context initialized, debugging enabled, and listeners attached.');
 }
 
 /**
- * **NEW**: Helper function to add all necessary listeners to the remote player controller.
- * This helps us see the exact state of the media player on the Chromecast.
+ * Helper function to add all necessary listeners to the remote player controller.
  * @param {cast.framework.RemotePlayerController} controller 
  */
 function addRemotePlayerListeners(controller) {
@@ -81,15 +79,13 @@ function addRemotePlayerListeners(controller) {
         cast.framework.RemotePlayerEventType.IS_CONNECTED_CHANGED,
         handleRemotePlayerConnectionChange
     );
-    // Log changes in media information (e.g., when new media is loaded)
     controller.addEventListener(
         cast.framework.RemotePlayerEventType.MEDIA_INFO_CHANGED,
         (event) => {
             console.log('[CAST_DEBUG] Remote Player: Media info changed.', event);
-            updatePlayerUI(); // Update UI when media info changes
+            updatePlayerUI();
         }
     );
-    // Log detailed player state changes (IDLE, BUFFERING, PLAYING, PAUSED)
     controller.addEventListener(
         cast.framework.RemotePlayerEventType.PLAYER_STATE_CHANGED,
         (event) => {
@@ -131,7 +127,11 @@ function handleSessionStateChange(event) {
         case cast.framework.SessionState.SESSION_RESUMED:
             castState.isCasting = true;
             showNotification(`Casting to ${castState.session.getCastDevice().friendlyName}`, false, 4000);
+
+            // **CORE FIX**: Immediately stop the local player to prevent dual audio/video.
+            stopLocalPlayerForCasting();
             
+            // Now, load the media on the remote device.
             if (castState.localPlayerState.streamUrl) {
                 console.log('[CAST] Session active. Automatically casting local content.');
                 loadMedia(castState.localPlayerState.streamUrl, castState.localPlayerState.name, castState.localPlayerState.logo);
@@ -141,7 +141,6 @@ function handleSessionStateChange(event) {
         case cast.framework.SessionState.NO_SESSION:
              castState.isCasting = false;
              castState.currentMedia = null;
-             // **FIXED THE TYPO ON THE LINE BELOW**
              if (event.sessionState === cast.framework.SessionState.SESSION_ENDED) {
                 showNotification('Casting session ended.', false, 4000);
              }
@@ -165,19 +164,9 @@ function updatePlayerUI() {
     const videoElement = UIElements.videoElement;
     const castStatusDiv = UIElements.castStatus;
     const castBtn = UIElements.castBtn;
-    const localMpegtsPlayer = appState.player;
 
+    // Check if we are successfully casting to a connected device.
     if (castState.isCasting && castState.player.isConnected && castState.session) {
-        if (localMpegtsPlayer) {
-            console.log('[CAST] Handoff to remote device complete. Destroying local mpegts player instance.');
-            localMpegtsPlayer.destroy();
-            appState.player = null;
-        }
-        videoElement.pause();
-        videoElement.src = "";
-        videoElement.removeAttribute('src');
-        videoElement.load();
-
         videoElement.classList.add('hidden');
         castStatusDiv.classList.remove('hidden');
         castStatusDiv.classList.add('flex');
@@ -220,6 +209,7 @@ export function loadMedia(url, name, logo) {
 
     const request = new chrome.cast.media.LoadRequest(mediaInfo);
     
+    // This allows the receiver to load content from different origins (CORS).
     request.credentials = null;
     request.credentialsType = 'none';
 
