@@ -130,22 +130,24 @@ export function setupPlayerEventListeners() {
         }
     });
 
-    // --- DEBUGGING ---
-    // Check if the cast button element exists in the UIElements object
+    // --- FINAL FIX ---
+    // The google-cast-launcher is a custom element. To make it work inside our own
+    // styled button, we must catch the click on our button and then programmatically
+    // trigger a click on the google-cast-launcher element inside it.
     if (UIElements.castBtn) {
-        console.log('[PLAYER_DEBUG] Cast button (#cast-btn) found in DOM and UIElements.');
-        // Add a simple click listener to see if it responds to clicks.
         UIElements.castBtn.addEventListener('click', () => {
-            console.log('[PLAYER_DEBUG] Cast button was clicked!');
-            // Note: The Google Cast SDK's own logic will handle opening the cast dialog.
-            // This listener is purely for confirming the button is interactive.
+            console.log('[PLAYER] Cast button wrapper clicked. Triggering click on inner google-cast-launcher.');
+            const castLauncher = UIElements.castBtn.querySelector('google-cast-launcher');
+            if (castLauncher) {
+                castLauncher.click();
+            } else {
+                console.error('[PLAYER] Could not find the <google-cast-launcher> element inside the #cast-btn.');
+            }
         });
     } else {
-        // If the element isn't found, this is a critical error.
-        console.error('[PLAYER_DEBUG] CRITICAL: Cast button (#cast-btn) NOT FOUND in UIElements. Check state.js initialization and index.html for the element ID.');
+        console.error('[PLAYER] CRITICAL: Cast button wrapper #cast-btn NOT FOUND.');
     }
-    // --- END DEBUGGING ---
-
+    // --- END FINAL FIX ---
 
     UIElements.videoElement.addEventListener('enterpictureinpicture', () => closeModal(UIElements.videoModal));
     UIElements.videoElement.addEventListener('leavepictureinpicture', () => {
