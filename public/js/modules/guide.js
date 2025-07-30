@@ -622,7 +622,7 @@ export function setupGuideEventListeners() {
         }
     });
 
-    // --- NEW: Date Picker Event Listener ---
+    // --- Date Picker Event Listener ---
     UIElements.guideDatePicker.addEventListener('change', (e) => {
         const selectedDate = e.target.value; // YYYY-MM-DD
         if (selectedDate) {
@@ -634,6 +634,22 @@ export function setupGuideEventListeners() {
             finalizeGuideLoad(true); // Re-render the guide for the new date
         }
     });
+
+    // FIX: Explicitly open the date picker when the calendar icon/label is clicked.
+    const datePickerLabel = document.querySelector('label[for="guide-date-picker"]');
+    if (datePickerLabel) {
+        datePickerLabel.addEventListener('click', (e) => {
+            if (UIElements.guideDatePicker && typeof UIElements.guideDatePicker.showPicker === 'function') {
+                try {
+                    UIElements.guideDatePicker.showPicker();
+                } catch (error) {
+                    console.error("Could not programmatically open date picker:", error);
+                    // Fallback for browsers that don't support showPicker()
+                    // The label's 'for' attribute should handle this, but this is an explicit backup.
+                }
+            }
+        });
+    }
 
 
     // --- Interactions (Clicks on the new grid) ---
