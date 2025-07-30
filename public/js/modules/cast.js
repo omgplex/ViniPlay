@@ -35,7 +35,6 @@ window['__onGCastApiAvailable'] = (isAvailable) => {
     } else {
         console.warn('[CAST] Google Cast SDK is not available on this device.');
         castState.isAvailable = false;
-        // Hide the cast button if the SDK is not available at all.
         if (UIElements.castBtn) {
             UIElements.castBtn.style.display = 'none';
         }
@@ -54,6 +53,10 @@ function initializeCastApi() {
         autoJoinPolicy: chrome.cast.AutoJoinPolicy.TAB_AND_ORIGIN_SCOPED
     });
 
+    // --- **NEW**: Enable verbose debugging from the Cast Receiver ---
+    // This will print detailed logs from the Chromecast directly into the browser console.
+    cast.framework.CastContext.getInstance().setLogLevel(cast.framework.LoggerLevel.DEBUG);
+
     castContext.addEventListener(
         cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
         handleSessionStateChange
@@ -61,16 +64,44 @@ function initializeCastApi() {
     
     castState.player = new cast.framework.RemotePlayer();
     castState.playerController = new cast.framework.RemotePlayerController(castState.player);
-    castState.playerController.addEventListener(
-        cast.framework.RemotePlayerEventType.IS_CONNECTED_CHANGED,
-        handleRemotePlayerConnectionChange
-    );
-    console.log('[CAST] Cast context initialized and listeners attached.');
+    
+    // --- **NEW**: Add detailed event listeners for debugging the remote player ---
+    addRemotePlayerListeners(castState.playerController);
+    
+    console.log('[CAST] Cast context initialized, debugging enabled, and listeners attached.');
 }
 
 /**
+ * **NEW**: Helper function to add all necessary listeners to the remote player controller.
+ * This helps us see the exact state of the media player on the Chromecast.
+ * @param {cast.framework.RemotePlayerController} controller 
+ */
+function addRemotePlayerListeners(controller) {
+    controller.addEventListener(
+        cast.framework.RemotePlayerEventType.IS_CONNECTED_CHANGED,
+        handleRemotePlayerConnectionChange
+    );
+    // Log changes in media information (e.g., when new media is loaded)
+    controller.addEventListener(
+        cast.framework.RemotePlayerEventType.MEDIA_INFO_CHANGED,
+        (event) => {
+            console.log('[CAST_DEBUG] Remote Player: Media info changed.', event);
+            updatePlayerUI(); // Update UI when media info changes
+        }
+    );
+    // Log detailed player state changes (IDLE, BUFFERING, PLAYING, PAUSED)
+    controller.addEventListener(
+        cast.framework.RemotePlayerEventType.PLAYER_STATE_CHANGED,
+        (event) => {
+            console.log(`[CAST_DEBUG] Remote Player: State changed to ${event.value}`);
+            console.log('[CAST_DEBUG] Full player state event:', event);
+        }
+    );
+}
+
+
+/**
  * Stores the details of the currently playing local media.
- * This is called from player.js whenever a channel starts playing locally.
  * @param {string} streamUrl - The URL of the stream.
  * @param {string} name - The name of the channel.
  * @param {string} logo - The URL for the channel's logo.
@@ -101,22 +132,19 @@ function handleSessionStateChange(event) {
             castState.isCasting = true;
             showNotification(`Casting to ${castState.session.getCastDevice().friendlyName}`, false, 4000);
             
-            // If a video was playing locally, automatically cast it.
             if (castState.localPlayerState.streamUrl) {
                 console.log('[CAST] Session active. Automatically casting local content.');
                 loadMedia(castState.localPlayerState.streamUrl, castState.localPlayerState.name, castState.localPlayerState.logo);
             }
             break;
         case cast.framework.SessionState.SESSION_ENDED:
-            castState.isCasting = false;
-            castState.currentMedia = null;
-            showNotification('Casting session ended.', false, 4000);
-            updatePlayerUI(); // Update UI to reflect session end
-            break;
         case cast.framework.SessionState.NO_SESSION:
              castState.isCasting = false;
              castState.currentMedia = null;
-             updatePlayerUI(); // Update UI to reflect no session
+             if (event.sessionState === cast.framework.SessionState.SESSION_ENDED') {
+                showNotification('Casting session ended.', false, 4000);
+             }
+             updatePlayerUI();
              break;
     }
 }
@@ -125,6 +153,7 @@ function handleSessionStateChange(event) {
  * Handles changes in the remote player's connection status and updates the UI.
  */
 function handleRemotePlayerConnectionChange() {
+    console.log(`[CAST_DEBUG] Remote player connection state changed. Connected: ${castState.player.isConnected}`);
     updatePlayerUI();
 }
 
@@ -137,15 +166,11 @@ function updatePlayerUI() {
     const castBtn = UIElements.castBtn;
     const localMpegtsPlayer = appState.player;
 
-    // Check if we are successfully casting to a connected device.
     if (castState.isCasting && castState.player.isConnected && castState.session) {
         if (localMpegtsPlayer) {
             console.log('[CAST] Handoff to remote device complete. Destroying local mpegts player instance.');
-            localMpegtsPlayer.pause();
-            localMpegtsPlayer.unload();
-            localMpegtsPlayer.detachMediaElement();
             localMpegtsPlayer.destroy();
-            appState.player = null; // Clear the reference in the global state
+            appState.player = null;
         }
         videoElement.pause();
         videoElement.src = "";
@@ -179,7 +204,6 @@ function updatePlayerUI() {
 export function loadMedia(url, name, logo) {
     if (!castState.session) {
         showNotification('Not connected to a Cast device.', true);
-        console.warn('[CAST] loadMedia called but no active session found.');
         return;
     }
 
@@ -195,33 +219,16 @@ export function loadMedia(url, name, logo) {
 
     const request = new chrome.cast.media.LoadRequest(mediaInfo);
     
-    // --- **CORE FIX**: Enable CORS on the receiver ---
-    // This tells the Cast device that it's allowed to load content from a different
-    // origin (your stream server) than the sender application's origin.
-    // This is the most common reason for streams failing to play on Chromecast.
-    request.media.customData = {
-        "playbackConfig": {
-            "licenseUrl": "", // Not needed for HLS/MPEG-TS without DRM
-            "protectionSystem": "widevine", // Can be a placeholder
-            "customLicenseHeaders": {}
-        }
-    };
-    // **This is the critical line to enable CORS**
     request.credentials = null;
     request.credentialsType = 'none';
-    // --- End of CORE FIX ---
 
     castState.session.loadMedia(request).then(
         () => {
-            console.log('[CAST] Media loaded successfully on remote device.');
+            console.log('[CAST] Media load command sent to remote device successfully.');
             castState.currentMedia = castState.session.getMediaSession();
-            updatePlayerUI(); // Update UI to show casting status
         },
-        (errorCode, error) => {
-            // **IMPROVED LOGGING**
-            console.error('[CAST] FATAL: Error loading media on remote device.');
-            console.error(`[CAST] Error Code: ${errorCode}`);
-            console.error('[CAST] Full Error Object:', error);
+        (errorCode) => {
+            console.error(`[CAST] FATAL: Error sending media load command. Code: ${errorCode}`);
             showNotification('Failed to load media on Cast device. Check console for details.', true);
         }
     );
