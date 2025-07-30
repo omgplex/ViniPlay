@@ -40,9 +40,15 @@ export const stopAndCleanupPlayer = (forceStopLocal = false) => {
     UIElements.videoElement.load();
     console.log('[PLAYER_DEBUG] Video element source cleared.');
 
-    // Clear the local player state so it's not auto-cast later if the modal is closed.
-    setLocalPlayerState(null, null, null);
-    console.log('[PLAYER_DEBUG] Local player state cleared.');
+    // --- FIX START ---
+    // Only clear the local player state if we are NOT forcing a stop (i.e., local playback is truly ending, not being transferred to cast).
+    if (!forceStopLocal) {
+        setLocalPlayerState(null, null, null);
+        console.log('[PLAYER_DEBUG] Local player state cleared.');
+    } else {
+        console.log('[PLAYER_DEBUG] Local player state NOT cleared, as casting is taking over.');
+    }
+    // --- FIX END ---
 
     // Exit Picture-in-Picture mode if active
     if (document.pictureInPictureElement) {
