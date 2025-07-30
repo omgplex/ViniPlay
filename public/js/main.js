@@ -13,6 +13,7 @@ import { setupPlayerEventListeners } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
 import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu, showNotification } from './modules/ui.js';
 import { loadAndScheduleNotifications, subscribeUserToPush } from './modules/notification.js';
+import { initializeCastApi } from './modules/cast.js'; // NEW: Import Cast initializer
 
 /**
  * Initializes the main application after successful authentication.
@@ -34,6 +35,7 @@ export async function initMainApp() {
     setupGuideEventListeners();
     setupPlayerEventListeners();
     setupSettingsEventListeners();
+    initializeCastApi(); // NEW: Initialize the Google Cast API
     console.log('[MAIN] All event listeners set up.');
 
     // 3. Load initial configuration and guide data
