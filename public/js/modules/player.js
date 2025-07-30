@@ -74,12 +74,13 @@ export const playChannel = (url, name, channelId) => {
     const logo = channel ? channel.logo : '';
 
     // --- Casting Logic ---
+    // If the cast button is clicked and a session starts, this logic will be handled
+    // by the session state change listener in cast.js, which automatically plays the current local media.
     if (castState.isCasting) {
-        console.log(`[PLAYER] Casting channel "${name}" to remote device.`);
+        console.log(`[PLAYER] Already casting. Loading new channel "${name}" to remote device.`);
         loadMedia(streamUrlToPlay, name, logo);
-        // Open the modal which will show the "Now Casting..." status screen.
         openModal(UIElements.videoModal);
-        return; // End execution here for casting
+        return;
     }
 
     // --- Local Playback Logic ---
@@ -87,7 +88,6 @@ export const playChannel = (url, name, channelId) => {
     // Set the local player state so the cast module knows what's playing if the user decides to cast.
     setLocalPlayerState(streamUrlToPlay, name, logo);
     
-    // If a player is already running, destroy it cleanly before starting a new one.
     if (appState.player) {
         appState.player.destroy();
         appState.player = null;
@@ -105,7 +105,6 @@ export const playChannel = (url, name, channelId) => {
         appState.player.attachMediaElement(UIElements.videoElement);
         appState.player.load();
         
-        // Restore previous volume or default to 50%
         UIElements.videoElement.volume = parseFloat(localStorage.getItem('iptvPlayerVolume') || 0.5);
         
         appState.player.play().catch((err) => {
@@ -130,28 +129,40 @@ export function setupPlayerEventListeners() {
         }
     });
 
-    // --- FINAL FIX ---
-    // The google-cast-launcher is a custom element. To make it work inside our own
-    // styled button, we must catch the click on our button and then programmatically
-    // trigger a click on the google-cast-launcher element inside it.
+    // --- FINAL FIX v2 ---
+    // The error "Cannot start session before cast options are provided" means the SDK isn't ready.
+    // We now handle the click and manually request a session if the SDK is available but not yet in a session.
+    // The <google-cast-launcher> element will still handle the icon's appearance automatically.
     if (UIElements.castBtn) {
         UIElements.castBtn.addEventListener('click', () => {
-            console.log('[PLAYER] Cast button wrapper clicked. Triggering click on inner google-cast-launcher.');
-            const castLauncher = UIElements.castBtn.querySelector('google-cast-launcher');
-            if (castLauncher) {
-                castLauncher.click();
-            } else {
-                console.error('[PLAYER] Could not find the <google-cast-launcher> element inside the #cast-btn.');
+            console.log('[PLAYER] Cast button clicked.');
+            try {
+                const castContext = cast.framework.CastContext.getInstance();
+                // If there's no active session, we must manually request one.
+                // This is the correct way to initiate the cast dialog.
+                if (castContext.getCastState() !== cast.framework.CastState.NO_DEVICES_AVAILABLE) {
+                     castContext.requestSession().catch((error) => {
+                        console.error('Error requesting cast session:', error);
+                        if (error !== "cancel") { // "cancel" is a user action, not an error
+                            showNotification('Could not initiate Cast session. See console for details.', true);
+                        }
+                    });
+                } else {
+                    console.log('[PLAYER] No cast devices available.');
+                    showNotification('No cast devices found on your network.', false);
+                }
+            } catch (e) {
+                console.error('Error getting Cast instance:', e);
+                showNotification('Cast functionality is not ready. Please try again in a moment.', true);
             }
         });
     } else {
         console.error('[PLAYER] CRITICAL: Cast button wrapper #cast-btn NOT FOUND.');
     }
-    // --- END FINAL FIX ---
+    // --- END FINAL FIX v2 ---
 
     UIElements.videoElement.addEventListener('enterpictureinpicture', () => closeModal(UIElements.videoModal));
     UIElements.videoElement.addEventListener('leavepictureinpicture', () => {
-        // Re-open the modal only if the player exists and is not paused
         if (appState.player && !UIElements.videoElement.paused) {
             openModal(UIElements.videoModal);
         } else {
@@ -159,7 +170,6 @@ export function setupPlayerEventListeners() {
         }
     });
     
-    // Save volume changes to local storage
     UIElements.videoElement.addEventListener('volumechange', () => {
         localStorage.setItem('iptvPlayerVolume', UIElements.videoElement.volume);
     });
