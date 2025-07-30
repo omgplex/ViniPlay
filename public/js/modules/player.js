@@ -10,22 +10,23 @@ import { castState, loadMedia, setLocalPlayerState } from './cast.js';
 
 /**
  * Stops the current local stream, cleans up the mpegts.js player instance, and closes the modal.
- * This does NOT affect an active Google Cast session.
+ * This does NOT affect an active Google Cast session unless explicitly forced.
+ * @param {boolean} [forceStopLocal=false] - If true, forces stopping of the local player regardless of castState.isCasting.
  */
-export const stopAndCleanupPlayer = () => {
+export const stopAndCleanupPlayer = (forceStopLocal = false) => {
     console.log('[PLAYER_DEBUG] stopAndCleanupPlayer called.');
 
     // If we are casting, the modal might be showing the "Now Casting" screen.
-    // In this case, we just want to close the modal, not stop the remote playback.
-    if (castState.isCasting) {
-        console.log('[PLAYER_DEBUG] Currently casting. Closing modal but leaving cast session active.');
+    // If we are *not* forcing a stop, then we just want to close the modal, not stop the remote playback.
+    if (castState.isCasting && !forceStopLocal) {
+        console.log('[PLAYER_DEBUG] Currently casting (and not forced). Closing modal but leaving cast session active.');
         closeModal(UIElements.videoModal);
         return; // Exit without stopping the cast session.
     }
 
-    // If not casting, proceed with cleaning up the local player.
+    // If not casting, or if forceStopLocal is true, proceed with cleaning up the local player.
     if (appState.player) {
-        console.log('[PLAYER_DEBUG] Not casting. Destroying local mpegts player instance.');
+        console.log('[PLAYER_DEBUG] Destroying local mpegts player instance.');
         appState.player.destroy();
         appState.player = null;
         console.log('[PLAYER_DEBUG] mpegts player destroyed and reference cleared.');
