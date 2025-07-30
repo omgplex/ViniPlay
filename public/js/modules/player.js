@@ -129,37 +129,30 @@ export function setupPlayerEventListeners() {
         }
     });
 
-    // --- FINAL FIX v2 ---
-    // The error "Cannot start session before cast options are provided" means the SDK isn't ready.
-    // We now handle the click and manually request a session if the SDK is available but not yet in a session.
-    // The <google-cast-launcher> element will still handle the icon's appearance automatically.
+    // --- FINAL FIX ---
+    // This listener on our custom button unconditionally calls requestSession(),
+    // which is the correct way to open the Google Cast device selection dialog.
     if (UIElements.castBtn) {
         UIElements.castBtn.addEventListener('click', () => {
-            console.log('[PLAYER] Cast button clicked.');
+            console.log('[PLAYER] Custom cast button clicked. Requesting session...');
             try {
                 const castContext = cast.framework.CastContext.getInstance();
-                // If there's no active session, we must manually request one.
-                // This is the correct way to initiate the cast dialog.
-                if (castContext.getCastState() !== cast.framework.CastState.NO_DEVICES_AVAILABLE) {
-                     castContext.requestSession().catch((error) => {
-                        console.error('Error requesting cast session:', error);
-                        if (error !== "cancel") { // "cancel" is a user action, not an error
-                            showNotification('Could not initiate Cast session. See console for details.', true);
-                        }
-                    });
-                } else {
-                    console.log('[PLAYER] No cast devices available.');
-                    showNotification('No cast devices found on your network.', false);
-                }
+                castContext.requestSession().catch((error) => {
+                    console.error('Error requesting cast session:', error);
+                    // "cancel" is a normal user action, not a technical error.
+                    if (error !== "cancel") { 
+                        showNotification('Could not initiate Cast session. See console for details.', true);
+                    }
+                });
             } catch (e) {
-                console.error('Error getting Cast instance:', e);
-                showNotification('Cast functionality is not ready. Please try again in a moment.', true);
+                console.error('Fatal Error: Cast framework is not available.', e);
+                showNotification('Cast functionality is not available. Please try reloading.', true);
             }
         });
     } else {
-        console.error('[PLAYER] CRITICAL: Cast button wrapper #cast-btn NOT FOUND.');
+        console.error('[PLAYER] CRITICAL: Cast button #cast-btn NOT FOUND.');
     }
-    // --- END FINAL FIX v2 ---
+    // --- END FINAL FIX ---
 
     UIElements.videoElement.addEventListener('enterpictureinpicture', () => closeModal(UIElements.videoModal));
     UIElements.videoElement.addEventListener('leavepictureinpicture', () => {
