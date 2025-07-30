@@ -4,9 +4,10 @@
  */
 
 import { appState, guideState, UIElements } from './state.js';
-import { apiFetch, saveUserSetting } from './api.js'; // MODIFIED: Imported apiFetch
+import { apiFetch, saveUserSetting } from './api.js';
 import { showNotification, openModal, closeModal } from './ui.js';
-import { castState, loadMedia, setLocalPlayerState } from './cast.js';
+// MODIFIED: Import initiateCastPlayback instead of loadMedia directly
+import { castState, setLocalPlayerState, initiateCastPlayback } from './cast.js';
 
 /**
  * Stops the current local stream, cleans up the mpegts.js player instance, and closes the modal.
@@ -64,7 +65,7 @@ export const stopAndCleanupPlayer = (forceStopLocal = false) => {
  * @param {string} name - The name of the channel to display.
  * @param {string} channelId - The unique ID of the channel.
  */
-export const playChannel = async (url, name, channelId) => { // MODIFIED: Added async
+export const playChannel = async (url, name, channelId) => {
     console.log(`[PLAYER_DEBUG] playChannel called with:`, { url, name, channelId });
 
     // Update and save recent channels regardless of playback target
@@ -95,58 +96,28 @@ export const playChannel = async (url, name, channelId) => { // MODIFIED: Added 
     }
     console.log('[PLAYER_DEBUG] Found stream profile:', profile);
     
-    // Determine the final URL to play based on the stream profile (direct redirect or server proxy)
-    // FIX START: Declare streamUrlToPlay with 'let' so it can be reassigned/modified
-    let streamUrlToPlay; 
-    if (profile.command === 'redirect') {
-        streamUrlToPlay = url; 
-    } else {
-        streamUrlToPlay = `/stream?url=${encodeURIComponent(url)}&profileId=${profileId}&userAgentId=${userAgentId}`;
-    }
-    // FIX END
-    console.log(`[PLAYER_DEBUG] Calculated base streamUrlToPlay: ${streamUrlToPlay}`);
+    // Determine the base URL to play (before token for casting)
+    let baseStreamUrl = profile.command === 'redirect' ? url : `/stream?url=${encodeURIComponent(url)}&profileId=${profileId}&userAgentId=${userAgentId}`;
+    console.log(`[PLAYER_DEBUG] Calculated baseStreamUrl: ${baseStreamUrl}`);
 
     const channel = guideState.channels.find(c => c.id === channelId);
     const logo = channel ? channel.logo : '';
     console.log(`[PLAYER_DEBUG] Channel logo for casting: ${logo}`);
 
     // --- Casting Logic ---
-    // If the cast button is clicked and a session starts, this logic will be handled
-    // by the session state change listener in cast.js, which automatically plays the current local media.
     if (castState.isCasting) {
-        console.log(`[PLAYER_DEBUG] castState.isCasting is TRUE. Attempting to load new channel "${name}" to remote Cast device.`);
-        
-        // MODIFIED: Request and append stream token for Chromecast authentication
-        try {
-            const tokenRes = await apiFetch('/api/stream-token');
-            if (tokenRes && tokenRes.ok) {
-                const { token } = await tokenRes.json();
-                // FIX START: Append token to the CORRECT streamUrlToPlay variable
-                streamUrlToPlay += `&token=${encodeURIComponent(token)}`;
-                // FIX END
-                console.log('[PLAYER_DEBUG] Successfully fetched stream token. Appended to URL.');
-            } else {
-                const errorData = tokenRes ? await tokenRes.json() : { error: 'Unknown token error.' };
-                showNotification(`Failed to get stream token: ${errorData.error}`, true);
-                console.error('[PLAYER_DEBUG] Failed to get stream token:', errorData);
-                return; // Abort if token cannot be obtained
-            }
-        } catch (error) {
-            showNotification('Network error while getting stream token.', true);
-            console.error('[PLAYER_DEBUG] Network error fetching stream token:', error);
-            return; // Abort on network errors
-        }
-
-        loadMedia(streamUrlToPlay, name, logo);
-        openModal(UIElements.videoModal);
-        console.log('[PLAYER_DEBUG] Video modal opened for casting display.');
+        console.log(`[PLAYER_DEBUG] castState.isCasting is TRUE. Delegating to initiateCastPlayback in cast.js.`);
+        // Set local player state for the Cast module to pick up
+        setLocalPlayerState(baseStreamUrl, name, logo); 
+        // Delegate the actual media loading (including token fetch) to cast.js
+        initiateCastPlayback(); 
         return;
     }
 
-    // --- Local Playback Logic ---
+    // --- Local Playback Logic (Only if not casting) ---
     console.log(`[PLAYER_DEBUG] castState.isCasting is FALSE. Playing channel "${name}" locally.`);
-    // Set the local player state so the cast module knows what's playing if the user decides to cast.
-    setLocalPlayerState(streamUrlToPlay, name, logo);
+    // For local playback, set the local player state directly before starting the player
+    setLocalPlayerState(baseStreamUrl, name, logo);
     
     if (appState.player) {
         console.log('[PLAYER_DEBUG] Existing local mpegts player found. Destroying it before creating new one.');
@@ -159,7 +130,7 @@ export const playChannel = async (url, name, channelId) => { // MODIFIED: Added 
         appState.player = mpegts.createPlayer({
             type: 'mse',
             isLive: true,
-            url: streamUrlToPlay
+            url: baseStreamUrl // Use the base URL for local playback
         });
         console.log('[PLAYER_DEBUG] mpegts player instance created:', appState.player);
         
