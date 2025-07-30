@@ -4,7 +4,7 @@
  */
 
 import { appState, guideState, UIElements } from './state.js';
-import { saveUserSetting } from './api.js';
+import { apiFetch, saveUserSetting } from './api.js'; // MODIFIED: Imported apiFetch
 import { showNotification, openModal, closeModal } from './ui.js';
 import { castState, loadMedia, setLocalPlayerState } from './cast.js';
 
@@ -40,7 +40,6 @@ export const stopAndCleanupPlayer = (forceStopLocal = false) => {
     UIElements.videoElement.load();
     console.log('[PLAYER_DEBUG] Video element source cleared.');
 
-    // --- FIX START ---
     // Only clear the local player state if we are NOT forcing a stop (i.e., local playback is truly ending, not being transferred to cast).
     if (!forceStopLocal) {
         setLocalPlayerState(null, null, null);
@@ -48,7 +47,6 @@ export const stopAndCleanupPlayer = (forceStopLocal = false) => {
     } else {
         console.log('[PLAYER_DEBUG] Local player state NOT cleared, as casting is taking over.');
     }
-    // --- FIX END ---
 
     // Exit Picture-in-Picture mode if active
     if (document.pictureInPictureElement) {
@@ -66,7 +64,7 @@ export const stopAndCleanupPlayer = (forceStopLocal = false) => {
  * @param {string} name - The name of the channel to display.
  * @param {string} channelId - The unique ID of the channel.
  */
-export const playChannel = (url, name, channelId) => {
+export const playChannel = async (url, name, channelId) => { // MODIFIED: Added async
     console.log(`[PLAYER_DEBUG] playChannel called with:`, { url, name, channelId });
 
     // Update and save recent channels regardless of playback target
@@ -98,8 +96,8 @@ export const playChannel = (url, name, channelId) => {
     console.log('[PLAYER_DEBUG] Found stream profile:', profile);
     
     // Determine the final URL to play based on the stream profile (direct redirect or server proxy)
-    const streamUrlToPlay = profile.command === 'redirect' ? url : `/stream?url=${encodeURIComponent(url)}&profileId=${profileId}&userAgentId=${userAgentId}`;
-    console.log(`[PLAYER_DEBUG] Calculated streamUrlToPlay: ${streamUrlToPlay}`);
+    let streamUrlToPlay = profile.command === 'redirect' ? url : `/stream?url=${encodeURIComponent(url)}&profileId=${profileId}&userAgentId=${userAgentId}`;
+    console.log(`[PLAYER_DEBUG] Calculated base streamUrlToPlay: ${streamUrlToPlay}`);
 
     const channel = guideState.channels.find(c => c.id === channelId);
     const logo = channel ? channel.logo : '';
@@ -110,6 +108,26 @@ export const playChannel = (url, name, channelId) => {
     // by the session state change listener in cast.js, which automatically plays the current local media.
     if (castState.isCasting) {
         console.log(`[PLAYER_DEBUG] castState.isCasting is TRUE. Attempting to load new channel "${name}" to remote Cast device.`);
+        
+        // MODIFIED: Request and append stream token for Chromecast authentication
+        try {
+            const tokenRes = await apiFetch('/api/stream-token');
+            if (tokenRes && tokenRes.ok) {
+                const { token } = await tokenRes.json();
+                streamUrlToPlay += `&token=${encodeURIComponent(token)}`;
+                console.log('[PLAYER_DEBUG] Successfully fetched stream token. Appended to URL.');
+            } else {
+                const errorData = tokenRes ? await tokenRes.json() : { error: 'Unknown token error.' };
+                showNotification(`Failed to get stream token: ${errorData.error}`, true);
+                console.error('[PLAYER_DEBUG] Failed to get stream token:', errorData);
+                return; // Abort if token cannot be obtained
+            }
+        } catch (error) {
+            showNotification('Network error while getting stream token.', true);
+            console.error('[PLAYER_DEBUG] Network error fetching stream token:', error);
+            return; // Abort on network errors
+        }
+
         loadMedia(streamUrlToPlay, name, logo);
         openModal(UIElements.videoModal);
         console.log('[PLAYER_DEBUG] Video modal opened for casting display.');
