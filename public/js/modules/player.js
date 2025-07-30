@@ -130,6 +130,23 @@ export function setupPlayerEventListeners() {
         }
     });
 
+    // --- DEBUGGING ---
+    // Check if the cast button element exists in the UIElements object
+    if (UIElements.castBtn) {
+        console.log('[PLAYER_DEBUG] Cast button (#cast-btn) found in DOM and UIElements.');
+        // Add a simple click listener to see if it responds to clicks.
+        UIElements.castBtn.addEventListener('click', () => {
+            console.log('[PLAYER_DEBUG] Cast button was clicked!');
+            // Note: The Google Cast SDK's own logic will handle opening the cast dialog.
+            // This listener is purely for confirming the button is interactive.
+        });
+    } else {
+        // If the element isn't found, this is a critical error.
+        console.error('[PLAYER_DEBUG] CRITICAL: Cast button (#cast-btn) NOT FOUND in UIElements. Check state.js initialization and index.html for the element ID.');
+    }
+    // --- END DEBUGGING ---
+
+
     UIElements.videoElement.addEventListener('enterpictureinpicture', () => closeModal(UIElements.videoModal));
     UIElements.videoElement.addEventListener('leavepictureinpicture', () => {
         // Re-open the modal only if the player exists and is not paused
