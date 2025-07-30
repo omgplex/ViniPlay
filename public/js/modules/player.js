@@ -13,61 +13,43 @@ import { castState, loadMedia, setLocalPlayerState } from './cast.js';
  * This does NOT affect an active Google Cast session.
  */
 export const stopAndCleanupPlayer = () => {
-    console.log('[PLAYER_LOG] stopAndCleanupPlayer called.');
+    // If we are casting, the modal might be showing the "Now Casting" screen.
+    // In this case, we just want to close the modal, not stop the remote playback.
     if (castState.isCasting) {
-        console.log('[PLAYER_LOG] Closing modal but leaving cast session active.');
+        console.log('[PLAYER] Closing modal but leaving cast session active.');
         closeModal(UIElements.videoModal);
-        return;
+        return; // Exit without stopping the cast session.
     }
 
+    // If not casting, proceed with cleaning up the local player.
     if (appState.player) {
-        console.log('[PLAYER_LOG] Found active mpegts player. Destroying it.');
+        console.log('[PLAYER] Destroying local mpegts player.');
         appState.player.destroy();
         appState.player = null;
-    } else {
-        console.log('[PLAYER_LOG] No active mpegts player found to destroy.');
     }
-    
+    // Clear the video source to stop any background loading
     UIElements.videoElement.src = "";
     UIElements.videoElement.removeAttribute('src');
     UIElements.videoElement.load();
-    console.log('[PLAYER_LOG] Video element source cleared.');
 
+    // Clear the local player state so it's not auto-cast later if the modal is closed.
     setLocalPlayerState(null, null, null);
 
+    // Exit Picture-in-Picture mode if active
     if (document.pictureInPictureElement) {
         document.exitPictureInPicture().catch(console.error);
     }
     closeModal(UIElements.videoModal);
-    console.log('[PLAYER_LOG] stopAndCleanupPlayer finished.');
 };
 
 /**
- * Dedicated function to stop only the local mpegts.js stream for casting handoff.
- */
-export const stopLocalPlayerForCasting = () => {
-    console.log('[PLAYER_LOG] stopLocalPlayerForCasting called.');
-    if (appState.player) {
-        console.log('[PLAYER_LOG] Destroying local player for cast handoff.');
-        appState.player.destroy();
-        appState.player = null;
-    } else {
-        console.log('[PLAYER_LOG] No local player was active to stop for casting.');
-    }
-    
-    UIElements.videoElement.pause();
-    UIElements.videoElement.src = "";
-    UIElements.videoElement.removeAttribute('src');
-    UIElements.videoElement.load();
-    console.log('[PLAYER_LOG] stopLocalPlayerForCasting finished.');
-};
-
-
-/**
- * Initializes and starts playing a channel stream.
+ * Initializes and starts playing a channel stream, either locally or on a Cast device.
+ * @param {string} url - The URL of the channel stream.
+ * @param {string} name - The name of the channel to display.
+ * @param {string} channelId - The unique ID of the channel.
  */
 export const playChannel = (url, name, channelId) => {
-    console.log(`[PLAYER_LOG] playChannel called for "${name}". IsCasting: ${castState.isCasting}`);
+    // Update and save recent channels regardless of playback target
     if (channelId) {
         const recentChannels = [channelId, ...(guideState.settings.recentChannels || []).filter(id => id !== channelId)].slice(0, 15);
         guideState.settings.recentChannels = recentChannels;
@@ -86,36 +68,32 @@ export const playChannel = (url, name, channelId) => {
         return showNotification("Stream profile not found.", true);
     }
     
-    let streamUrlToPlay;
-    if (profile.command === 'redirect') {
-        streamUrlToPlay = url;
-    } else {
-        const relativeStreamUrl = `/stream?url=${encodeURIComponent(url)}&profileId=${profileId}&userAgentId=${userAgentId}`;
-        streamUrlToPlay = new URL(relativeStreamUrl, window.location.origin).href;
-    }
-    console.log(`[PLAYER_LOG] Final stream URL for playback: ${streamUrlToPlay}`);
-
+    // Determine the final URL to play based on the stream profile (direct redirect or server proxy)
+    const streamUrlToPlay = profile.command === 'redirect' ? url : `/stream?url=${encodeURIComponent(url)}&profileId=${profileId}&userAgentId=${userAgentId}`;
     const channel = guideState.channels.find(c => c.id === channelId);
     const logo = channel ? channel.logo : '';
 
+    // --- Casting Logic ---
+    // If the cast button is clicked and a session starts, this logic will be handled
+    // by the session state change listener in cast.js, which automatically plays the current local media.
     if (castState.isCasting) {
-        console.log(`[PLAYER_LOG] Active cast session exists. Loading new channel "${name}" directly to remote device.`);
+        console.log(`[PLAYER] Already casting. Loading new channel "${name}" to remote device.`);
         loadMedia(streamUrlToPlay, name, logo);
         openModal(UIElements.videoModal);
         return;
     }
 
-    console.log(`[PLAYER_LOG] Playing channel "${name}" locally.`);
+    // --- Local Playback Logic ---
+    console.log(`[PLAYER] Playing channel "${name}" locally.`);
+    // Set the local player state so the cast module knows what's playing if the user decides to cast.
     setLocalPlayerState(streamUrlToPlay, name, logo);
     
     if (appState.player) {
-        console.log('[PLAYER_LOG] Destroying previous local player instance.');
         appState.player.destroy();
         appState.player = null;
     }
 
     if (mpegts.isSupported()) {
-        console.log('[PLAYER_LOG] MPEGTS is supported. Creating new player.');
         appState.player = mpegts.createPlayer({
             type: 'mse',
             isLive: true,
@@ -130,7 +108,7 @@ export const playChannel = (url, name, channelId) => {
         UIElements.videoElement.volume = parseFloat(localStorage.getItem('iptvPlayerVolume') || 0.5);
         
         appState.player.play().catch((err) => {
-            console.error("[PLAYER_LOG] MPEGTS Player playback error:", err);
+            console.error("MPEGTS Player Error:", err);
             showNotification("Could not play stream. Check browser console & server logs.", true);
             stopAndCleanupPlayer();
         });
@@ -143,7 +121,6 @@ export const playChannel = (url, name, channelId) => {
  * Sets up event listeners for the video player.
  */
 export function setupPlayerEventListeners() {
-    console.log('[PLAYER_LOG] Setting up player event listeners.');
     UIElements.closeModal.addEventListener('click', stopAndCleanupPlayer);
 
     UIElements.pipBtn.addEventListener('click', () => {
@@ -152,28 +129,30 @@ export function setupPlayerEventListeners() {
         }
     });
 
+    // --- FINAL FIX ---
+    // This listener on our custom button unconditionally calls requestSession(),
+    // which is the correct way to open the Google Cast device selection dialog.
     if (UIElements.castBtn) {
         UIElements.castBtn.addEventListener('click', () => {
-            console.log('[PLAYER_LOG] Cast button clicked. Requesting session...');
+            console.log('[PLAYER] Custom cast button clicked. Requesting session...');
             try {
                 const castContext = cast.framework.CastContext.getInstance();
-                castContext.requestSession().then(
-                   () => { console.log('[PLAYER_LOG] Cast session request successful (Promise resolved).'); },
-                   (error) => { 
-                        console.error('[PLAYER_LOG] Cast session request failed (Promise rejected). Error:', error);
-                        if (error !== "cancel") { 
-                            showNotification('Could not initiate Cast session. See console for details.', true);
-                        }
-                   }
-                );
+                castContext.requestSession().catch((error) => {
+                    console.error('Error requesting cast session:', error);
+                    // "cancel" is a normal user action, not a technical error.
+                    if (error !== "cancel") { 
+                        showNotification('Could not initiate Cast session. See console for details.', true);
+                    }
+                });
             } catch (e) {
-                console.error('[PLAYER_LOG] Fatal Error: Cast framework is not available or failed to execute.', e);
+                console.error('Fatal Error: Cast framework is not available.', e);
                 showNotification('Cast functionality is not available. Please try reloading.', true);
             }
         });
     } else {
-        console.error('[PLAYER_LOG] CRITICAL: Cast button #cast-btn NOT FOUND.');
+        console.error('[PLAYER] CRITICAL: Cast button #cast-btn NOT FOUND.');
     }
+    // --- END FINAL FIX ---
 
     UIElements.videoElement.addEventListener('enterpictureinpicture', () => closeModal(UIElements.videoModal));
     UIElements.videoElement.addEventListener('leavepictureinpicture', () => {
@@ -187,5 +166,4 @@ export function setupPlayerEventListeners() {
     UIElements.videoElement.addEventListener('volumechange', () => {
         localStorage.setItem('iptvPlayerVolume', UIElements.videoElement.volume);
     });
-    console.log('[PLAYER_LOG] Player event listeners setup complete.');
 }
