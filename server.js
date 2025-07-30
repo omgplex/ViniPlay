@@ -18,6 +18,7 @@ const sqlite3 = require('sqlite3').verbose();
 const SQLiteStore = require('connect-sqlite3')(session);
 const xmlJS = require('xml-js');
 const webpush = require('web-push');
+const jwt = require('jsonwebtoken'); // NEW: Import jsonwebtoken
 
 const app = express();
 const port = 8998;
@@ -28,12 +29,14 @@ let notificationCheckInterval = null;
 // --- Configuration ---
 const DATA_DIR = '/data';
 const VAPID_KEYS_PATH = path.join(DATA_DIR, 'vapid.json');
+const JWT_SECRET_PATH = path.join(DATA_DIR, 'jwt_secret.json'); // NEW: Path for auto-generated JWT secret
 const SOURCES_DIR = path.join(DATA_DIR, 'sources');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const DB_PATH = path.join(DATA_DIR, 'viniplay.db');
 const MERGED_M3U_PATH = path.join(DATA_DIR, 'playlist.m3u');
 const MERGED_EPG_JSON_PATH = path.join(DATA_DIR, 'epg.json');
 const SETTINGS_PATH = path.join(DATA_DIR, 'settings.json');
+
 
 console.log(`[INIT] Application starting. Data directory: ${DATA_DIR}, Public directory: ${PUBLIC_DIR}`);
 
@@ -59,6 +62,30 @@ try {
     console.error('[Push] FATAL: Could not load or generate VAPID keys.', error);
 }
 
+// --- Automatic JWT Secret Generation/Loading ---
+let JWT_SECRET = process.env.JWT_SECRET; // Try to load from environment variable first
+if (!JWT_SECRET) {
+    try {
+        if (fs.existsSync(JWT_SECRET_PATH)) {
+            console.log('[SECURITY] Loading existing JWT secret from file...');
+            JWT_SECRET = fs.readFileSync(JWT_SECRET_PATH, 'utf-8').trim();
+            if (!JWT_SECRET) {
+                 throw new Error("JWT secret file is empty.");
+            }
+        } else {
+            console.log('[SECURITY] JWT secret not found in environment or file. Generating new secret...');
+            // Generate a secure random string for JWT secret
+            JWT_SECRET = require('crypto').randomBytes(64).toString('hex');
+            fs.writeFileSync(JWT_SECRET_PATH, JWT_SECRET);
+            console.log('[SECURITY] New JWT secret generated and saved to file.');
+        }
+    } catch (error) {
+        console.error('[SECURITY] FATAL: Could not load or generate JWT secret. Please set JWT_SECRET in your .env or ensure /data is writable. Error:', error);
+        process.exit(1); // Exit if cannot obtain a secret
+    }
+} else {
+    console.log('[SECURITY] JWT_SECRET is configured via environment variable.');
+}
 
 // Ensure the data and public directories exist.
 try {
@@ -1275,7 +1302,7 @@ app.delete('/api/notifications/:id', requireAuth, (req, res) => {
 app.delete('/api/data', requireAuth, (req, res) => {
     console.log(`[API] Received request to /api/data (clear all data) for user ${req.session.userId}.`);
     try {
-        [MERGED_M3U_PATH, MERGED_EPG_JSON_PATH, SETTINGS_PATH].forEach(file => {
+        [MERGED_M3U_PATH, MERGED_EPG_JSON_PATH, SETTINGS_PATH, JWT_SECRET_PATH].forEach(file => { // ADDED JWT_SECRET_PATH
             if (fs.existsSync(file)) {
                 fs.unlinkSync(file);
                 console.log(`[API] Deleted file: ${file}`);
@@ -1310,9 +1337,56 @@ app.delete('/api/data', requireAuth, (req, res) => {
     }
 });
 
-app.get('/stream', requireAuth, (req, res) => {
-    const { url: streamUrl, profileId, userAgentId } = req.query;
-    console.log(`[STREAM_DEBUG] Stream request received for user ${req.session.username}.`);
+// NEW: Endpoint to generate a temporary stream token
+app.get('/api/stream-token', requireAuth, (req, res) => {
+    if (!JWT_SECRET) {
+        console.error('[AUTH_API] JWT_SECRET is not configured. Cannot generate stream token.');
+        return res.status(500).json({ error: 'Server not configured for stream tokens.' });
+    }
+    try {
+        const token = jwt.sign({ userId: req.session.userId }, JWT_SECRET, { expiresIn: '5m' }); // Token valid for 5 minutes
+        console.log(`[AUTH_API] Stream token generated for user ${req.session.userId}.`);
+        res.json({ token });
+    } catch (error) {
+        console.error('[AUTH_API] Error generating stream token:', error);
+        res.status(500).json({ error: 'Failed to generate stream token.' });
+    }
+});
+
+// MODIFIED: Stream endpoint now validates token instead of session cookie
+app.get('/stream', (req, res) => { // Removed requireAuth middleware
+    const { url: streamUrl, profileId, userAgentId, token } = req.query; // Get token from query
+    
+    let authenticatedUserId = null;
+
+    // --- Token Validation Logic ---
+    if (token) {
+        if (!JWT_SECRET) {
+            console.error('[AUTH] JWT_SECRET is not configured. Cannot validate stream token.');
+            return res.status(500).send('Authentication error: Server misconfiguration.');
+        }
+        try {
+            const decoded = jwt.verify(token, JWT_SECRET);
+            authenticatedUserId = decoded.userId;
+            console.log(`[AUTH] Stream token valid for user ID: ${authenticatedUserId}.`);
+        } catch (error) {
+            console.warn(`[AUTH] Invalid or expired stream token for /stream request: ${error.message}`);
+            return res.status(401).send('Unauthorized: Invalid or expired stream token.');
+        }
+    } else {
+        // If no token is provided, still allow authenticated browser sessions if present
+        // This is a fallback for direct browser local playback if token method isn't used
+        if (req.session && req.session.userId) {
+            authenticatedUserId = req.session.userId;
+            console.log(`[AUTH] Stream accessed by authenticated session for user ID: ${authenticatedUserId}.`);
+        } else {
+            console.warn('[AUTH] Unauthorized access attempt to /stream: No token or valid session.');
+            return res.status(401).send('Unauthorized: Stream token or active session required.');
+        }
+    }
+    // End Token Validation Logic ---
+
+    console.log(`[STREAM_DEBUG] Stream request received for user ${authenticatedUserId}.`);
     console.log(`[STREAM_DEBUG]   Query Parameters: url=${streamUrl}, profileId=${profileId}, userAgentId=${userAgentId}`);
 
     if (!streamUrl) {
