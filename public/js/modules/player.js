@@ -6,7 +6,7 @@
 import { appState, guideState, UIElements } from './state.js';
 import { saveUserSetting } from './api.js';
 import { showNotification, openModal, closeModal } from './ui.js';
-import { castState, loadMedia, setLocalPlayerState } from './cast.js';
+import { castState, loadMedia, setLocalPlayerState, endCastSession } from './cast.js';
 
 /**
  * Stops the current local stream, cleans up the mpegts.js player instance, and closes the modal.
@@ -18,7 +18,19 @@ export const stopAndCleanupPlayer = () => {
     if (castState.isCasting) {
         console.log('[PLAYER] Closing modal but leaving cast session active.');
         closeModal(UIElements.videoModal);
-        return; // Exit without stopping the cast session.
+        // Prompt user if they want to stop casting when closing the modal.
+        showConfirm(
+            'Stop Casting?',
+            'Do you want to stop casting this channel?',
+            () => {
+                endCastSession();
+                // We don't need to do anything else, as the session end event will handle UI cleanup.
+            },
+            () => {
+                // User chose not to stop, do nothing.
+            }
+        );
+        return;
     }
 
     // If not casting, proceed with cleaning up the local player.
@@ -68,25 +80,39 @@ export const playChannel = (url, name, channelId) => {
         return showNotification("Stream profile not found.", true);
     }
     
-    // Determine the final URL to play based on the stream profile (direct redirect or server proxy)
-    const streamUrlToPlay = profile.command === 'redirect' ? url : `/stream?url=${encodeURIComponent(url)}&profileId=${profileId}&userAgentId=${userAgentId}`;
+    // --- **CORE FIX**: Differentiate between local and cast URLs ---
+    // The server proxy URL needs to be relative for the local player, but absolute for the Cast device.
+    
+    // 1. Define the relative path for the server-side proxy. This is used by the local player.
+    const relativeProxiedUrl = `/stream?url=${encodeURIComponent(url)}&profileId=${profileId}&userAgentId=${userAgentId}`;
+
+    // 2. Determine the URL for the LOCAL player.
+    // If the profile is 'redirect', use the original stream URL directly. Otherwise, use the relative proxied URL.
+    const localUrlToPlay = profile.command === 'redirect' ? url : relativeProxiedUrl;
+    
+    // 3. Determine the URL for the CAST device. This MUST be an absolute URL.
+    // We prepend the window's origin to the relative path to make it absolute.
+    const castUrlToPlay = profile.command === 'redirect' ? url : `${window.location.origin}${relativeProxiedUrl}`;
+    // --- End of CORE FIX ---
+
     const channel = guideState.channels.find(c => c.id === channelId);
     const logo = channel ? channel.logo : '';
 
     // --- Casting Logic ---
-    // If the cast button is clicked and a session starts, this logic will be handled
-    // by the session state change listener in cast.js, which automatically plays the current local media.
     if (castState.isCasting) {
-        console.log(`[PLAYER] Already casting. Loading new channel "${name}" to remote device.`);
-        loadMedia(streamUrlToPlay, name, logo);
-        openModal(UIElements.videoModal);
+        console.log(`[PLAYER] Already casting. Loading new channel "${name}" to remote device with absolute URL.`);
+        // **FIX**: Use the absolute URL (`castUrlToPlay`) when loading media on the remote device.
+        loadMedia(castUrlToPlay, name, logo);
+        openModal(UIElements.videoModal); // Show the "Now Casting" modal
         return;
     }
 
     // --- Local Playback Logic ---
     console.log(`[PLAYER] Playing channel "${name}" locally.`);
-    // Set the local player state so the cast module knows what's playing if the user decides to cast.
-    setLocalPlayerState(streamUrlToPlay, name, logo);
+    
+    // **FIX**: When setting the local player state, provide the absolute URL that the cast device will need
+    // if the user decides to initiate a new cast session while this channel is playing.
+    setLocalPlayerState(castUrlToPlay, name, logo);
     
     if (appState.player) {
         appState.player.destroy();
@@ -97,7 +123,8 @@ export const playChannel = (url, name, channelId) => {
         appState.player = mpegts.createPlayer({
             type: 'mse',
             isLive: true,
-            url: streamUrlToPlay
+            // Use the local URL (which can be relative) for the local player.
+            url: localUrlToPlay 
         });
         
         openModal(UIElements.videoModal);
@@ -129,12 +156,11 @@ export function setupPlayerEventListeners() {
         }
     });
 
-    // --- FINAL FIX ---
     // This listener on our custom button unconditionally calls requestSession(),
     // which is the correct way to open the Google Cast device selection dialog.
     if (UIElements.castBtn) {
         UIElements.castBtn.addEventListener('click', () => {
-            console.log('[PLAYER] Custom cast button clicked. Requesting session...');
+            console.log('[PLAYER] Custom cast button clicked. Requesting new session...');
             try {
                 const castContext = cast.framework.CastContext.getInstance();
                 castContext.requestSession().catch((error) => {
@@ -152,7 +178,6 @@ export function setupPlayerEventListeners() {
     } else {
         console.error('[PLAYER] CRITICAL: Cast button #cast-btn NOT FOUND.');
     }
-    // --- END FINAL FIX ---
 
     UIElements.videoElement.addEventListener('enterpictureinpicture', () => closeModal(UIElements.videoModal));
     UIElements.videoElement.addEventListener('leavepictureinpicture', () => {
