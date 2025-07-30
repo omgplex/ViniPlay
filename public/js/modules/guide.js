@@ -44,6 +44,48 @@ export function handleGuideLoad(m3uContent, epgContent) {
 }
 
 /**
+ * A helper function to format a Date object into 'YYYY-MM-DD' string format for date inputs.
+ * @param {Date} date - The date to format.
+ * @returns {string} The formatted date string.
+ */
+const formatDateForInput = (date) => {
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const day = date.getDate().toString().padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+
+/**
+ * Scans all programs to determine the earliest start date and latest end date.
+ * @returns {{minDate: Date, maxDate: Date}|null} An object with min and max dates, or null if no programs exist.
+ */
+const getEpgDateRange = () => {
+    let minDate = null;
+    let maxDate = null;
+
+    if (!guideState.programs || Object.keys(guideState.programs).length === 0) {
+        return null;
+    }
+
+    for (const channelId in guideState.programs) {
+        for (const prog of guideState.programs[channelId]) {
+            const startDate = new Date(prog.start);
+            const stopDate = new Date(prog.stop);
+            if (!minDate || startDate < minDate) {
+                minDate = startDate;
+            }
+            if (!maxDate || stopDate > maxDate) {
+                maxDate = stopDate;
+            }
+        }
+    }
+
+    return { minDate, maxDate };
+};
+
+
+/**
  * Finalizes the guide setup after data is loaded from any source (API or cache).
  * @param {boolean} isFirstLoad - Indicates if this is the initial load of the guide.
  */
@@ -70,6 +112,18 @@ export function finalizeGuideLoad(isFirstLoad = false) {
         threshold: 0.4,
         includeScore: true,
     });
+
+    // --- NEW: Date Picker Initialization ---
+    const epgRange = getEpgDateRange();
+    if (epgRange && UIElements.guideDatePicker) {
+        UIElements.guideDatePicker.min = formatDateForInput(epgRange.minDate);
+        UIElements.guideDatePicker.max = formatDateForInput(epgRange.maxDate);
+        UIElements.guideDatePicker.value = formatDateForInput(guideState.currentDate);
+        UIElements.guideDatePicker.disabled = false;
+    } else if (UIElements.guideDatePicker) {
+        UIElements.guideDatePicker.disabled = true; // Disable if no EPG data
+    }
+
 
     // Prepare program data for searching
     const allPrograms = [];
@@ -282,15 +336,9 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
     updateNowLine(guideStartUtc, resetScroll);
 
     // --- Re-attach date navigation listeners ---
-    const prevDayBtn = UIElements.guideGrid.querySelector('#prev-day-btn');
     const nowBtn = UIElements.guideGrid.querySelector('#now-btn');
-    const nextDayBtn = UIElements.guideGrid.querySelector('#next-day-btn');
     
     // Use .onclick to ensure we're not adding duplicate listeners on re-renders
-    if (prevDayBtn) prevDayBtn.onclick = () => {
-        guideState.currentDate.setDate(guideState.currentDate.getDate() - 1);
-        finalizeGuideLoad();
-    };
     if (nowBtn) nowBtn.onclick = () => {
         const now = new Date();
         if (guideState.currentDate.toDateString() !== now.toDateString()) {
@@ -302,10 +350,6 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
             const guideStartUtc = new Date(Date.UTC(guideStart.getUTCFullYear(), guideStart.getUTCMonth(), guideStart.getUTCDate()));
             updateNowLine(guideStartUtc, true);
         }
-    };
-    if (nextDayBtn) nextDayBtn.onclick = () => {
-        guideState.currentDate.setDate(guideState.currentDate.getDate() + 1);
-        finalizeGuideLoad();
     };
 };
 
@@ -577,6 +621,20 @@ export function setupGuideEventListeners() {
             UIElements.searchResultsContainer.classList.add('hidden');
         }
     });
+
+    // --- NEW: Date Picker Event Listener ---
+    UIElements.guideDatePicker.addEventListener('change', (e) => {
+        const selectedDate = e.target.value; // YYYY-MM-DD
+        if (selectedDate) {
+            // The valueAsDate gives the date in UTC, so we need to adjust for the local timezone offset
+            const date = new Date(e.target.valueAsDate);
+            const userTimezoneOffset = date.getTimezoneOffset() * 60000;
+            guideState.currentDate = new Date(date.getTime() + userTimezoneOffset);
+            
+            finalizeGuideLoad(true); // Re-render the guide for the new date
+        }
+    });
+
 
     // --- Interactions (Clicks on the new grid) ---
     // Event delegation is used here on the guideGrid, which is now efficient
