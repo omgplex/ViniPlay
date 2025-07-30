@@ -218,8 +218,16 @@ export function loadMedia(url, name, logo) {
         return;
     }
 
-    console.log(`[CAST_DEBUG] Creating MediaInfo object for URL: ${url}`);
-    const mediaInfo = new chrome.cast.media.MediaInfo(url, 'video/mp2t'); // Assuming video/mp2t for HLS/MPEG-TS
+    // --- FIX START ---
+    // Ensure the URL passed to MediaInfo is absolute, as Chromecast receivers might expect this.
+    // The `url` parameter here is already the `/stream?url=...` endpoint from your server.
+    const absoluteUrl = new URL(url, window.location.origin).href;
+    console.log(`[CAST_DEBUG] Converted relative URL to absolute for Cast: ${absoluteUrl}`);
+    // --- FIX END ---
+
+    console.log(`[CAST_DEBUG] Creating MediaInfo object for URL: ${absoluteUrl}`);
+    // Use the absolute URL as the contentId
+    const mediaInfo = new chrome.cast.media.MediaInfo(absoluteUrl, 'video/mp2t'); // Assuming video/mp2t for HLS/MPEG-TS
     mediaInfo.streamType = chrome.cast.media.StreamType.LIVE;
     mediaInfo.metadata = new chrome.cast.media.TvShowMediaMetadata(); // Or GenericMediaMetadata
     mediaInfo.metadata.title = name;
