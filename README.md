@@ -1,9 +1,11 @@
+
 <div align="center">
 
 # ViniPlay
 
-A simple, self-hosted IPTV player with a clean web interface and powerful backend transcoding using FFMPEG.
+**A powerful, self-hosted IPTV player with a modern web interface.**
 
+Stream your M3U playlists with EPG data, manage users, cast to your TV, and watch multiple channels at once.
 <p>
     <img src="https://img.shields.io/badge/docker-ready-blue.svg?style=for-the-badge&logo=docker" alt="Docker Ready">
     <img src="https://img.shields.io/badge/platform-node-green.svg?style=for-the-badge&logo=node.js" alt="Node.js Backend">
@@ -14,7 +16,9 @@ A simple, self-hosted IPTV player with a clean web interface and powerful backen
 
 ---
 
-This project allows you to load M3U playlists and EPG XML files to create a personalized TV guide and stream channels directly in your browser. The backend server handles stream fetching and on-the-fly transcoding, resolving common browser compatibility and CORS issues.
+ViniPlay transforms your M3U and EPG files into a polished, high-performance streaming experience. It's a full-featured IPTV solution that runs in a Docker container, providing a robust Node.js backend to handle streams and a sleek, responsive frontend for an exceptional user experience.
+
+The server-side backend resolves common CORS and browser compatibility issues by proxying or transcoding streams with FFMPEG, while the feature-rich frontend provides a user experience comparable to premium IPTV services.
 
 <!-- It's highly recommended to add a screenshot or a GIF of your app in action -->
 <!-- 
@@ -27,63 +31,159 @@ This project allows you to load M3U playlists and EPG XML files to create a pers
 
 ## ✨ Features
 
-* **TV Guide Interface:** A clean, responsive EPG (Electronic Program Guide) view.
-* **M3U & EPG Support:** Load channels and guide data from local files or remote URLs.
-* **FFMPEG Transcoding:** The Node.js backend uses `ffmpeg` to transcode streams, ensuring broad browser compatibility.
-* **Dockerized:** The entire application is bundled into a single, easy-to-deploy Docker image.
-* **Favorites & Recents:** Mark your favorite channels and quickly access recently watched ones.
-* **Search:** Instantly search through both channels and program listings.
-* **Picture-in-Picture:** Continue watching your stream while you browse other tabs.
+ - 👤 **Multi-User Management**: Secure the application with a dedicated admin account. Create, edit, and manage standard user accounts.
+ - 📺 **Modern TV Guide**: A high-performance, virtualized EPG grid that handles thousands of channels and programs smoothly. Features include advanced search, channel favoriting, and a "Recents" category.
+ - 🖼️ **Multi-View**: Drag, drop, and resize players on a grid to watch multiple streams simultaneously. Save and load custom layouts.
+ - 🛜 **Chromecast Support**: Cast your streams directly to any Google Cast-enabled device on your network.
+ - 🔔 **Push Notifications**: Set reminders for upcoming programs and receive push notifications in your browser, even when the app is closed.
+ - ⚙️ **Powerful Transcoding**: The backend uses FFMPEG to process streams, ensuring compatibility across all modern browsers and devices. Create custom stream profiles to tailor transcoding settings.
+ - 📂 **Flexible Source Management**: Add M3U and EPG sources from either local files or remote URLs. Set automatic refresh intervals for URL-based sources to keep your guide data fresh.
+ - 🚀 **High Performance UI**: The frontend is built with performance in mind, using UI virtualization for the guide and efficient state management to ensure a fast and responsive experience.
+ - 🐳 **Dockerized Deployment**: The entire application is packaged in a single Docker container for simple, one-command deployment using Docker or Docker Compose.
+ - ▶️ **Picture-in-Picture**: Pop out the player to keep watching while you work on other things.
+
 
 ---
 
-## 🚀 How to Run
 
-This application is distributed as a Docker image. To run it, you will need [Docker](https://docs.docker.com/get-docker/) installed on your system.
+## 🚀 Getting Started
 
-1.  **Log in to GitHub Container Registry**
+ViniPlay is designed for easy deployment using Docker.
 
-    You first need to authenticate your Docker client with GHCR. You only need to do this once.
-    ```bash
-    docker login ghcr.io -u YOUR_GITHUB_USERNAME
+### Prerequisites
+
+-   [Docker](https://docs.docker.com/get-docker/ "null")
+    
+-   [Docker Compose](https://docs.docker.com/compose/install/ "null") (Recommended)
+    
+
+### Method 1: Using `docker-compose` (Recommended)
+
+This is the easiest way to get started.
+
+1.  **Create Project Files:** Create a directory for your ViniPlay setup and add the following two files:
+    
+    -   `docker-compose.yml`:
+        
+        ```
+        version: "3.8"
+        services:
+          viniplay:
+            build: .
+            container_name: viniplay
+            ports:
+              - "8998:8998"
+            restart: unless-stopped
+            volumes:
+              - ./viniplay-data:/data
+            env_file:
+              - ./.env
+        
+        ```
+        
+    -   `.env`:
+        
+        ```
+        # Replace this with a long, random, and secret string
+        SESSION_SECRET=your_super_secret_session_key_here
+        
+        ```
+        
+        > **Security Note:** Your `SESSION_SECRET` should be a long, random string to properly secure user sessions.
+        
+2.  **Clone the Repository:** Clone this repository into the same directory.
+    
     ```
-    > **Note:** You will be prompted for a password. You must use a GitHub Personal Access Token (PAT) with the `read:packages` scope. You can generate one [here](https://github.com/settings/tokens/new?scopes=read:packages).
-
-2.  **Pull the Docker Image**
-
-    Pull the latest version of the player from the GitHub Container Registry.
-    ```bash
-    docker pull ghcr.io/YOUR_GITHUB_USERNAME/viniplay:latest
+    git clone <repository_url> .
+    
+    ```
+    
+3.  **Build and Run the Container:** From your project directory, run the following command:
+    
+    ```
+    docker-compose up --build -d
+    
     ```
 
-3.  **Run the Container**
+### Method 2: Using `docker`
 
-    Start the container, mapping port `8998` to your host machine.
-    ```bash
-    docker run -d -p 8998:8998 --name viniplay ghcr.io/YOUR_GITHUB_USERNAME/viniplay:latest
+If you prefer not to use Docker Compose, you can build and run the container manually.
+
+1.  **Build the Image:** From the root of the project directory, run:
+    
     ```
+    docker build -t viniplay .
+    
+    ```
+    
+2.  **Run the Container:** Create a volume directory (`mkdir viniplay-data`) and a `.env` file first. Then run the container:
+    
+    ```
+    docker run -d \
+      -p 8998:8998 \
+      --name viniplay \
+      --env-file ./.env \
+      -v "$(pwd)/viniplay-data":/data \
+      viniplay
+    
+    ```
+    
 
-Remember to replace **YOUR_GITHUB_USERNAME** in the commands above with your actual GitHub username.
+### First-Time Setup
 
-Once the container is running, you can access your IPTV player by navigating to **[http://localhost:8998](http://localhost:8998)** in your web browser.
+Once the container is running, open your browser and navigate to `http://localhost:8998`.
 
+You will be prompted to create your initial **admin account**. This is a one-time setup that secures your instance. After creating the admin account, you can log in and start configuring your sources in the **Settings** tab.
 
+## 🔧 Configuration
 
+All configuration is done via the web interface in the **Settings** tab.
 
+-   **Data Sources:** Add your M3U and EPG sources. You can use remote URLs or upload files directly. Activate the sources you want to use and set refresh intervals for URLs to keep data current.
+    
+-   **Processing:** After adding sources, click the **Process Sources & View Guide** button. This will download, parse, and merge all your data.
+    
+-   **Player Settings:**
+    
+    -   **User Agents:** Manage the User-Agent strings sent with stream requests. This can help bypass provider blocks.
+        
+    -   **Stream Profiles:** Define how `ffmpeg` processes streams. You can use the built-in profiles or create your own custom commands.
+        
+-   **User Management (Admin):** Admins can create, edit, and delete user accounts from the settings page.
+    
 
+## 🏗️ Project Structure
 
-```text
-public/
-├── js/
-│   ├── main.js       // The new, lean entry point
-│   └── modules/
-│       ├── api.js        // For all fetch requests to the backend
-│       ├── auth.js       // Handles the entire authentication flow
-│       ├── guide.js      // All logic for the TV Guide
-│       ├── player.js     // Video player logic
-│       ├── settings.js   // Logic for the settings page
-│       ├── state.js      // Shared application state and UI elements
-│       ├── ui.js         // General UI functions (modals, notifications)
-│       └── utils.js      // Helper functions like the M3U parser
-└── index.html
+The project is organized into a Node.js backend and a modular vanilla JavaScript frontend.
 
+```
+/
+├── public/                  # Frontend static files
+│   ├── js/
+│   │   ├── main.js          # Main application entry point
+│   │   └── modules/         # Modular JS components for each feature
+│   │       ├── api.js       # Backend API communication
+│   │       ├── auth.js      # Authentication flow
+│   │       ├── cast.js      # Google Cast logic
+│   │       ├── guide.js     # TV Guide logic & rendering
+│   │       ├── multiview.js # Multi-View grid and players
+│   │       ├── notification.js # Push notification management
+│   │       ├── player.js    # Video player (mpegts.js)
+│   │       ├── settings.js  # Settings page logic
+│   │       ├── state.js     # Shared application state
+│   │       ├── ui.js        # Global UI functions (modals, etc.)
+│   │       └── utils.js     # Utility functions (parsers)
+│   ├── sw.js                # Service Worker for push notifications
+│   └── index.html           # Main HTML file
+│
+├── server.js                # Node.js backend (Express.js)
+├── Dockerfile               # Docker build instructions
+├── docker-compose.yml       # Docker Compose configuration
+├── package.json             # Node.js dependencies
+└── .env                     # Environment variables (e.g., SESSION_SECRET)
+
+```
+
+## 📄 License
+
+This project is licensed under the MIT License. See the `LICENSE` file for details.
