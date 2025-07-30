@@ -13,7 +13,8 @@ import { setupPlayerEventListeners } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
 import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu, showNotification } from './modules/ui.js';
 import { loadAndScheduleNotifications, subscribeUserToPush } from './modules/notification.js';
-// The cast.js module will handle its own initialization via the window.__onGCastApiAvailable callback.
+// The initializeCastApi function is no longer called directly from here,
+// but the cast.js module will handle its own initialization via the window callback.
 
 /**
  * Initializes the main application after successful authentication.
@@ -35,13 +36,14 @@ export async function initMainApp() {
     setupGuideEventListeners();
     setupPlayerEventListeners();
     setupSettingsEventListeners();
-    // *** REMOVED *** The direct call to initializeCastApi() is no longer needed.
-    // The cast.js module is now initialized automatically by the Google Cast SDK callback.
+    // REMOVED: The direct call to initializeCastApi() is no longer needed here.
+    // The cast.js module will now be initialized automatically by the Google Cast SDK callback.
     console.log('[MAIN] All event listeners set up.');
 
     // 3. Load initial configuration and guide data
     try {
         console.log('[MAIN] Fetching initial configuration from server via api.js...');
+        // REFACTORED: Use the centralized fetchConfig from api.js
         const config = await fetchConfig(); 
         if (!config) {
             throw new Error(`Could not load configuration from server. Check logs for details.`);
@@ -56,7 +58,7 @@ export async function initMainApp() {
         populateTimezoneSelector();
         updateUIFromSettings();
 
-        // Show initial loading indicator for guide
+        // Show initial loading indicator for guide (if not already handled by auth.js)
         UIElements.initialLoadingIndicator.classList.remove('hidden');
         UIElements.guidePlaceholder.classList.remove('hidden');
 
