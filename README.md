@@ -1,7 +1,18 @@
-ViniPlay
-A powerful, self-hosted IPTV player with a modern web interface.
-
+<div align="center">
+<img src="https://i.imgur.com/rwa8SjI.png" alt="ViniPlay Logo" width="120">
+<h1>ViniPlay</h1>
+<p>
+<strong>A powerful, self-hosted IPTV player with a modern web interface.</strong>
+</p>
+<p>
 Stream your M3U playlists with EPG data, manage users, cast to your TV, and watch multiple channels at once.
+</p>
+<p>
+<img src="https://img.shields.io/badge/docker-ready-blue.svg?style=for-the-badge&logo=docker" alt="Docker Ready">
+<img src="https://www.google.com/search?q=https://img.shields.io/badge/platform-node.js-green.svg%3Fstyle%3Dfor-the-badge%26logo%3Dnodedotjs" alt="Node.js Backend">
+<img src="https://www.google.com/search?q=https://img.shields.io/badge/license-MIT-lightgrey.svg%3Fstyle%3Dfor-the-badge" alt="License">
+</p>
+</div>
 
 ViniPlay transforms your M3U and EPG files into a polished, high-performance streaming experience. It's a full-featured IPTV solution that runs in a Docker container, providing a robust Node.js backend to handle streams and a sleek, responsive frontend for an exceptional user experience.
 
@@ -16,25 +27,25 @@ The server-side backend resolves common CORS and browser compatibility issues by
 -->
 
 ✨ Key Features
-👤 Multi-User Management: Secure the application with a dedicated admin account. Create, edit, and manage standard user accounts.
+Multi-User Management: Secure the application with a dedicated admin account. Create, edit, and manage standard user accounts.
 
-📺 Modern TV Guide: A high-performance, virtualized EPG grid that handles thousands of channels and programs smoothly. Features include advanced search, channel favoriting, and a "Recents" category.
+Modern TV Guide: A high-performance, virtualized EPG grid that handles thousands of channels and programs smoothly. Features include advanced search, channel favoriting, and a "Recents" category.
 
-🖼️ Multi-View: Drag, drop, and resize players on a grid to watch multiple streams simultaneously. Save and load custom layouts.
+Multi-View: Drag, drop, and resize players on a grid to watch multiple streams simultaneously. Save and load custom layouts.
 
 Chromecast Support: Cast your streams directly to any Google Cast-enabled device on your network.
 
-🔔 Push Notifications: Set reminders for upcoming programs and receive push notifications in your browser, even when the app is closed.
+Push Notifications: Set reminders for upcoming programs and receive push notifications in your browser, even when the app is closed.
 
-⚙️ Powerful Transcoding: The backend uses FFMPEG to process streams, ensuring compatibility across all modern browsers and devices. Create custom stream profiles to tailor transcoding settings.
+Powerful Transcoding: The backend uses FFMPEG to process streams, ensuring compatibility across all modern browsers and devices. Create custom stream profiles to tailor transcoding settings.
 
-📂 Flexible Source Management: Add M3U and EPG sources from either local files or remote URLs. Set automatic refresh intervals for URL-based sources to keep your guide data fresh.
+Flexible Source Management: Add M3U and EPG sources from either local files or remote URLs. Set automatic refresh intervals for URL-based sources to keep your guide data fresh.
 
-🚀 High Performance UI: The frontend is built with performance in mind, using UI virtualization for the guide and efficient state management to ensure a fast and responsive experience.
+High Performance UI: The frontend is built with performance in mind, using UI virtualization for the guide and efficient state management to ensure a fast and responsive experience.
 
-🐳 Dockerized Deployment: The entire application is packaged in a single Docker container for simple, one-command deployment using Docker or Docker Compose.
+Dockerized Deployment: The entire application is packaged in a single Docker container for simple, one-command deployment using Docker or Docker Compose.
 
-▶️ Picture-in-Picture: Pop out the player to keep watching while you work on other things.
+Picture-in-Picture: Pop out the player to keep watching while you work on other things.
 
 🚀 Getting Started
 ViniPlay is designed for easy deployment using Docker.
@@ -55,7 +66,7 @@ docker-compose.yml:
 version: "3.8"
 services:
   viniplay:
-    build: .
+    image: ghcr.io/your-username/viniplay:latest # Replace with your actual image path
     container_name: viniplay
     ports:
       - "8998:8998"
@@ -72,23 +83,17 @@ SESSION_SECRET=your_super_secret_session_key_here
 
 Security Note: Your SESSION_SECRET should be a long, random string to properly secure user sessions.
 
-Clone the Repository:
-Clone this repository into the same directory.
-
-git clone <repository_url> .
-
-Build and Run the Container:
+Run the Container:
 From your project directory, run the following command:
 
-docker-compose up --build -d
+docker-compose up -d
 
 Method 2: Using docker
-If you prefer not to use Docker Compose, you can build and run the container manually.
+If you prefer not to use Docker Compose, you can run the container manually.
 
-Build the Image:
-From the root of the project directory, run:
+Pull the Image:
 
-docker build -t viniplay .
+docker pull ghcr.io/your-username/viniplay:latest # Replace with your actual image path
 
 Run the Container:
 Create a volume directory (mkdir viniplay-data) and a .env file first. Then run the container:
@@ -98,7 +103,7 @@ docker run -d \
   --name viniplay \
   --env-file ./.env \
   -v "$(pwd)/viniplay-data":/data \
-  viniplay
+  ghcr.io/your-username/viniplay:latest
 
 First-Time Setup
 Once the container is running, open your browser and navigate to http://localhost:8998.
@@ -149,4 +154,4 @@ The project is organized into a Node.js backend and a modular vanilla JavaScript
 └── .env                     # Environment variables (e.g., SESSION_SECRET)
 
 📄 License
-This project is licensed under the MIT License. See the LICENSE file for details.
+This project is licensed under the MIT License.
