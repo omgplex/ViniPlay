@@ -1312,10 +1312,11 @@ app.delete('/api/data', requireAuth, (req, res) => {
 
 app.get('/stream', requireAuth, (req, res) => {
     const { url: streamUrl, profileId, userAgentId } = req.query;
-    console.log(`[STREAM] Stream request received. URL: ${streamUrl}, Profile ID: ${profileId}, User Agent ID: ${userAgentId}`);
+    console.log(`[STREAM_DEBUG] Stream request received for user ${req.session.username}.`);
+    console.log(`[STREAM_DEBUG]   Query Parameters: url=${streamUrl}, profileId=${profileId}, userAgentId=${userAgentId}`);
 
     if (!streamUrl) {
-        console.warn('[STREAM] Missing stream URL in request.');
+        console.warn('[STREAM_DEBUG] Missing stream URL in request. Sending 400.');
         return res.status(400).send('Error: `url` query parameter is required.');
     }
 
@@ -1323,66 +1324,79 @@ app.get('/stream', requireAuth, (req, res) => {
     
     const profile = (settings.streamProfiles || []).find(p => p.id === profileId);
     if (!profile) {
-        console.error(`[STREAM] Stream profile with ID "${profileId}" not found in settings.`);
+        console.error(`[STREAM_DEBUG] Stream profile with ID "${profileId}" not found in settings. Sending 404.`);
         return res.status(404).send(`Error: Stream profile with ID "${profileId}" not found.`);
     }
+    console.log(`[STREAM_DEBUG] Found stream profile: ${JSON.stringify(profile)}`);
 
     if (profile.command === 'redirect') {
-        console.log(`[STREAM] Redirecting to stream URL: ${streamUrl}`);
+        console.log(`[STREAM_DEBUG] Stream profile command is 'redirect'. Redirecting to stream URL: ${streamUrl}`);
         return res.redirect(302, streamUrl);
     }
     
     const userAgent = (settings.userAgents || []).find(ua => ua.id === userAgentId);
     if (!userAgent) {
-        console.error(`[STREAM] User agent with ID "${userAgentId}" not found in settings.`);
+        console.error(`[STREAM_DEBUG] User agent with ID "${userAgentId}" not found in settings. Sending 404.`);
         return res.status(404).send(`Error: User agent with ID "${userAgentId}" not found.`);
     }
+    console.log(`[STREAM_DEBUG] Found user agent: ${JSON.stringify(userAgent)}`);
     
-    console.log(`[STREAM] Proxying stream: ${streamUrl}`);
-    console.log(`[STREAM] Using Profile: "${profile.name}"`);
-    console.log(`[STREAM] Using User Agent: "${userAgent.name}"`);
+    console.log(`[STREAM_DEBUG] Initiating FFmpeg proxy for stream: ${streamUrl}`);
+    console.log(`[STREAM_DEBUG]   Using Profile Name: "${profile.name}"`);
+    console.log(`[STREAM_DEBUG]   Using User Agent String: "${userAgent.value}"`);
 
     const commandTemplate = profile.command
         .replace(/{streamUrl}/g, streamUrl)
         .replace(/{userAgent}|{clientUserAgent}/g, userAgent.value);
+    console.log(`[STREAM_DEBUG] Constructed FFmpeg command template: "${commandTemplate}"`);
         
     // Split command into arguments, handling quoted strings
     const args = (commandTemplate.match(/(?:[^\s"]+|"[^"]*")+/g) || []).map(arg => arg.replace(/^"|"$/g, ''));
+    console.log(`[STREAM_DEBUG] Final FFmpeg arguments array: [${args.map(a => `"${a}"`).join(', ')}]`);
 
-    console.log(`[STREAM] FFmpeg command args: ${args.join(' ')}`);
     const ffmpeg = spawn('ffmpeg', args);
+    console.log(`[STREAM_DEBUG] FFmpeg process spawned with PID: ${ffmpeg.pid}`);
     res.setHeader('Content-Type', 'video/mp2t'); // Standard MIME type for MPEG Transport Stream
+    console.log(`[STREAM_DEBUG] Response header 'Content-Type: video/mp2t' set.`);
     
     ffmpeg.stdout.pipe(res);
+    console.log('[STREAM_DEBUG] FFmpeg stdout piped to response.');
     
     ffmpeg.stderr.on('data', (data) => {
         // Log FFMPEG errors to the server console, but don't send to client directly
-        console.error(`[FFMPEG_ERROR] Stream: ${streamUrl} - ${data.toString().trim()}`);
+        console.error(`[FFMPEG_ERROR] PID: ${ffmpeg.pid} Stream: ${streamUrl} - ${data.toString().trim()}`);
     });
 
     ffmpeg.on('close', (code) => {
         if (code !== 0) {
-            console.log(`[STREAM] ffmpeg process for ${streamUrl} exited with code ${code}`);
+            console.log(`[STREAM_DEBUG] FFmpeg process for ${streamUrl} (PID: ${ffmpeg.pid}) exited with code ${code}.`);
         } else {
-            console.log(`[STREAM] ffmpeg process for ${streamUrl} exited gracefully.`);
+            console.log(`[STREAM_DEBUG] FFmpeg process for ${streamUrl} (PID: ${ffmpeg.pid}) exited gracefully (code ${code}).`);
         }
         if (!res.headersSent) { // Only end response if headers haven't been sent yet
+             console.error(`[STREAM_DEBUG] FFmpeg closed before headers sent. Sending 500 error.`);
              res.status(500).send('FFmpeg stream ended unexpectedly or failed to start.');
         } else {
+            console.log(`[STREAM_DEBUG] Response already sent. Ending response stream.`);
             res.end(); // End the response when ffmpeg closes
         }
     });
 
     ffmpeg.on('error', (err) => {
-        console.error(`[STREAM] Failed to start ffmpeg process for ${streamUrl}: ${err.message}`);
+        console.error(`[STREAM_DEBUG] Failed to start ffmpeg process for ${streamUrl} (PID: ${ffmpeg.pid || 'N/A'}): ${err.message}`);
         if (!res.headersSent) {
             res.status(500).send('Failed to start streaming service. Check server logs.');
         }
     });
 
     req.on('close', () => {
-        console.log(`[STREAM] Client closed connection for ${streamUrl}. Killing ffmpeg process (PID: ${ffmpeg.pid}).`);
-        ffmpeg.kill('SIGKILL'); // Force kill ffmpeg process
+        console.log(`[STREAM_DEBUG] Client closed connection for ${streamUrl}. Attempting to kill ffmpeg process (PID: ${ffmpeg.pid}).`);
+        if (!ffmpeg.killed) { // Ensure we don't try to kill an already dead process
+            ffmpeg.kill('SIGKILL'); // Force kill ffmpeg process
+            console.log(`[STREAM_DEBUG] FFmpeg process (PID: ${ffmpeg.pid}) kill signal sent.`);
+        } else {
+            console.log(`[STREAM_DEBUG] FFmpeg process (PID: ${ffmpeg.pid}) already dead.`);
+        }
     });
 });
 
