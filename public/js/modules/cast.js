@@ -107,14 +107,9 @@ function handleSessionStateChange(event) {
             console.log(`[CAST_DEBUG] Current Cast session acquired:`, castState.session);
             showNotification(`Casting to ${castState.session.getCastDevice().friendlyName}`, false, 4000);
             
-            if (castState.localPlayerState.streamUrl) {
-                console.log('[CAST_DEBUG] localPlayerState has content. Automatically casting local content after session start.');
-                // NEW: Stop local player when casting starts
-                stopLocalPlayer(true); 
-                loadMedia(castState.localPlayerState.streamUrl, castState.localPlayerState.name, castState.localPlayerState.logo);
-            } else {
-                console.log('[CAST_DEBUG] No localPlayerState content to auto-cast. User needs to select a channel or restart playback.');
-            }
+            // REMOVED: Automatic loading from localPlayerState moved to player.js
+            stopLocalPlayer(true); 
+            
             break;
         case cast.framework.SessionState.SESSION_RESUMED:
             console.log('[CAST_DEBUG] SESSION_RESUMED: An existing session has been resumed.');
@@ -122,9 +117,8 @@ function handleSessionStateChange(event) {
             castState.isCasting = true;
             console.log(`[CAST_DEBUG] Resumed Cast session acquired:`, castState.session);
             showNotification(`Casting to ${castState.session.getCastDevice().friendlyName}`, false, 4000);
-            // NEW: Stop local player when casting resumes
+            // REMOVED: Automatic loading from localPlayerState moved to player.js
             stopLocalPlayer(true);
-            // No need to load media here, it should already be playing if resumed.
             break;
         case cast.framework.SessionState.SESSION_ENDED:
             console.log('[CAST_DEBUG] SESSION_ENDED: Casting session has ended.');
