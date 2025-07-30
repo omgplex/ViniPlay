@@ -1,17 +1,20 @@
 /**
  * player.js
- * * Manages the video player functionality using mpegts.js.
+ * * Manages the video player functionality using mpegts.js and Google Cast.
  */
 
 import { appState, guideState, UIElements } from './state.js';
 import { saveUserSetting } from './api.js';
 import { showNotification, openModal, closeModal } from './ui.js';
+import { castState, loadMedia } from './modules/cast.js'; // NEW: Import cast state and functions
 
 /**
- * Stops the current stream, cleans up the player instance, and closes the modal.
+ * Stops the current local stream, cleans up the mpegts.js player instance, and closes the modal.
+ * This does NOT affect an active Google Cast session.
  */
 export const stopAndCleanupPlayer = () => {
     if (appState.player) {
+        console.log('[PLAYER] Destroying local mpegts player.');
         appState.player.destroy();
         appState.player = null;
     }
@@ -28,17 +31,13 @@ export const stopAndCleanupPlayer = () => {
 };
 
 /**
- * Initializes and starts playing a channel stream.
+ * Initializes and starts playing a channel stream, either locally or on a Cast device.
  * @param {string} url - The URL of the channel stream.
  * @param {string} name - The name of the channel to display.
  * @param {string} channelId - The unique ID of the channel.
  */
 export const playChannel = (url, name, channelId) => {
-    if (appState.player) {
-        stopAndCleanupPlayer();
-    }
-    
-    // Update and save recent channels
+    // Update and save recent channels regardless of playback target
     if (channelId) {
         const recentChannels = [channelId, ...(guideState.settings.recentChannels || []).filter(id => id !== channelId)].slice(0, 15);
         guideState.settings.recentChannels = recentChannels;
@@ -57,8 +56,34 @@ export const playChannel = (url, name, channelId) => {
         return showNotification("Stream profile not found.", true);
     }
     
-    // Determine the URL to play based on the stream profile (direct redirect or server proxy)
+    // Determine the final URL to play based on the stream profile (direct redirect or server proxy)
     const streamUrlToPlay = profile.command === 'redirect' ? url : `/stream?url=${encodeURIComponent(url)}&profileId=${profileId}&userAgentId=${userAgentId}`;
+
+    // --- NEW: Casting Logic ---
+    if (castState.isCasting) {
+        console.log(`[PLAYER] Casting channel "${name}" to remote device.`);
+        // Find the channel's logo for the cast metadata
+        const channel = guideState.channels.find(c => c.id === channelId);
+        const logo = channel ? channel.logo : '';
+        
+        // Stop any local playback that might be happening
+        if (appState.player) {
+            stopAndCleanupPlayer();
+        }
+
+        // Send the media to the cast device
+        loadMedia(streamUrlToPlay, name, logo);
+        return; // End execution here for casting
+    }
+
+    // --- Local Playback Logic ---
+    console.log(`[PLAYER] Playing channel "${name}" locally.`);
+    // If a player is already running, destroy it cleanly before starting a new one.
+    // This avoids closing and re-opening the modal for a smoother channel-surfing experience.
+    if (appState.player) {
+        appState.player.destroy();
+        appState.player = null;
+    }
 
     if (mpegts.isSupported()) {
         appState.player = mpegts.createPlayer({
