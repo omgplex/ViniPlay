@@ -844,16 +844,6 @@
                              <label for="source-editor-isActive" class="ml-2 block text-sm text-gray-300">Active</label>
                         </div>
                         <div>
-                            <label for="source-editor-refresh-interval" class="block text-sm font-medium text-gray-400">Refresh Interval (URLs only)</label>
-                            <select id="source-editor-refresh-interval" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500">
-                                <option value="0">Disabled</option>
-                                <option value="1">Every 1 Hour</option>
-                                <option value="4">Every 4 Hours</option>
-                                <option value="12">Every 12 Hours</option>
-                                <option value="24">Every 24 Hours</option>
-                            </select>
-                        </div>
-                        <div>
                             <label class="block text-sm font-medium text-gray-400 mb-2">Source Type</label>
                              <div class="flex border border-gray-600 rounded-md overflow-hidden">
                                 <button type="button" id="source-editor-type-btn-url" class="flex-1 py-2 text-sm text-gray-300 hover:bg-gray-700/80">URL</button>
@@ -868,6 +858,17 @@
                             <label for="source-editor-file" class="block text-sm font-medium text-gray-400">File</label>
                             <input type="file" id="source-editor-file" class="mt-1 block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-500 file:text-white hover:file:bg-blue-600 cursor-pointer">
                             <p id="source-editor-file-info" class="text-xs text-gray-500 mt-1"></p>
+                        </div>
+                        <!-- NEW REFRESH DROPDOWN -->
+                        <div id="source-editor-refresh-container">
+                            <label for="source-editor-refresh-interval" class="block text-sm font-medium text-gray-400">Refresh Interval (URL only)</label>
+                            <select id="source-editor-refresh-interval" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500">
+                                <option value="0">Disabled</option>
+                                <option value="1">Every 1 Hour</option>
+                                <option value="4">Every 4 Hours</option>
+                                <option value="12">Every 12 Hours</option>
+                                <option value="24">Every 24 Hours</option>
+                            </select>
                         </div>
                     </div>
                 </div>
