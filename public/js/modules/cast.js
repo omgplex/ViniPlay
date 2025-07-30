@@ -29,12 +29,12 @@ export const castState = {
  * @param {boolean} isAvailable - True if the Cast API is available.
  */
 window['__onGCastApiAvailable'] = (isAvailable) => {
+    console.log('[CAST_LOG] 1. __onGCastApiAvailable callback triggered. SDK Available:', isAvailable);
     if (isAvailable) {
-        console.log('[CAST] Google Cast SDK is available. Initializing context...');
         castState.isAvailable = true;
         initializeCastApi();
     } else {
-        console.warn('[CAST] Google Cast SDK is not available on this device.');
+        console.warn('[CAST_LOG] Cast SDK is not available on this device.');
         castState.isAvailable = false;
         if (UIElements.castBtn) {
             UIElements.castBtn.style.display = 'none';
@@ -48,6 +48,7 @@ window['__onGCastApiAvailable'] = (isAvailable) => {
  * This function should only be called by the __onGCastApiAvailable callback.
  */
 function initializeCastApi() {
+    console.log('[CAST_LOG] 2. Initializing Cast API context...');
     const castContext = cast.framework.CastContext.getInstance();
     castContext.setOptions({
         receiverApplicationId: APPLICATION_ID,
@@ -56,6 +57,7 @@ function initializeCastApi() {
 
     // Enable verbose debugging from the Cast Receiver
     cast.framework.CastContext.getInstance().setLogLevel(cast.framework.LoggerLevel.DEBUG);
+    console.log('[CAST_LOG] 3. Cast debugging enabled.');
 
     castContext.addEventListener(
         cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
@@ -67,7 +69,7 @@ function initializeCastApi() {
     
     addRemotePlayerListeners(castState.playerController);
     
-    console.log('[CAST] Cast context initialized, debugging enabled, and listeners attached.');
+    console.log('[CAST_LOG] 4. Cast context fully initialized and listeners attached.');
 }
 
 /**
@@ -93,6 +95,7 @@ function addRemotePlayerListeners(controller) {
             console.log('[CAST_DEBUG] Full player state event:', event);
         }
     );
+     console.log('[CAST_LOG] 5. Remote player listeners added.');
 }
 
 
@@ -106,11 +109,7 @@ export function setLocalPlayerState(streamUrl, name, logo) {
     castState.localPlayerState.streamUrl = streamUrl;
     castState.localPlayerState.name = name;
     castState.localPlayerState.logo = logo;
-    if (name) {
-        console.log(`[CAST] Local player state updated for potential casting: ${name}`);
-    } else {
-        console.log(`[CAST] Local player state cleared.`);
-    }
+    console.log(`[CAST_LOG] 6. Local player state saved for potential casting: ${name || 'None'}`);
 }
 
 /**
@@ -118,27 +117,32 @@ export function setLocalPlayerState(streamUrl, name, logo) {
  * @param {cast.framework.SessionStateEventData} event - The event data.
  */
 function handleSessionStateChange(event) {
-    console.log(`[CAST] Session state changed: ${event.sessionState}`);
+    console.log(`[CAST_LOG] 7. Session state changed to: ${event.sessionState}. Event object:`, event);
     
+    // CORE FIX: Always update the session object from the event.
     castState.session = event.session;
     
     switch (event.sessionState) {
         case cast.framework.SessionState.SESSION_STARTED:
         case cast.framework.SessionState.SESSION_RESUMED:
+            console.log('[CAST_LOG] 8a. Session has started or resumed.');
             castState.isCasting = true;
             showNotification(`Casting to ${castState.session.getCastDevice().friendlyName}`, false, 4000);
 
-            // **CORE FIX**: Immediately stop the local player to prevent dual audio/video.
+            // CORE FIX: Immediately stop the local player to prevent dual audio/video.
             stopLocalPlayerForCasting();
             
             // Now, load the media on the remote device.
             if (castState.localPlayerState.streamUrl) {
-                console.log('[CAST] Session active. Automatically casting local content.');
+                console.log('[CAST_LOG] 9. Local media exists. Proceeding to load on remote device.');
                 loadMedia(castState.localPlayerState.streamUrl, castState.localPlayerState.name, castState.localPlayerState.logo);
+            } else {
+                 console.log('[CAST_LOG] 9b. No local media was playing, waiting for user to select a channel.');
             }
             break;
         case cast.framework.SessionState.SESSION_ENDED:
         case cast.framework.SessionState.NO_SESSION:
+             console.log('[CAST_LOG] 8b. Session has ended or does not exist.');
              castState.isCasting = false;
              castState.currentMedia = null;
              if (event.sessionState === cast.framework.SessionState.SESSION_ENDED) {
@@ -146,14 +150,17 @@ function handleSessionStateChange(event) {
              }
              updatePlayerUI();
              break;
+        default:
+             console.log(`[CAST_LOG] Unhandled session state: ${event.sessionState}`);
+             break;
     }
 }
 
 /**
  * Handles changes in the remote player's connection status and updates the UI.
  */
-function handleRemotePlayerConnectionChange() {
-    console.log(`[CAST_DEBUG] Remote player connection state changed. Connected: ${castState.player.isConnected}`);
+function handleRemotePlayerConnectionChange(event) {
+    console.log(`[CAST_DEBUG] Remote Player Connection Changed. Is Connected: ${event.value}`);
     updatePlayerUI();
 }
 
@@ -161,18 +168,19 @@ function handleRemotePlayerConnectionChange() {
  * Updates the local player modal UI based on the casting state.
  */
 function updatePlayerUI() {
+    console.log(`[CAST_LOG] 11. Updating Player UI. IsCasting: ${castState.isCasting}, IsConnected: ${castState.player.isConnected}`);
     const videoElement = UIElements.videoElement;
     const castStatusDiv = UIElements.castStatus;
     const castBtn = UIElements.castBtn;
 
     // Check if we are successfully casting to a connected device.
-    if (castState.isCasting && castState.player.isConnected && castState.session) {
+    if (castState.isCasting && castState.session) {
         videoElement.classList.add('hidden');
         castStatusDiv.classList.remove('hidden');
         castStatusDiv.classList.add('flex');
         
         UIElements.castStatusText.textContent = `Casting to ${castState.session.getCastDevice().friendlyName}`;
-        UIElements.castStatusChannel.textContent = castState.player.mediaInfo ? castState.player.mediaInfo.metadata.title : 'No media loaded.';
+        UIElements.castStatusChannel.textContent = castState.player.mediaInfo ? castState.player.mediaInfo.metadata.title : 'Ready to play...';
         
         if (castBtn) castBtn.classList.add('cast-connected');
 
@@ -193,11 +201,12 @@ function updatePlayerUI() {
  */
 export function loadMedia(url, name, logo) {
     if (!castState.session) {
+        console.error('[CAST_LOG] CRITICAL: loadMedia called but no active session found!');
         showNotification('Not connected to a Cast device.', true);
         return;
     }
 
-    console.log(`[CAST] Loading media onto remote device: "${name}" from URL: ${url}`);
+    console.log(`[CAST_LOG] 10. Loading media onto remote device. Name: "${name}", URL: ${url}`);
     
     const mediaInfo = new chrome.cast.media.MediaInfo(url, 'video/mp2t');
     mediaInfo.streamType = chrome.cast.media.StreamType.LIVE;
@@ -206,20 +215,22 @@ export function loadMedia(url, name, logo) {
     if (logo) {
         mediaInfo.metadata.images = [new chrome.cast.Image(logo)];
     }
+    console.log('[CAST_LOG] 10a. MediaInfo object created:', mediaInfo);
 
     const request = new chrome.cast.media.LoadRequest(mediaInfo);
     
     // This allows the receiver to load content from different origins (CORS).
     request.credentials = null;
     request.credentialsType = 'none';
+    console.log('[CAST_LOG] 10b. LoadRequest object created:', request);
 
     castState.session.loadMedia(request).then(
         () => {
-            console.log('[CAST] Media load command sent to remote device successfully.');
+            console.log('[CAST_LOG] 12. SUCCESS: Media load command sent to remote device successfully.');
             castState.currentMedia = castState.session.getMediaSession();
         },
         (errorCode) => {
-            console.error(`[CAST] FATAL: Error sending media load command. Code: ${errorCode}`);
+            console.error(`[CAST_LOG] 12. FAILURE: Error sending media load command. Code: ${errorCode}`);
             showNotification('Failed to load media on Cast device. Check console for details.', true);
         }
     );
@@ -230,10 +241,10 @@ export function loadMedia(url, name, logo) {
  */
 export function endCastSession() {
      if (castState.session) {
-        console.log('[CAST] Ending cast session.');
+        console.log('[CAST_LOG] User requested to end cast session.');
         castState.session.stop(
-            () => { console.log('[CAST] Media stopped successfully.'); },
-            () => { console.error('[CAST] Failed to stop media.'); }
+            () => { console.log('[CAST_LOG] Media stopped successfully on remote device.'); },
+            () => { console.error('[CAST_LOG] Failed to stop media on remote device.'); }
         );
         castState.session.endSession(true);
      }
