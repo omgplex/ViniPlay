@@ -6,7 +6,7 @@
 import { appState, guideState, UIElements } from './state.js';
 import { saveUserSetting } from './api.js';
 import { showNotification, openModal, closeModal } from './ui.js';
-import { castState, loadMedia } from './modules/cast.js'; // NEW: Import cast state and functions
+import { castState, loadMedia } from './cast.js'; // CORRECTED: Fixed the import path
 
 /**
  * Stops the current local stream, cleans up the mpegts.js player instance, and closes the modal.
