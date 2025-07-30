@@ -65,7 +65,7 @@ export const stopAndCleanupPlayer = (forceStopLocal = false) => {
  * @param {string} name - The name of the channel to display.
  * @param {string} channelId - The unique ID of the channel.
  */
-export const playChannel = async (url, name, channelId) => {
+export const playChannel = async (url, name, channelId) => { // MODIFIED: Added async
     console.log(`[PLAYER_DEBUG] playChannel called with:`, { url, name, channelId });
 
     // Update and save recent channels regardless of playback target
@@ -104,20 +104,19 @@ export const playChannel = async (url, name, channelId) => {
     const logo = channel ? channel.logo : '';
     console.log(`[PLAYER_DEBUG] Channel logo for casting: ${logo}`);
 
-    // --- Casting Logic ---
+    // Set local player state immediately regardless of casting status.
+    // This makes the current channel available to the Cast module if a session starts.
+    setLocalPlayerState(baseStreamUrl, name, logo);
+    
+    // --- MODIFIED: Casting Logic now handled by cast.js's session listener ---
     if (castState.isCasting) {
-        console.log(`[PLAYER_DEBUG] castState.isCasting is TRUE. Delegating to initiateCastPlayback in cast.js.`);
-        // Set local player state for the Cast module to pick up
-        setLocalPlayerState(baseStreamUrl, name, logo); 
-        // Delegate the actual media loading (including token fetch) to cast.js
-        initiateCastPlayback(); 
-        return;
+        console.log(`[PLAYER_DEBUG] Casting is already active. Stopping local player and waiting for cast.js to initiate.`);
+        stopAndCleanupPlayer(true); // Stop local player if already casting
+        return; // Exit, let cast.js handle initiateCastPlayback via its session listener
     }
 
-    // --- Local Playback Logic (Only if not casting) ---
-    console.log(`[PLAYER_DEBUG] castState.isCasting is FALSE. Playing channel "${name}" locally.`);
-    // For local playback, set the local player state directly before starting the player
-    setLocalPlayerState(baseStreamUrl, name, logo);
+    // --- Local Playback Logic (Only if not casting and no session is being established) ---
+    console.log(`[PLAYER_DEBUG] Not casting. Playing channel "${name}" locally.`);
     
     if (appState.player) {
         console.log('[PLAYER_DEBUG] Existing local mpegts player found. Destroying it before creating new one.');
