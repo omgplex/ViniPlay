@@ -6,13 +6,22 @@
 import { appState, guideState, UIElements } from './state.js';
 import { saveUserSetting } from './api.js';
 import { showNotification, openModal, closeModal } from './ui.js';
-import { castState, loadMedia } from './cast.js'; // CORRECTED: Fixed the import path
+import { castState, loadMedia, setLocalPlayerState } from './cast.js';
 
 /**
  * Stops the current local stream, cleans up the mpegts.js player instance, and closes the modal.
  * This does NOT affect an active Google Cast session.
  */
 export const stopAndCleanupPlayer = () => {
+    // If we are casting, the modal might be showing the "Now Casting" screen.
+    // In this case, we just want to close the modal, not stop the remote playback.
+    if (castState.isCasting) {
+        console.log('[PLAYER] Closing modal but leaving cast session active.');
+        closeModal(UIElements.videoModal);
+        return; // Exit without stopping the cast session.
+    }
+
+    // If not casting, proceed with cleaning up the local player.
     if (appState.player) {
         console.log('[PLAYER] Destroying local mpegts player.');
         appState.player.destroy();
@@ -22,6 +31,9 @@ export const stopAndCleanupPlayer = () => {
     UIElements.videoElement.src = "";
     UIElements.videoElement.removeAttribute('src');
     UIElements.videoElement.load();
+
+    // Clear the local player state so it's not auto-cast later if the modal is closed.
+    setLocalPlayerState(null, null, null);
 
     // Exit Picture-in-Picture mode if active
     if (document.pictureInPictureElement) {
@@ -58,28 +70,24 @@ export const playChannel = (url, name, channelId) => {
     
     // Determine the final URL to play based on the stream profile (direct redirect or server proxy)
     const streamUrlToPlay = profile.command === 'redirect' ? url : `/stream?url=${encodeURIComponent(url)}&profileId=${profileId}&userAgentId=${userAgentId}`;
+    const channel = guideState.channels.find(c => c.id === channelId);
+    const logo = channel ? channel.logo : '';
 
-    // --- NEW: Casting Logic ---
+    // --- Casting Logic ---
     if (castState.isCasting) {
         console.log(`[PLAYER] Casting channel "${name}" to remote device.`);
-        // Find the channel's logo for the cast metadata
-        const channel = guideState.channels.find(c => c.id === channelId);
-        const logo = channel ? channel.logo : '';
-        
-        // Stop any local playback that might be happening
-        if (appState.player) {
-            stopAndCleanupPlayer();
-        }
-
-        // Send the media to the cast device
         loadMedia(streamUrlToPlay, name, logo);
+        // Open the modal which will show the "Now Casting..." status screen.
+        openModal(UIElements.videoModal);
         return; // End execution here for casting
     }
 
     // --- Local Playback Logic ---
     console.log(`[PLAYER] Playing channel "${name}" locally.`);
+    // Set the local player state so the cast module knows what's playing if the user decides to cast.
+    setLocalPlayerState(streamUrlToPlay, name, logo);
+    
     // If a player is already running, destroy it cleanly before starting a new one.
-    // This avoids closing and re-opening the modal for a smoother channel-surfing experience.
     if (appState.player) {
         appState.player.destroy();
         appState.player = null;
