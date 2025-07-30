@@ -353,6 +353,11 @@
         .player-placeholder svg { width: 2rem; height: 2rem; margin-bottom: 0.5rem; }
         .channel-selector-list { max-height: 400px; }
 
+        /* --- NEW: Date Picker Custom Style --- */
+        #guide-date-picker::-webkit-calendar-picker-indicator {
+            display: none;
+            -webkit-appearance: none;
+        }
     </style>
 </head>
 <body class="h-screen">
@@ -435,9 +440,16 @@
             <div id="page-guide" class="flex flex-grow flex-col overflow-hidden">
                 <!-- NEW: Unified Guide Header Bar -->
                 <div id="unified-guide-header" class="flex-shrink-0 bg-gray-800 p-2 sm:p-4 border-b border-gray-700 flex items-center justify-between z-30 transition-transform duration-300 ease-out">
-                    <!-- Left: Date Display (moved from guide-controls-bar to here) -->
-                    <div class="flex items-center gap-2 date-nav-controls">
+                    <!-- MODIFIED: Left side now contains date display and date picker -->
+                    <div class="flex items-center gap-2 sm:gap-3 date-nav-controls">
                         <span id="guide-date-display" class="text-base sm:text-lg font-semibold text-white"></span>
+                        <!-- NEW: Date Picker Input with Icon -->
+                        <div class="relative">
+                            <input type="date" id="guide-date-picker" class="bg-gray-700 border border-gray-600 rounded-md pl-3 pr-8 py-1 text-sm text-white focus:ring-blue-500 focus:border-blue-500 appearance-none" style="color-scheme: dark;">
+                            <label for="guide-date-picker" class="absolute inset-y-0 right-0 flex items-center pr-2 cursor-pointer" title="Jump to date">
+                                <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                            </label>
+                        </div>
                     </div>
                     
                     <!-- Right: Filters and Search (moved from guide-controls-bar to here) -->
@@ -466,10 +478,9 @@
                     <div id="guide-grid" class="h-full w-full">
                         <!-- Sticky Corner (top-left) for channel column resize handle -->
                         <div class="sticky-corner flex items-center justify-center p-2 sm:p-4">
+                            <!-- MODIFIED: Removed Prev/Next Day buttons, kept Now button -->
                             <div class="flex items-center gap-2">
-                                <button id="prev-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&lt;</button>
                                 <button id="now-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">Now</button>
-                                <button id="next-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&gt;</button>
                             </div>
                             <!-- Resize handle for the channel column -->
                             <div id="channel-column-resize-handle" class="channel-resize-handle"></div>
