@@ -15,7 +15,6 @@ export const castState = {
     player: null,
     playerController: null,
     currentMedia: null,
-    // NEW: Store details of what's playing locally
     localPlayerState: {
         streamUrl: null,
         name: null,
@@ -39,53 +38,46 @@ export function setLocalPlayerState(streamUrl, name, logo) {
 
 /**
  * Initializes the Google Cast API and sets up listeners.
- * This should be called once the application loads.
+ * THIS IS NO LONGER CALLED DIRECTLY. It's wrapped in the __onGCastApiAvailable callback.
  */
-export function initializeCastApi() {
-    // --- DEBUGGING ---
-    console.log('[CAST_DEBUG] Attempting to initialize Google Cast API...');
-    console.log('[CAST_DEBUG] Checking if cast framework is loaded:', window.cast);
+function initializeCastApi() {
+    console.log('[CAST] Cast SDK is available. Initializing context...');
+    const castContext = cast.framework.CastContext.getInstance();
+    castContext.setOptions({
+        receiverApplicationId: APPLICATION_ID,
+        autoJoinPolicy: chrome.cast.AutoJoinPolicy.TAB_AND_ORIGIN_SCOPED
+    });
+
+    castContext.addEventListener(
+        cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
+        handleSessionStateChange
+    );
     
-    // The Google Cast SDK script will call this function when it's ready.
-    window['__onGCastApiAvailable'] = (isAvailable) => {
-        // --- DEBUGGING ---
-        console.log(`[CAST_DEBUG] __onGCastApiAvailable callback triggered. isAvailable: ${isAvailable}`);
-
-        if (isAvailable) {
-            castState.isAvailable = true;
-            console.log('[CAST_DEBUG] Cast SDK is available. Setting up CastContext...');
-            try {
-                const castContext = cast.framework.CastContext.getInstance();
-                castContext.setOptions({
-                    receiverApplicationId: APPLICATION_ID,
-                    autoJoinPolicy: chrome.cast.AutoJoinPolicy.TAB_AND_ORIGIN_SCOPED
-                });
-
-                console.log('[CAST_DEBUG] CastContext options set. Adding event listeners.');
-
-                castContext.addEventListener(
-                    cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
-                    handleSessionStateChange
-                );
-                
-                castState.player = new cast.framework.RemotePlayer();
-                castState.playerController = new cast.framework.RemotePlayerController(castState.player);
-                castState.playerController.addEventListener(
-                    cast.framework.RemotePlayerEventType.IS_CONNECTED_CHANGED,
-                    handleRemotePlayerConnectionChange
-                );
-                console.log('[CAST_DEBUG] Cast event listeners and remote player controller initialized successfully.');
-
-            } catch (error) {
-                console.error('[CAST_DEBUG] FATAL ERROR during Cast SDK setup:', error);
-            }
-
-        } else {
-            console.warn('[CAST_DEBUG] Cast SDK is not available according to the callback.');
-            castState.isAvailable = false;
-        }
-    };
+    castState.player = new cast.framework.RemotePlayer();
+    castState.playerController = new cast.framework.RemotePlayerController(castState.player);
+    castState.playerController.addEventListener(
+        cast.framework.RemotePlayerEventType.IS_CONNECTED_CHANGED,
+        handleRemotePlayerConnectionChange
+    );
 }
+
+// --- FINAL FIX ---
+// This is the official callback provided by the Google Cast SDK.
+// It will be executed automatically by the SDK script once it has fully loaded and is ready.
+// We wrap our entire initialization logic in here to prevent timing issues.
+window['__onGCastApiAvailable'] = (isAvailable) => {
+    if (isAvailable) {
+        castState.isAvailable = true;
+        initializeCastApi();
+    } else {
+        console.warn('[CAST] Cast SDK is not available on this device.');
+        castState.isAvailable = false;
+        // Optionally hide the cast button if the SDK is not available at all
+        if (UIElements.castBtn) {
+            UIElements.castBtn.style.display = 'none';
+        }
+    }
+};
 
 
 /**
@@ -103,7 +95,6 @@ function handleSessionStateChange(event) {
             castState.isCasting = true;
             showNotification(`Casting to ${castState.session.getCastDevice().friendlyName}`, false, 4000);
             
-            // NEW: If a channel is playing locally, automatically cast it upon connection.
             if (castState.localPlayerState.streamUrl) {
                 console.log('[CAST] Automatically casting local content after session start.');
                 loadMedia(castState.localPlayerState.streamUrl, castState.localPlayerState.name, castState.localPlayerState.logo);
@@ -114,13 +105,13 @@ function handleSessionStateChange(event) {
             castState.isCasting = false;
             castState.currentMedia = null;
             showNotification('Casting session ended.', false, 4000);
-            updatePlayerUI(); // NEW: Update the local player UI
+            updatePlayerUI();
             break;
         case cast.framework.SessionState.NO_SESSION:
              castState.session = null;
              castState.isCasting = false;
              castState.currentMedia = null;
-             updatePlayerUI(); // NEW: Update the local player UI
+             updatePlayerUI();
              break;
     }
 }
@@ -138,21 +129,26 @@ function handleRemotePlayerConnectionChange() {
 function updatePlayerUI() {
     const videoElement = UIElements.videoElement;
     const castStatusDiv = UIElements.castStatus;
+    const castBtn = UIElements.castBtn;
 
     if (castState.isCasting && castState.player.isConnected) {
-        // Show "Now Casting" message
         videoElement.classList.add('hidden');
         castStatusDiv.classList.remove('hidden');
         castStatusDiv.classList.add('flex');
         
         UIElements.castStatusText.textContent = `Casting to ${castState.session.getCastDevice().friendlyName}`;
         UIElements.castStatusChannel.textContent = castState.player.mediaInfo ? castState.player.mediaInfo.metadata.title : 'No media loaded.';
+        
+        // Add class to our custom button to indicate connected state
+        if (castBtn) castBtn.classList.add('cast-connected');
 
     } else {
-        // Show the local video player
         videoElement.classList.remove('hidden');
         castStatusDiv.classList.add('hidden');
         castStatusDiv.classList.remove('flex');
+
+        // Remove connected state class
+        if (castBtn) castBtn.classList.remove('cast-connected');
     }
 }
 
@@ -171,7 +167,7 @@ export function loadMedia(url, name, logo) {
 
     console.log(`[CAST] Loading media: "${name}" from URL: ${url}`);
     
-    const mediaInfo = new chrome.cast.media.MediaInfo(url, 'video/mp2t'); // MPEG Transport Stream
+    const mediaInfo = new chrome.cast.media.MediaInfo(url, 'video/mp2t');
     mediaInfo.streamType = chrome.cast.media.StreamType.LIVE;
     mediaInfo.metadata = new chrome.cast.media.TvShowMediaMetadata();
     mediaInfo.metadata.title = name;
@@ -185,7 +181,7 @@ export function loadMedia(url, name, logo) {
         () => {
             console.log('[CAST] Media loaded successfully.');
             castState.currentMedia = castState.session.getMediaSession();
-            updatePlayerUI(); // NEW: Update UI after loading media
+            updatePlayerUI();
         },
         (errorCode) => {
             console.error('[CAST] Error loading media:', errorCode);
