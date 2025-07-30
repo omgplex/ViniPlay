@@ -1,27 +1,19 @@
-<div align="center">
-<img src="https://i.imgur.com/rwa8SjI.png" alt="ViniPlay Logo" width="120">
-<h1>ViniPlay</h1>
-<p>
-<strong>A powerful, self-hosted IPTV player with a modern web interface.</strong>
-</p>
-<p>
+ViniPlay
+A powerful, self-hosted IPTV player with a modern web interface.
+
 Stream your M3U playlists with EPG data, manage users, cast to your TV, and watch multiple channels at once.
-</p>
-<p>
-<img src="https://img.shields.io/badge/docker-ready-blue.svg?style=for-the-badge&logo=docker" alt="Docker Ready">
-<img src="https://www.google.com/search?q=https://img.shields.io/badge/platform-node.js-green.svg%3Fstyle%3Dfor-the-badge%26logo%3Dnodedotjs" alt="Node.js Backend">
-<img src="https://www.google.com/search?q=https://img.shields.io/badge/license-MIT-lightgrey.svg%3Fstyle%3Dfor-the-badge" alt="License">
-</p>
-</div>
 
 ViniPlay transforms your M3U and EPG files into a polished, high-performance streaming experience. It's a full-featured IPTV solution that runs in a Docker container, providing a robust Node.js backend to handle streams and a sleek, responsive frontend for an exceptional user experience.
 
 The server-side backend resolves common CORS and browser compatibility issues by proxying or transcoding streams with FFMPEG, while the feature-rich frontend provides a user experience comparable to premium IPTV services.
 
-<div align="center">
 <!-- It's highly recommended to add a screenshot or a GIF of your app in action -->
-<!-- <img src="URL_TO_YOUR_SCREENSHOT.png" alt="ViniPlay Screenshot" width="800"> -->
+
+<!--
+<div align="center">
+<img src="URL_TO_YOUR_SCREENSHOT.png" alt="ViniPlay Screenshot" width="800">
 </div>
+-->
 
 ✨ Key Features
 👤 Multi-User Management: Secure the application with a dedicated admin account. Create, edit, and manage standard user accounts.
@@ -30,7 +22,7 @@ The server-side backend resolves common CORS and browser compatibility issues by
 
 🖼️ Multi-View: Drag, drop, and resize players on a grid to watch multiple streams simultaneously. Save and load custom layouts.
 
-** Chromecast Support:** Cast your streams directly to any Google Cast-enabled device on your network.
+Chromecast Support: Cast your streams directly to any Google Cast-enabled device on your network.
 
 🔔 Push Notifications: Set reminders for upcoming programs and receive push notifications in your browser, even when the app is closed.
 
