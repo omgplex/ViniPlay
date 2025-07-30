@@ -3,7 +3,7 @@
  * Manages all Google Cast related functionality.
  */
 
-import { showNotification } from './ui.js';
+import { showNotification, showConfirm } from './ui.js';
 import { UIElements, appState } from './state.js';
 
 const APPLICATION_ID = 'CC1AD845'; // Default Media Receiver App ID
@@ -25,7 +25,6 @@ export const castState = {
 /**
  * This is the official callback provided by the Google Cast SDK.
  * It will be executed automatically by the SDK script once it has fully loaded and is ready.
- * We wrap our entire initialization logic in here to prevent timing issues.
  * @param {boolean} isAvailable - True if the Cast API is available.
  */
 window['__onGCastApiAvailable'] = (isAvailable) => {
@@ -130,8 +129,7 @@ function handleRemotePlayerConnectionChange() {
 }
 
 /**
- * **CORE FIX**: Updates the local player modal UI based on the casting state.
- * This now includes logic to fully stop the local player when casting begins.
+ * Updates the local player modal UI based on the casting state.
  */
 function updatePlayerUI() {
     const videoElement = UIElements.videoElement;
@@ -141,9 +139,6 @@ function updatePlayerUI() {
 
     // Check if we are successfully casting to a connected device.
     if (castState.isCasting && castState.player.isConnected && castState.session) {
-        // --- START OF THE PRIMARY FIX ---
-        // When casting starts, we MUST destroy the local mpegts.js player
-        // to stop the local audio/video stream completely.
         if (localMpegtsPlayer) {
             console.log('[CAST] Handoff to remote device complete. Destroying local mpegts player instance.');
             localMpegtsPlayer.pause();
@@ -152,14 +147,11 @@ function updatePlayerUI() {
             localMpegtsPlayer.destroy();
             appState.player = null; // Clear the reference in the global state
         }
-        // Also ensure the video element itself is fully cleared and paused.
         videoElement.pause();
         videoElement.src = "";
         videoElement.removeAttribute('src');
-        videoElement.load(); // This helps reset the element's state.
-        // --- END OF THE PRIMARY FIX ---
+        videoElement.load();
 
-        // Show the "Casting to..." message and hide the (now stopped) local video player.
         videoElement.classList.add('hidden');
         castStatusDiv.classList.remove('hidden');
         castStatusDiv.classList.add('flex');
@@ -167,16 +159,13 @@ function updatePlayerUI() {
         UIElements.castStatusText.textContent = `Casting to ${castState.session.getCastDevice().friendlyName}`;
         UIElements.castStatusChannel.textContent = castState.player.mediaInfo ? castState.player.mediaInfo.metadata.title : 'No media loaded.';
         
-        // Add a visual indicator to our custom cast button.
         if (castBtn) castBtn.classList.add('cast-connected');
 
     } else {
-        // When casting stops, show the local player element again (it will be black).
         videoElement.classList.remove('hidden');
         castStatusDiv.classList.add('hidden');
         castStatusDiv.classList.remove('flex');
 
-        // Remove the connected state class from the button.
         if (castBtn) castBtn.classList.remove('cast-connected');
     }
 }
@@ -196,7 +185,6 @@ export function loadMedia(url, name, logo) {
 
     console.log(`[CAST] Loading media onto remote device: "${name}" from URL: ${url}`);
     
-    // The MIME type for MPEG-TS streams, which is common for IPTV.
     const mediaInfo = new chrome.cast.media.MediaInfo(url, 'video/mp2t');
     mediaInfo.streamType = chrome.cast.media.StreamType.LIVE;
     mediaInfo.metadata = new chrome.cast.media.TvShowMediaMetadata();
@@ -206,6 +194,22 @@ export function loadMedia(url, name, logo) {
     }
 
     const request = new chrome.cast.media.LoadRequest(mediaInfo);
+    
+    // --- **CORE FIX**: Enable CORS on the receiver ---
+    // This tells the Cast device that it's allowed to load content from a different
+    // origin (your stream server) than the sender application's origin.
+    // This is the most common reason for streams failing to play on Chromecast.
+    request.media.customData = {
+        "playbackConfig": {
+            "licenseUrl": "", // Not needed for HLS/MPEG-TS without DRM
+            "protectionSystem": "widevine", // Can be a placeholder
+            "customLicenseHeaders": {}
+        }
+    };
+    // **This is the critical line to enable CORS**
+    request.credentials = null;
+    request.credentialsType = 'none';
+    // --- End of CORE FIX ---
 
     castState.session.loadMedia(request).then(
         () => {
@@ -213,8 +217,11 @@ export function loadMedia(url, name, logo) {
             castState.currentMedia = castState.session.getMediaSession();
             updatePlayerUI(); // Update UI to show casting status
         },
-        (errorCode) => {
-            console.error('[CAST] Error loading media on remote device:', errorCode);
+        (errorCode, error) => {
+            // **IMPROVED LOGGING**
+            console.error('[CAST] FATAL: Error loading media on remote device.');
+            console.error(`[CAST] Error Code: ${errorCode}`);
+            console.error('[CAST] Full Error Object:', error);
             showNotification('Failed to load media on Cast device. Check console for details.', true);
         }
     );
@@ -226,6 +233,10 @@ export function loadMedia(url, name, logo) {
 export function endCastSession() {
      if (castState.session) {
         console.log('[CAST] Ending cast session.');
-        castState.session.endSession(true); // true to stop any playing media
+        castState.session.stop(
+            () => { console.log('[CAST] Media stopped successfully.'); },
+            () => { console.error('[CAST] Failed to stop media.'); }
+        );
+        castState.session.endSession(true);
      }
 }
