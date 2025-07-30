@@ -5,6 +5,8 @@
 
 import { showNotification } from './ui.js';
 import { UIElements } from './state.js';
+// NEW: Import stopAndCleanupPlayer from player.js
+import { stopAndCleanupPlayer as stopLocalPlayer } from './player.js';
 
 const APPLICATION_ID = 'CC1AD845'; // Default Media Receiver App ID
 
@@ -107,6 +109,8 @@ function handleSessionStateChange(event) {
             
             if (castState.localPlayerState.streamUrl) {
                 console.log('[CAST_DEBUG] localPlayerState has content. Automatically casting local content after session start.');
+                // NEW: Stop local player when casting starts
+                stopLocalPlayer(true); 
                 loadMedia(castState.localPlayerState.streamUrl, castState.localPlayerState.name, castState.localPlayerState.logo);
             } else {
                 console.log('[CAST_DEBUG] No localPlayerState content to auto-cast. User needs to select a channel or restart playback.');
@@ -118,6 +122,8 @@ function handleSessionStateChange(event) {
             castState.isCasting = true;
             console.log(`[CAST_DEBUG] Resumed Cast session acquired:`, castState.session);
             showNotification(`Casting to ${castState.session.getCastDevice().friendlyName}`, false, 4000);
+            // NEW: Stop local player when casting resumes
+            stopLocalPlayer(true);
             // No need to load media here, it should already be playing if resumed.
             break;
         case cast.framework.SessionState.SESSION_ENDED:
