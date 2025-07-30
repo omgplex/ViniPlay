@@ -42,32 +42,46 @@ export function setLocalPlayerState(streamUrl, name, logo) {
  * This should be called once the application loads.
  */
 export function initializeCastApi() {
-    console.log('[CAST] Initializing Google Cast API...');
+    // --- DEBUGGING ---
+    console.log('[CAST_DEBUG] Attempting to initialize Google Cast API...');
+    console.log('[CAST_DEBUG] Checking if cast framework is loaded:', window.cast);
     
+    // The Google Cast SDK script will call this function when it's ready.
     window['__onGCastApiAvailable'] = (isAvailable) => {
+        // --- DEBUGGING ---
+        console.log(`[CAST_DEBUG] __onGCastApiAvailable callback triggered. isAvailable: ${isAvailable}`);
+
         if (isAvailable) {
             castState.isAvailable = true;
-            console.log('[CAST] Cast SDK is available.');
-            const castContext = cast.framework.CastContext.getInstance();
-            castContext.setOptions({
-                receiverApplicationId: APPLICATION_ID,
-                autoJoinPolicy: chrome.cast.AutoJoinPolicy.TAB_AND_ORIGIN_SCOPED
-            });
+            console.log('[CAST_DEBUG] Cast SDK is available. Setting up CastContext...');
+            try {
+                const castContext = cast.framework.CastContext.getInstance();
+                castContext.setOptions({
+                    receiverApplicationId: APPLICATION_ID,
+                    autoJoinPolicy: chrome.cast.AutoJoinPolicy.TAB_AND_ORIGIN_SCOPED
+                });
 
-            castContext.addEventListener(
-                cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
-                handleSessionStateChange
-            );
-            
-            castState.player = new cast.framework.RemotePlayer();
-            castState.playerController = new cast.framework.RemotePlayerController(castState.player);
-            castState.playerController.addEventListener(
-                cast.framework.RemotePlayerEventType.IS_CONNECTED_CHANGED,
-                handleRemotePlayerConnectionChange
-            );
+                console.log('[CAST_DEBUG] CastContext options set. Adding event listeners.');
+
+                castContext.addEventListener(
+                    cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
+                    handleSessionStateChange
+                );
+                
+                castState.player = new cast.framework.RemotePlayer();
+                castState.playerController = new cast.framework.RemotePlayerController(castState.player);
+                castState.playerController.addEventListener(
+                    cast.framework.RemotePlayerEventType.IS_CONNECTED_CHANGED,
+                    handleRemotePlayerConnectionChange
+                );
+                console.log('[CAST_DEBUG] Cast event listeners and remote player controller initialized successfully.');
+
+            } catch (error) {
+                console.error('[CAST_DEBUG] FATAL ERROR during Cast SDK setup:', error);
+            }
 
         } else {
-            console.warn('[CAST] Cast SDK is not available.');
+            console.warn('[CAST_DEBUG] Cast SDK is not available according to the callback.');
             castState.isAvailable = false;
         }
     };
