@@ -386,23 +386,30 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
     // First, navigate to the TV Guide page
     navigate('/tvguide');
 
-    // MODIFIED: This function is now async and uses await to solve the race condition.
-    // Introduce a slight delay to ensure the UI route change has initiated
     await new Promise(resolve => setTimeout(resolve, 150));
 
     const targetProgramStart = new Date(programStart);
     const currentGuideDate = new Date(guideState.currentDate);
-    currentGuideDate.setHours(0, 0, 0, 0); // Normalize to midnight for comparison
+    currentGuideDate.setHours(0, 0, 0, 0);
+
+    // --- NEW DEBUG LOGS ---
+    console.log(`[NOTIF_NAV_DEBUG] Target Program Date: ${targetProgramStart.toDateString()}`);
+    console.log(`[NOTIF_NAV_DEBUG] Current Guide Date: ${currentGuideDate.toDateString()}`);
+    console.log(`[NOTIF_NAV_DEBUG] Do dates match? ${targetProgramStart.toDateString() === currentGuideDate.toDateString()}`);
+    console.log(`[NOTIF_NAV_DEBUG] Current Filters - Group: "${UIElements.groupFilter.value}", Source: "${UIElements.sourceFilter.value}"`);
+    // --- END NEW DEBUG LOGS ---
 
     // Step 1: Check and adjust guide date if necessary
     if (targetProgramStart.toDateString() !== currentGuideDate.toDateString()) {
         console.log(`[NOTIF_NAV] Program is on a different day. Adjusting guide date to: ${targetProgramStart.toDateString()}`);
-        guideState.currentDate = targetProgramStart; // Set the guide date to the program's date
+        guideState.currentDate = targetProgramStart;
         
-        // MODIFIED: Await the handleSearchAndFilter promise. This is the core of the fix.
-        // This pauses execution until the guide has finished re-rendering for the new date.
         await handleSearchAndFilter(true);
     }
+
+    // --- NEW DEBUG LOG ---
+    console.log(`[NOTIF_NAV_DEBUG] Before scrolling, there are ${guideState.visibleChannels.length} channels in the visible list.`);
+    // --- END NEW DEBUG LOG ---
 
     // Step 2: Ensure the target channel is vertically visible using scrollToChannel
     console.log(`[NOTIF_NAV] Attempting to scroll channel ${channelId} into view.`);
@@ -415,7 +422,6 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
     }
 
     // Step 3: Now that the channel is visible, poll for the program element
-    // This part of the logic is more reliable now because we've waited for the guide to render.
     const maxProgramAttempts = 30;
     let programAttempts = 0;
     const findProgramInterval = setInterval(() => {
