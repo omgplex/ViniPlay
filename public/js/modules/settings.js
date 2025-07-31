@@ -19,8 +19,33 @@ let currentSourceTypeForEditor = 'url';
  */
 export const populateTimezoneSelector = () => {
     UIElements.timezoneOffsetSelect.innerHTML = '';
+    // Append standard UTC offsets
     for (let i = 14; i >= -12; i--) {
         UIElements.timezoneOffsetSelect.innerHTML += `<option value="${i}">UTC${i >= 0 ? '+' : ''}${i}:00</option>`;
+    }
+
+    // Attempt to detect and display the user's IANA timezone
+    let detectedTimezoneName = 'Unknown';
+    let timezoneOffsetMinutes = 0;
+    try {
+        const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        detectedTimezoneName = timeZone;
+        // Calculate offset for display purposes (does not change the EPG offset setting logic)
+        timezoneOffsetMinutes = new Date().getTimezoneOffset(); // Returns offset in minutes, positive for UTC-behind
+        const detectedOffsetHours = -Math.round(timezoneOffsetMinutes / 60); // Convert to UTC+/- format
+        
+        // Pre-select the detected offset if it matches one of our options
+        if (UIElements.timezoneOffsetSelect.querySelector(`option[value="${detectedOffsetHours}"]`)) {
+            UIElements.timezoneOffsetSelect.value = detectedOffsetHours;
+        }
+
+    } catch (e) {
+        console.warn('[SETTINGS] Could not detect IANA timezone:', e);
+        detectedTimezoneName = 'Could not detect browser timezone.';
+    }
+
+    if (UIElements.detectedTimezoneInfo) {
+        UIElements.detectedTimezoneInfo.textContent = `Your browser's timezone: ${detectedTimezoneName}. We've pre-selected your browser's offset.`;
     }
 };
 
@@ -85,6 +110,8 @@ export const updateUIFromSettings = () => {
 
     // Update dropdowns and inputs
     UIElements.timezoneOffsetSelect.value = settings.timezoneOffset;
+    // Set detected timezone info after populating the selector
+    populateTimezoneSelector(); // This will also attempt to set the select value
     UIElements.searchScopeSelect.value = settings.searchScope;
     UIElements.notificationLeadTimeInput.value = settings.notificationLeadTime;
 
