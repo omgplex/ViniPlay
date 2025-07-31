@@ -126,7 +126,7 @@ export const addOrRemoveNotification = async (programDetails) => {
                     guideState.userNotifications = guideState.userNotifications.filter(n => n.id !== existingNotification.id);
                     renderNotifications();
                     renderPastNotifications(); // Re-render past notifications too
-                    handleSearchAndFilter(false); // Update guide with indicators
+                    await handleSearchAndFilter(false); // Update guide with indicators
                     showNotification(`Notification for "${programDetails.programTitle}" removed.`); // Manual notification after success
                 } else {
                     console.error('[NOTIF] Failed to delete notification on backend.');
@@ -189,7 +189,7 @@ export const addOrRemoveNotification = async (programDetails) => {
             // Add to local state (it will initially be 'pending')
             guideState.userNotifications.push({ ...addedNotification, status: 'pending' });
             renderNotifications();
-            handleSearchAndFilter(false); // Update guide with indicators
+            await handleSearchAndFilter(false); // Update guide with indicators
             showNotification(`Notification set for "${addedNotification.programTitle}"!`);
             console.log(`[NOTIF] Notification for "${addedNotification.programTitle}" added successfully.`);
         } else {
@@ -355,7 +355,7 @@ const handleNotificationListClick = (e) => {
                         guideState.userNotifications = guideState.userNotifications.filter(n => n.id != notificationId);
                         renderNotifications();
                         renderPastNotifications(); // Re-render past notifications too
-                        handleSearchAndFilter(false); // Update guide with indicators
+                        await handleSearchAndFilter(false); // Update guide with indicators
                         showNotification(`Notification for "${notification.programTitle}" removed.`);
                     }
                 }
@@ -386,8 +386,9 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
     // First, navigate to the TV Guide page
     navigate('/tvguide');
 
+    // MODIFIED: This function is now async and uses await to solve the race condition.
     // Introduce a slight delay to ensure the UI route change has initiated
-    await new Promise(resolve => setTimeout(resolve, 150)); // Slightly increased initial delay
+    await new Promise(resolve => setTimeout(resolve, 150));
 
     const targetProgramStart = new Date(programStart);
     const currentGuideDate = new Date(guideState.currentDate);
@@ -397,9 +398,10 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
     if (targetProgramStart.toDateString() !== currentGuideDate.toDateString()) {
         console.log(`[NOTIF_NAV] Program is on a different day. Adjusting guide date to: ${targetProgramStart.toDateString()}`);
         guideState.currentDate = targetProgramStart; // Set the guide date to the program's date
-        handleSearchAndFilter(true); // Trigger a re-render of the guide with the new date, reset scroll to top
-        // Give time for handleSearchAndFilter and renderGuide to start processing
-        await new Promise(resolve => setTimeout(resolve, 300)); // Additional delay after date change
+        
+        // MODIFIED: Await the handleSearchAndFilter promise. This is the core of the fix.
+        // This pauses execution until the guide has finished re-rendering for the new date.
+        await handleSearchAndFilter(true);
     }
 
     // Step 2: Ensure the target channel is vertically visible using scrollToChannel
@@ -413,43 +415,37 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
     }
 
     // Step 3: Now that the channel is visible, poll for the program element
-    const maxProgramAttempts = 30; // More attempts for program within channel (30 * 100ms = 3 seconds)
+    // This part of the logic is more reliable now because we've waited for the guide to render.
+    const maxProgramAttempts = 30;
     let programAttempts = 0;
     const findProgramInterval = setInterval(() => {
         let programElement;
-        // Prioritize finding by unique programId which is most reliable
         if (programId) {
             programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-id="${programId}"][data-channel-id="${channelId}"]`);
         }
-        // Fallback to channelId and programStart if unique programId is not found or available
         if (!programElement) {
-            console.warn(`[NOTIF_NAV] Program lookup attempt ${programAttempts + 1}: Program with unique ID "${programId}" not found or not primary. Falling back to channel ID and program start.`);
             programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programStart}"][data-channel-id="${channelId}"]`);
         }
 
         if (programElement) {
             console.log(`[NOTIF_NAV] Program element found on attempt ${programAttempts + 1}. Scrolling horizontally and clicking.`);
-            clearInterval(findProgramInterval); // Stop polling
+            clearInterval(findProgramInterval);
 
-            // Scroll the guide container horizontally to make the program visible
-            const scrollLeft = programElement.offsetLeft - (UIElements.guideContainer.clientWidth / 4); // Position to the left of center
+            const scrollLeft = programElement.offsetLeft - (UIElements.guideContainer.clientWidth / 4);
             UIElements.guideContainer.scrollTo({ left: Math.max(0, scrollLeft), behavior: 'smooth' });
 
-            // Programmatically click the element to open the program details modal
             programElement.click(); 
             
-            // Add a brief visual highlight to the program element
-            programElement.style.transition = 'outline 0.5s, box-shadow 0.5s, transform 0.5s';
-            programElement.classList.add('highlighted-search'); // Reuse existing highlight class
-            setTimeout(() => { programElement.classList.remove('highlighted-search'); }, 2500); // Remove highlight after some time
+            programElement.classList.add('highlighted-search');
+            setTimeout(() => { programElement.classList.remove('highlighted-search'); }, 2500);
 
         } else {
             programAttempts++;
             if (programAttempts >= maxProgramAttempts) {
-                clearInterval(findProgramInterval); // Stop polling after max attempts
-                console.warn(`[NOTIF_NAV] Max program attempts reached. Could not find program element in current guide view to open details. (Channel ID: ${channelId}, Program Start: ${programStart}, Program ID: ${programId}).`);
-                showNotification("Could not find program in guide to open details. It might be outside the current 48-hour guide window or took too long to render.", false, 6000);
+                clearInterval(findProgramInterval);
+                console.warn(`[NOTIF_NAV] Max program attempts reached. Could not find program element in current guide view. (ID: ${programId}).`);
+                showNotification("Could not find program in guide to open details. It might be outside the current 48-hour guide window.", false, 6000);
             }
         }
-    }, 100); // Check every 100ms for the program
+    }, 100);
 };
