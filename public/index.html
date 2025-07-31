@@ -8,6 +8,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/mpegts.js/dist/mpegts.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/fuse.js/dist/fuse.min.js"></script>
+    <!-- NEW: Google Cast Framework -->
+    <script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
     <!-- NEW: Gridstack.js for Multi-View -->
     <link href="https://cdn.jsdelivr.net/npm/gridstack@10.1.2/dist/gridstack.min.css" rel="stylesheet" />
     <script src="https://cdn.jsdelivr.net/npm/gridstack@10.1.2/dist/gridstack-all.js"></script>
@@ -205,7 +207,7 @@
             background-color: #ef4444; /* red-500 */
             width: 2px; /* w-0.5 */
             z-index: 28; /* Should be above programs but below sticky headers for a cleaner look */
-            pointer-events-none; /* Corrected: Use Tailwind class for pointer-events */
+            pointer-events: none; /* Corrected: Use Tailwind class for pointer-events */
             transition: left 0.5s ease; /* Smooth movement when scrolling to now */
         }
 
@@ -353,6 +355,24 @@
         .player-placeholder svg { width: 2rem; height: 2rem; margin-bottom: 0.5rem; }
         .channel-selector-list { max-height: 400px; }
 
+        /* --- NEW: Date Picker Custom Style --- */
+        #guide-date-picker::-webkit-calendar-picker-indicator {
+            display: none;
+            -webkit-appearance: none;
+        }
+
+        /* --- FINAL CHANGE: CSS for our custom cast button --- */
+        #cast-btn svg path {
+            transition: all 0.2s ease-in-out;
+        }
+        /* Style to indicate connected state - will be applied via JS */
+        #cast-btn.cast-connected {
+            color: #3b82f6; /* blue-500 */
+        }
+        #cast-btn.cast-connected:hover {
+            color: #60a5fa; /* blue-400 */
+        }
+
     </style>
 </head>
 <body class="h-screen">
@@ -435,9 +455,16 @@
             <div id="page-guide" class="flex flex-grow flex-col overflow-hidden">
                 <!-- NEW: Unified Guide Header Bar -->
                 <div id="unified-guide-header" class="flex-shrink-0 bg-gray-800 p-2 sm:p-4 border-b border-gray-700 flex items-center justify-between z-30 transition-transform duration-300 ease-out">
-                    <!-- Left: Date Display (moved from guide-controls-bar to here) -->
-                    <div class="flex items-center gap-2 date-nav-controls">
+                    <!-- MODIFIED: Left side now contains date display and date picker -->
+                    <div class="flex items-center gap-2 sm:gap-3 date-nav-controls">
                         <span id="guide-date-display" class="text-base sm:text-lg font-semibold text-white"></span>
+                        <!-- NEW: Date Picker Input with Icon -->
+                        <div class="relative">
+                            <input type="date" id="guide-date-picker" class="bg-gray-700 border border-gray-600 rounded-md pl-3 pr-8 py-1 text-sm text-white focus:ring-blue-500 focus:border-blue-500 appearance-none" style="color-scheme: dark;">
+                            <label for="guide-date-picker" class="absolute inset-y-0 right-0 flex items-center pr-2 cursor-pointer" title="Jump to date">
+                                <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                            </label>
+                        </div>
                     </div>
                     
                     <!-- Right: Filters and Search (moved from guide-controls-bar to here) -->
@@ -466,10 +493,9 @@
                     <div id="guide-grid" class="h-full w-full">
                         <!-- Sticky Corner (top-left) for channel column resize handle -->
                         <div class="sticky-corner flex items-center justify-center p-2 sm:p-4">
+                            <!-- MODIFIED: Removed Prev/Next Day buttons, kept Now button -->
                             <div class="flex items-center gap-2">
-                                <button id="prev-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&lt;</button>
                                 <button id="now-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">Now</button>
-                                <button id="next-day-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">&gt;</button>
                             </div>
                             <!-- Resize handle for the channel column -->
                             <div id="channel-column-resize-handle" class="channel-resize-handle"></div>
@@ -698,7 +724,7 @@
                     <!-- Danger Zone -->
                     <div class="bg-red-900/50 border border-red-700/50 p-4 sm:p-6 rounded-xl shadow-lg">
                         <h2 class="text-xl font-bold text-red-300 mb-4 border-b border-red-700/50 pb-2">Danger Zone</h2>
-                        <p class="text-sm text-gray-400 mb-4">This permanently deletes all saved application data from the server and your browser cache.</p>
+                        <p class="text-sm text-gray-400 mb-4">This permanently deletes all saved application data from the server and your browser cache. The page will reload.</p>
                         <button id="clear-data-btn" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center gap-2"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg><span>Clear All Data & Reset</span></button>
                     </div>
                 </div>
@@ -742,11 +768,24 @@
             <div class="flex justify-between items-center p-3 border-b border-gray-700 flex-shrink-0">
                 <h3 id="video-title" class="text-lg font-semibold text-white truncate"></h3>
                 <div class="flex items-center gap-2">
+                    <!-- FINAL FIX: Replaced google-cast-launcher with a custom button -->
+                    <button id="cast-btn" class="text-gray-400 hover:text-white p-2 rounded-md hover:bg-gray-700" title="Cast to device">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11z"></path></svg>
+                    </button>
                     <button id="pip-btn" class="text-gray-400 hover:text-white p-2 rounded-md hover:bg-gray-700" title="Picture-in-Picture"><svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M12.5 5.5h-5a1 1 0 00-1 1v2.5a.5.5 0 001 0v-2a.5.5 0 01.5-.5h4a.5.5 0 01.5.5v4a.5.5 0 01-.5.5h-2a.5.5 0 000 1h2.5a1 1 0 001-1v-5a1 1 0 00-1-1z"></path><path d="M3.5 3A1.5 1.5 0 002 4.5v11A1.5 1.5 0 003.5 17h13a1.5 1.5 0 001.5-1.5v-11A1.5 1.5 0 0016.5 3h-13zm0 1h13a.5.5 0 01.5.5v11a.5.5 0 01-.5.5h-13a.5.5 0 01-.5-.5v-11a.5.5 0 01.5-.5z"></path></svg></button>
-                    <button id="close-modal" class="text-gray-400 hover:text-white text-3xl leading-none font-bold">&times;</button>
+                    <button id="close-modal" class="text-gray-400 hover:text-white text-2xl leading-none font-bold">&times;</button>
                 </div>
             </div>
-            <div class="flex-grow p-1 bg-black"><video id="videoElement" controls autoplay class="w-full h-full"></video></div>
+            <!-- MODIFIED: Added a container for the video element and a new one for the cast status message -->
+            <div id="video-content" class="flex-grow p-1 bg-black relative">
+                <video id="videoElement" controls autoplay class="w-full h-full"></video>
+                <!-- NEW: This element will show when casting -->
+                <div id="cast-status" class="hidden absolute inset-0 flex-col items-center justify-center bg-black text-white p-4">
+                    <svg class="w-16 h-16 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1"><path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                    <p id="cast-status-text" class="text-lg font-semibold"></p>
+                    <p id="cast-status-channel" class="text-sm text-gray-400"></p>
+                </div>
+            </div>
             <div id="video-resize-handle" class="resize-handle"></div>
         </div>
     </div>
