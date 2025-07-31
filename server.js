@@ -242,11 +242,12 @@ function getSettings() {
             epgSources: [],
             userAgents: [{ id: `default-ua-${Date.now()}`, name: 'ViniPlay Default', value: 'VLC/3.0.20 (Linux; x86_64)', isDefault: true }],
             streamProfiles: [
-                { id: 'ffmpeg-default', name: 'ffmpeg (Built in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: true }
+                { id: 'ffmpeg-default', name: 'ffmpeg (Built in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: true },
+                { id: 'redirect', name: 'Redirect (No Transcoding)', command: 'redirect', isDefault: false }
             ],
             activeUserAgentId: `default-ua-${Date.now()}`,
             activeStreamProfileId: 'ffmpeg-default',
-            searchScope: 'channels_programs',
+            searchScope: 'channels_only', // MODIFIED: Changed default search scope
             timezoneOffset: Math.round(-(new Date().getTimezoneOffset() / 60)),
             notificationLeadTime: 10
         };
