@@ -369,6 +369,8 @@
             /* Ensure appearance is none for cross-browser consistency */
             -webkit-appearance: none;
             appearance: none;
+            /* CRITICAL: Add pointer-events: none to ensure clicks pass through */
+            pointer-events: none;
         }
         /* Hide the native calendar picker indicator from the input itself */
         #guide-date-picker::-webkit-calendar-picker-indicator {
@@ -380,6 +382,8 @@
         label[for="guide-date-picker"] {
             position: relative; /* Needs to be relative for its z-index to work against absolute input */
             z-index: 10; /* Higher z-index to be clickable */
+            /* CRITICAL: Add pointer-events: auto to ensure the label is clickable */
+            pointer-events: auto;
         }
 
 
@@ -482,8 +486,8 @@
                         <span id="guide-date-display" class="text-base sm:text-lg font-semibold text-white"></span>
                         <!-- MODIFIED: Date Picker Input, now visually hidden but functional -->
                         <div class="relative w-8 h-8 flex items-center justify-center"> <!-- Container for icon and hidden input -->
-                            <input type="date" id="guide-date-picker" class="absolute inset-0 opacity-0 cursor-pointer" style="color-scheme: dark;">
-                            <label for="guide-date-picker" class="relative z-10 flex items-center justify-center cursor-pointer p-1 rounded-md hover:bg-gray-700" title="Open Calendar">
+                            <input type="date" id="guide-date-picker" class="absolute inset-0 opacity-0 cursor-pointer" style="color-scheme: dark; pointer-events: none;">
+                            <label for="guide-date-picker" class="relative z-10 flex items-center justify-center cursor-pointer p-1 rounded-md hover:bg-gray-700" title="Open Calendar" style="pointer-events: auto;">
                                 <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                             </label>
                         </div>
