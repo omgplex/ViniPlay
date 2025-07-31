@@ -247,9 +247,9 @@ function getSettings() {
             ],
             activeUserAgentId: `default-ua-${Date.now()}`,
             activeStreamProfileId: 'ffmpeg-default',
-            searchScope: 'channels_only', // MODIFIED: Changed default search scope
-            timezoneOffset: Math.round(-(new Date().getTimezoneOffset() / 60)),
+            searchScope: 'channels_only',
             notificationLeadTime: 10
+            // REMOVED: timezoneOffset is no longer set by default on the server
         };
         try {
             fs.writeFileSync(SETTINGS_PATH, JSON.stringify(defaultSettings, null, 2));
