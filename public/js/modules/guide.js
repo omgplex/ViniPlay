@@ -604,7 +604,10 @@ export const scrollToChannel = (channelId) => {
                 attempts++;
                 if (attempts >= maxAttempts) {
                     clearInterval(checkChannel);
-                    console.warn(`[GUIDE_SCROLL] Max attempts reached. Channel ID ${channelId} not found in visible channels for vertical scroll.`);
+                    // --- NEW DEBUG LOG ---
+                    console.warn(`[GUIDE_SCROLL_FAIL] Max attempts reached for channel ID ${channelId}.`);
+                    console.log(`[GUIDE_SCROLL_FAIL] Currently visible channels (${guideState.visibleChannels.length} total):`, guideState.visibleChannels.map(ch => ch.id));
+                    // --- END NEW DEBUG LOG ---
                     resolve(false); // Channel not found after max attempts
                 }
             }
@@ -857,3 +860,4 @@ export function setupGuideEventListeners() {
 
     UIElements.guideContainer.addEventListener('scroll', handleScrollHeader);
 }
+
