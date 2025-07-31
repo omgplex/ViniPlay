@@ -269,10 +269,12 @@ function getSettings() {
             epgSources: [],
             userAgents: [{ id: `default-ua-${Date.now()}`, name: 'ViniPlay Default', value: 'VLC/3.0.20 (Linux; x86_64)', isDefault: true }],
             streamProfiles: [
-                { id: 'ffmpeg-default', name: 'ffmpeg (Built in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: true }
+                { id: 'ffmpeg-copy', name: 'FFmpeg (Stream Copy)', command: '-i "{streamUrl}" -c copy -f mpegts pipe:1', isDefault: true }, // NEW default profile
+                { id: 'ffmpeg-transcode', name: 'FFmpeg (Transcode to H264/AAC)', command: '-i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false }, // Old default, now transcoding
+                { id: 'redirect', name: 'Direct Redirect', command: 'redirect', isDefault: true } // Keep redirect as a default option
             ],
             activeUserAgentId: `default-ua-${Date.now()}`,
-            activeStreamProfileId: 'ffmpeg-default',
+            activeStreamProfileId: 'ffmpeg-copy', // Set new default here
             searchScope: 'channels_programs',
             timezoneOffset: Math.round(-(new Date().getTimezoneOffset() / 60)),
             notificationLeadTime: 10
@@ -295,6 +297,39 @@ function getSettings() {
         settings.epgSources.forEach(s => { if (s.refreshHours === undefined) s.refreshHours = 0; });
 
         if (settings.notificationLeadTime === undefined) settings.notificationLeadTime = 10;
+        
+        // Add new default stream profile if it doesn't exist in existing settings
+        let foundFfmpegCopy = false;
+        let foundFfmpegTranscode = false;
+        if (settings.streamProfiles) {
+            for (const p of settings.streamProfiles) {
+                if (p.id === 'ffmpeg-copy') foundFfmpegCopy = true;
+                if (p.id === 'ffmpeg-transcode') foundFfmpegTranscode = true;
+            }
+        } else {
+            settings.streamProfiles = []; // Initialize if missing
+        }
+
+        if (!foundFfmpegCopy) {
+            // If ffmpeg-copy is missing, add it and set as active default
+            settings.streamProfiles.unshift({ id: 'ffmpeg-copy', name: 'FFmpeg (Stream Copy)', command: '-i "{streamUrl}" -c copy -f mpegts pipe:1', isDefault: true });
+            settings.activeStreamProfileId = 'ffmpeg-copy';
+        }
+        if (!foundFfmpegTranscode) {
+             // If the explicit transcode profile is missing, add it
+             settings.streamProfiles.push({ id: 'ffmpeg-transcode', name: 'FFmpeg (Transcode to H264/AAC)', command: '-i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false });
+        }
+        
+        // Ensure the old default 'ffmpeg-default' is either removed or mapped to 'ffmpeg-transcode'
+        // Or simply update its command if it still exists and isn't the new copy profile.
+        // For simplicity, let's just make sure 'ffmpeg-default' is marked as not default and has transcoding command
+        const oldDefaultProfile = settings.streamProfiles.find(p => p.id === 'ffmpeg-default');
+        if (oldDefaultProfile) {
+            oldDefaultProfile.name = 'FFmpeg (Old Default/Transcode)';
+            oldDefaultProfile.command = '-i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -f mpegts pipe:1';
+            oldDefaultProfile.isDefault = false;
+        }
+
         console.log('[SETTINGS] Settings loaded successfully.');
         return settings;
     } catch (e) {
