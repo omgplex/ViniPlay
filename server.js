@@ -267,12 +267,12 @@ function getSettings() {
             epgSources: [],
             userAgents: [{ id: `default-ua-${Date.now()}`, name: 'ViniPlay Default', value: 'VLC/3.0.20 (Linux; x86_64)', isDefault: true }],
             streamProfiles: [
-                // Updated FFmpeg (Stream Copy) with user agent and global header
-                { id: 'ffmpeg-copy', name: 'FFmpeg (Stream Copy)', command: '-headers "User-Agent: {clientUserAgent}\r\n" -i "{streamUrl}" -c copy -f mpegts -bsf:v h264_mp4toannexb -flags +global_header pipe:1', isDefault: true },
-                // Updated FFmpeg (Transcode to H264/AAC) with user agent and global header
-                { id: 'ffmpeg-transcode', name: 'FFmpeg (Transcode to H264/AAC)', command: '-headers "User-Agent: {clientUserAgent}\r\n" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -flags +global_header -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false },
-                // NEW Aggressive FFmpeg Transcode profile with enhanced input analysis, force timestamp generation, user agent, and global header
-                { id: 'ffmpeg-force-transcode', name: 'FFmpeg (Aggressive Transcode - H264/AAC)', command: '-fflags +genpts+discardcorrupt -err_detect aggressive -analyzeduration 100M -probesize 100M -re -headers "User-Agent: {clientUserAgent}\r\n" -i "{streamUrl}" -c:v libx264 -preset medium -tune zerolatency -force_key_frames expr:gte(t,n_forced*2) -g 50 -flags +global_header -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false },
+                // Updated FFmpeg (Stream Copy) with correct user agent and global header
+                { id: 'ffmpeg-copy', name: 'FFmpeg (Stream Copy)', command: '-user_agent "{clientUserAgent}" -i "{streamUrl}" -c copy -f mpegts -bsf:v h264_mp4toannexb -flags +global_header pipe:1', isDefault: true },
+                // Updated FFmpeg (Transcode to H264/AAC) with correct user agent and global header
+                { id: 'ffmpeg-transcode', name: 'FFmpeg (Transcode to H264/AAC)', command: '-user_agent "{clientUserAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -flags +global_header -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false },
+                // NEW Aggressive FFmpeg Transcode profile with enhanced input analysis, force timestamp generation, correct user agent, and global header
+                { id: 'ffmpeg-force-transcode', name: 'FFmpeg (Aggressive Transcode - H264/AAC)', command: '-fflags +genpts+discardcorrupt -err_detect aggressive -analyzeduration 100M -probesize 100M -re -user_agent "{clientUserAgent}" -f mpegts -i "{streamUrl}" -c:v libx264 -preset medium -tune zerolatency -force_key_frames expr:gte(t,n_forced*2) -g 50 -flags +global_header -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false },
                 { id: 'redirect', name: 'Direct Redirect', command: 'redirect', isDefault: true }
             ],
             activeUserAgentId: `default-ua-${Date.now()}`,
@@ -303,27 +303,27 @@ function getSettings() {
 
         const updatedProfiles = settings.streamProfiles.map(p => {
             if (p.id === 'ffmpeg-copy') {
-                return { id: 'ffmpeg-copy', name: 'FFmpeg (Stream Copy)', command: '-headers "User-Agent: {clientUserAgent}\r\n" -i "{streamUrl}" -c copy -f mpegts -bsf:v h264_mp4toannexb -flags +global_header pipe:1', isDefault: p.isDefault };
+                return { id: 'ffmpeg-copy', name: 'FFmpeg (Stream Copy)', command: '-user_agent "{clientUserAgent}" -i "{streamUrl}" -c copy -f mpegts -bsf:v h264_mp4toannexb -flags +global_header pipe:1', isDefault: p.isDefault };
             }
             if (p.id === 'ffmpeg-transcode') {
-                return { id: 'ffmpeg-transcode', name: 'FFmpeg (Transcode to H264/AAC)', command: '-headers "User-Agent: {clientUserAgent}\r\n" -i "{streamUrl}" -c:v libx64 -preset veryfast -crf 23 -flags +global_header -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: p.isDefault };
+                return { id: 'ffmpeg-transcode', name: 'FFmpeg (Transcode to H264/AAC)', command: '-user_agent "{clientUserAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -flags +global_header -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: p.isDefault };
             }
             // Ensure the aggressive profile is updated or added correctly
             if (p.id === 'ffmpeg-force-transcode') {
-                return { id: 'ffmpeg-force-transcode', name: 'FFmpeg (Aggressive Transcode - H264/AAC)', command: '-fflags +genpts+discardcorrupt -err_detect aggressive -analyzeduration 100M -probesize 100M -re -headers "User-Agent: {clientUserAgent}\r\n" -i "{streamUrl}" -c:v libx264 -preset medium -tune zerolatency -force_key_frames expr:gte(t,n_forced*2) -g 50 -flags +global_header -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: p.isDefault };
+                return { id: 'ffmpeg-force-transcode', name: 'FFmpeg (Aggressive Transcode - H264/AAC)', command: '-fflags +genpts+discardcorrupt -err_detect aggressive -analyzeduration 100M -probesize 100M -re -user_agent "{clientUserAgent}" -f mpegts -i "{streamUrl}" -c:v libx264 -preset medium -tune zerolatency -force_key_frames expr:gte(t,n_forced*2) -g 50 -flags +global_header -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: p.isDefault };
             }
             return p; // Return existing profile if not one of the ones we're updating
         });
 
         // Add missing profiles if they don't exist
         if (!currentProfileIds.has('ffmpeg-copy')) {
-            updatedProfiles.unshift({ id: 'ffmpeg-copy', name: 'FFmpeg (Stream Copy)', command: '-headers "User-Agent: {clientUserAgent}\r\n" -i "{streamUrl}" -c copy -f mpegts -bsf:v h264_mp4toannexb -flags +global_header pipe:1', isDefault: true });
+            updatedProfiles.unshift({ id: 'ffmpeg-copy', name: 'FFmpeg (Stream Copy)', command: '-user_agent "{clientUserAgent}" -i "{streamUrl}" -c copy -f mpegts -bsf:v h264_mp4toannexb -flags +global_header pipe:1', isDefault: true });
         }
         if (!currentProfileIds.has('ffmpeg-transcode')) {
-            updatedProfiles.push({ id: 'ffmpeg-transcode', name: 'FFmpeg (Transcode to H264/AAC)', command: '-headers "User-Agent: {clientUserAgent}\r\n" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -flags +global_header -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false });
+            updatedProfiles.push({ id: 'ffmpeg-transcode', name: 'FFmpeg (Transcode to H264/AAC)', command: '-user_agent "{clientUserAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -flags +global_header -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false });
         }
         if (!currentProfileIds.has('ffmpeg-force-transcode')) {
-             updatedProfiles.push({ id: 'ffmpeg-force-transcode', name: 'FFmpeg (Aggressive Transcode - H264/AAC)', command: '-fflags +genpts+discardcorrupt -err_detect aggressive -analyzeduration 100M -probesize 100M -re -headers "User-Agent: {clientUserAgent}\r\n" -i "{streamUrl}" -c:v libx264 -preset medium -tune zerolatency -force_key_frames expr:gte(t,n_forced*2) -g 50 -flags +global_header -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false });
+             updatedProfiles.push({ id: 'ffmpeg-force-transcode', name: 'FFmpeg (Aggressive Transcode - H264/AAC)', command: '-fflags +genpts+discardcorrupt -err_detect aggressive -analyzeduration 100M -probesize 100M -re -user_agent "{clientUserAgent}" -f mpegts -i "{streamUrl}" -c:v libx264 -preset medium -tune zerolatency -force_key_frames expr:gte(t,n_forced*2) -g 50 -flags +global_header -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false });
         }
         
         settings.streamProfiles = updatedProfiles;
@@ -1417,9 +1417,11 @@ app.get('/stream', (req, res) => {
     console.log(`[STREAM_DEBUG]   Using Profile Name: "${profile.name}"`);
     console.log(`[STREAM_DEBUG]   Using User Agent String: "${userAgent.value}"`);
 
+    // Replace {clientUserAgent} with the user agent value, ensuring it's properly quoted
     const commandTemplate = profile.command
         .replace(/{streamUrl}/g, streamUrl)
-        .replace(/{userAgent}|{clientUserAgent}/g, userAgent.value); // Ensure {clientUserAgent} is replaced
+        .replace(/{clientUserAgent}/g, userAgent.value); // Use -user_agent and remove \r\n
+
     console.log(`[STREAM_DEBUG] Constructed FFmpeg command template: "${commandTemplate}"`);
         
     const args = (commandTemplate.match(/(?:[^\s"]+|"[^"]*")+/g) || []).map(arg => arg.replace(/^"|"$/g, ''));
@@ -1434,7 +1436,7 @@ app.get('/stream', (req, res) => {
 
     const ffmpeg = spawn('ffmpeg', args);
     console.log(`[STREAM_DEBUG] FFmpeg process spawned with PID: ${ffmpeg.pid}`);
-    res.setHeader('Content-Type', 'video/mp2t');
+    res.setHeader('Content-Type', 'video/mp2t'); // Standard for MPEG Transport Stream
     console.log(`[STREAM_DEBUG] Response header 'Content-Type: video/mp2t' set.`);
     
     ffmpeg.stdout.pipe(res);
