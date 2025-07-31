@@ -78,8 +78,22 @@ const renderSourceTable = (sourceType) => {
 export const updateUIFromSettings = () => {
     const settings = guideState.settings;
 
-    // Ensure settings have default values if not present
-    settings.timezoneOffset = settings.timezoneOffset ?? Math.round(-(new Date().getTimezoneOffset() / 60));
+    // FIX: One-time timezone auto-detection and setting.
+    // This addresses the issue where existing settings files have a default of 0 (UTC).
+    const timezoneSetFlag = localStorage.getItem('vini_timezone_auto_set');
+    if (!timezoneSetFlag) {
+        const browserOffset = Math.round(-(new Date().getTimezoneOffset() / 60));
+        settings.timezoneOffset = browserOffset;
+        console.log(`[SETTINGS] First-run timezone detection. Setting to browser offset: ${browserOffset} and saving.`);
+        // Perform a one-time save to correct the server's setting file.
+        saveGlobalSetting({ timezoneOffset: browserOffset });
+        // Set a flag in local storage so this auto-detection doesn't run again,
+        // allowing the user to manually change the setting later.
+        localStorage.setItem('vini_timezone_auto_set', 'true');
+    } else {
+        // For subsequent loads, use the setting from the server, but still have a fallback.
+        settings.timezoneOffset = settings.timezoneOffset ?? Math.round(-(new Date().getTimezoneOffset() / 60));
+    }
     
     // NEW: Display detected IANA timezone
     try {
@@ -534,3 +548,4 @@ export function setupSettingsEventListeners() {
         });
     });
 }
+
