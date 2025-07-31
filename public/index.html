@@ -458,13 +458,12 @@
                     <!-- MODIFIED: Left side now contains date display and date picker -->
                     <div class="flex items-center gap-2 sm:gap-3 date-nav-controls">
                         <span id="guide-date-display" class="text-base sm:text-lg font-semibold text-white"></span>
-                        <!-- NEW: Date Picker Input with Icon -->
-                        <div class="relative">
-                            <input type="date" id="guide-date-picker" class="bg-gray-700 border border-gray-600 rounded-md pl-3 pr-8 py-1 text-sm text-white focus:ring-blue-500 focus:border-blue-500 appearance-none" style="color-scheme: dark;">
-                            <label for="guide-date-picker" class="absolute inset-y-0 right-0 flex items-center pr-2 cursor-pointer" title="Jump to date">
-                                <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                            </label>
-                        </div>
+                        <!-- MODIFIED: Removed date input field, label acts as button -->
+                        <label for="guide-date-picker" class="bg-gray-700 hover:bg-gray-600 border border-gray-600 rounded-md p-2 cursor-pointer transition-colors" title="Jump to date">
+                            <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        </label>
+                        <!-- ADDED: Hidden input to power the date picker button. It will be found by JS. -->
+                        <input type="date" id="guide-date-picker" class="hidden">
                     </div>
                     
                     <!-- Right: Filters and Search (moved from guide-controls-bar to here) -->
@@ -703,13 +702,16 @@
                                 <label for="timezone-offset-select" class="block text-sm font-medium text-gray-400 mb-1">EPG Timezone Correction</label>
                                  <p class="text-xs text-gray-500 mb-2">Use this if EPG times are wrong. The server will re-parse the EPG data.</p>
                                 <select id="timezone-offset-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500"></select>
+                                <!-- ADDED: Placeholder for detected timezone -->
+                                <p id="detected-timezone-info" class="text-xs text-gray-500 mt-2 hidden"></p>
                             </div>
                             <div>
                                  <label for="search-scope-select" class="block text-sm font-medium text-gray-400 mb-1">Guide Search Scope</label>
                                   <p class="text-xs text-gray-500 mb-2">Control what the search bar in the TV Guide looks for.</p>
                                  <select id="search-scope-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500">
-                                     <option value="channels_programs">Channels & Programs (Default)</option>
-                                     <option value="channels_only">Channels Only</option>
+                                     <!-- MODIFIED: Changed default -->
+                                     <option value="channels_programs">Channels & Programs</option>
+                                     <option value="channels_only" selected>Channels Only</option>
                                  </select>
                              </div>
                             <!-- NEW: Notification Lead Time Setting -->
