@@ -356,21 +356,32 @@
         .channel-selector-list { max-height: 400px; }
 
         /* --- NEW: Date Picker Custom Style --- */
+        /* The input itself is now visually hidden but has a lower z-index */
         #guide-date-picker {
-            position: absolute; /* Position the input absolutely */
+            position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
             opacity: 0; /* Make it completely invisible */
-            cursor: pointer; /* Keep cursor pointer to indicate clickability */
-            z-index: 10; /* Ensure it's above the icon */
+            cursor: pointer;
+            z-index: 0; /* Lower z-index so the label is on top */
+            /* Ensure appearance is none for cross-browser consistency */
+            -webkit-appearance: none;
+            appearance: none;
         }
-        /* Hide the native calendar picker indicator from the input */
+        /* Hide the native calendar picker indicator from the input itself */
         #guide-date-picker::-webkit-calendar-picker-indicator {
             display: none;
             -webkit-appearance: none;
         }
+
+        /* The label now sits on top and forwards the click */
+        label[for="guide-date-picker"] {
+            position: relative; /* Needs to be relative for its z-index to work against absolute input */
+            z-index: 10; /* Higher z-index to be clickable */
+        }
+
 
         /* --- FINAL CHANGE: CSS for our custom cast button --- */
         #cast-btn svg path {
@@ -471,8 +482,8 @@
                         <span id="guide-date-display" class="text-base sm:text-lg font-semibold text-white"></span>
                         <!-- MODIFIED: Date Picker Input, now visually hidden but functional -->
                         <div class="relative w-8 h-8 flex items-center justify-center"> <!-- Container for icon and hidden input -->
-                            <input type="date" id="guide-date-picker" class="absolute inset-0 opacity-0 cursor-pointer z-10" style="color-scheme: dark;">
-                            <label for="guide-date-picker" class="relative z-0 flex items-center justify-center cursor-pointer p-1 rounded-md hover:bg-gray-700" title="Open Calendar">
+                            <input type="date" id="guide-date-picker" class="absolute inset-0 opacity-0 cursor-pointer" style="color-scheme: dark;">
+                            <label for="guide-date-picker" class="relative z-10 flex items-center justify-center cursor-pointer p-1 rounded-md hover:bg-gray-700" title="Open Calendar">
                                 <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                             </label>
                         </div>
