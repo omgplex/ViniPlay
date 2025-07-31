@@ -18,18 +18,16 @@ const sqlite3 = require('sqlite3').verbose();
 const SQLiteStore = require('connect-sqlite3')(session);
 const xmlJS = require('xml-js');
 const webpush = require('web-push');
-const jwt = require('jsonwebtoken');
 
 const app = express();
 const port = 8998;
 const saltRounds = 10;
-const sourceRefreshTimers = new Map();
+const sourceRefreshTimers = new Map(); // NEW: Manages individual source refresh timers
 let notificationCheckInterval = null;
 
 // --- Configuration ---
 const DATA_DIR = '/data';
 const VAPID_KEYS_PATH = path.join(DATA_DIR, 'vapid.json');
-const JWT_SECRET_PATH = path.join(DATA_DIR, 'jwt_secret.json');
 const SOURCES_DIR = path.join(DATA_DIR, 'sources');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const DB_PATH = path.join(DATA_DIR, 'viniplay.db');
@@ -37,13 +35,7 @@ const MERGED_M3U_PATH = path.join(DATA_DIR, 'playlist.m3u');
 const MERGED_EPG_JSON_PATH = path.join(DATA_DIR, 'epg.json');
 const SETTINGS_PATH = path.join(DATA_DIR, 'settings.json');
 
-// --- Feature Flags/Debug Options ---
-const ENABLE_FFMPEG_DEBUG_LOGS = process.env.FFMPEG_DEBUG_LOGS === 'true'; // Set FFMPEG_DEBUG_LOGS=true in .env to enable verbose FFmpeg logs
-
 console.log(`[INIT] Application starting. Data directory: ${DATA_DIR}, Public directory: ${PUBLIC_DIR}`);
-if (ENABLE_FFMPEG_DEBUG_LOGS) {
-    console.warn('[INIT] FFMPEG_DEBUG_LOGS is ENABLED. This will produce very verbose FFmpeg output!');
-}
 
 // --- Automatic VAPID Key Generation ---
 let vapidKeys = {};
@@ -57,8 +49,9 @@ try {
         fs.writeFileSync(VAPID_KEYS_PATH, JSON.stringify(vapidKeys, null, 2));
         console.log('[Push] New VAPID keys generated and saved.');
     }
+    // Configure web-push with the loaded/generated keys
     webpush.setVapidDetails(
-        'mailto:example@example.com',
+        'mailto:example@example.com', // This can be a placeholder
         vapidKeys.publicKey,
         vapidKeys.privateKey
     );
@@ -66,29 +59,6 @@ try {
     console.error('[Push] FATAL: Could not load or generate VAPID keys.', error);
 }
 
-// --- Automatic JWT Secret Generation/Loading ---
-let JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-    try {
-        if (fs.existsSync(JWT_SECRET_PATH)) {
-            console.log('[SECURITY] Loading existing JWT secret from file...');
-            JWT_SECRET = fs.readFileSync(JWT_SECRET_PATH, 'utf-8').trim();
-            if (!JWT_SECRET) {
-                 throw new Error("JWT secret file is empty.");
-            }
-        } else {
-            console.log('[SECURITY] JWT secret not found in environment or file. Generating new secret...');
-            JWT_SECRET = require('crypto').randomBytes(64).toString('hex');
-            fs.writeFileSync(JWT_SECRET_PATH, JWT_SECRET);
-            console.log('[SECURITY] New JWT secret generated and saved to file.');
-        }
-    } catch (error) {
-        console.error('[SECURITY] FATAL: Could not load or generate JWT secret. Please set JWT_SECRET in your .env or ensure /data is writable. Error:', error);
-        process.exit(1);
-    }
-} else {
-    console.log('[SECURITY] JWT_SECRET is configured via environment variable.');
-}
 
 // Ensure the data and public directories exist.
 try {
@@ -106,14 +76,15 @@ try {
     }
 } catch (mkdirError) {
     console.error(`[INIT] FATAL: Failed to create necessary directories: ${mkdirError.message}`);
-    process.exit(1);
+    process.exit(1); // Exit if cannot create essential directories
 }
+
 
 // --- Database Setup ---
 const db = new sqlite3.Database(DB_PATH, (err) => {
     if (err) {
         console.error("[DB] Error opening database:", err.message);
-        process.exit(1);
+        process.exit(1); // Exit if database cannot be opened
     } else {
         console.log("[DB] Connected to the SQLite database.");
         db.serialize(() => {
@@ -136,6 +107,7 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 if (createErr) console.error("[DB] Error creating 'user_settings' table:", createErr.message);
                 else console.log("[DB] 'user_settings' table checked/created.");
             });
+            // ADDED: multiview_layouts table
             db.run(`CREATE TABLE IF NOT EXISTS multiview_layouts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -158,14 +130,15 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 programStop TEXT NOT NULL,
                 notificationTime TEXT NOT NULL,
                 programId TEXT NOT NULL,
-                status TEXT DEFAULT 'pending',
-                triggeredAt TEXT,
+                status TEXT DEFAULT 'pending', -- NEW: 'pending', 'sent', 'expired'
+                triggeredAt TEXT,              -- NEW: Timestamp when notification was sent/expired
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )`, (createErr) => {
                 if (createErr) console.error("[DB] Error creating 'notifications' table:", createErr.message);
                 else console.log("[DB] 'notifications' table checked/created.");
 
-                db.all("PRAGMA table_info(notifications)", (err, rows) => {
+                // --- Database Migration: Add 'status' and 'triggeredAt' columns if they don't exist ---
+                db.all("PRAGMA table_info(notifications)", (err, rows) => { // Changed db.get to db.all
                     if (err) {
                         console.error("[DB_MIGRATION] Error checking notifications table info:", err.message);
                         return;
@@ -190,6 +163,7 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                         console.log("[DB_MIGRATION] 'triggeredAt' column already exists in 'notifications' table.");
                     }
                 });
+                // --- End Database Migration ---
             });
             db.run(`CREATE TABLE IF NOT EXISTS push_subscriptions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -211,6 +185,7 @@ app.use(express.static(PUBLIC_DIR));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
+// Log session secret status
 const sessionSecret = process.env.SESSION_SECRET;
 if (!sessionSecret || sessionSecret === 'fallback-secret-key-for-dev' || sessionSecret === 'replace_this_with_a_very_long_random_and_secret_string') {
     console.warn('[SECURITY] Using a weak or default SESSION_SECRET. Please set a strong, random value in your .env file!');
@@ -231,7 +206,7 @@ app.use(
     cookie: {
         maxAge: 30 * 24 * 60 * 60 * 1000,
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production'
+        secure: process.env.NODE_ENV === 'production' // Use secure cookies in production
     },
   })
 );
@@ -267,16 +242,11 @@ function getSettings() {
             epgSources: [],
             userAgents: [{ id: `default-ua-${Date.now()}`, name: 'ViniPlay Default', value: 'VLC/3.0.20 (Linux; x86_64)', isDefault: true }],
             streamProfiles: [
-                // FFmpeg Stream Copy profile
-                { id: 'ffmpeg-copy', name: 'FFmpeg (Stream Copy)', command: '-user_agent "{clientUserAgent}" -i "{streamUrl}" -c copy -f mpegts -bsf:v h264_mp4toannexb -flags +global_header pipe:1', isDefault: true },
-                // FFmpeg Transcode profile
-                { id: 'ffmpeg-transcode', name: 'FFmpeg (Transcode to H264/AAC)', command: '-user_agent "{clientUserAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -flags +global_header -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false },
-                // Direct Redirect profile (no FFmpeg involved)
-                { id: 'redirect', name: 'Direct Redirect', command: 'redirect', isDefault: true }
+                { id: 'ffmpeg-default', name: 'ffmpeg (Built in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: true }
             ],
             activeUserAgentId: `default-ua-${Date.now()}`,
-            activeStreamProfileId: 'ffmpeg-copy',
-            searchScope: 'channels_only', // MODIFIED: Set default to 'channels_only'
+            activeStreamProfileId: 'ffmpeg-default',
+            searchScope: 'channels_programs',
             timezoneOffset: Math.round(-(new Date().getTimezoneOffset() / 60)),
             notificationLeadTime: 10
         };
@@ -290,55 +260,20 @@ function getSettings() {
     }
     try {
         const settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
+        // Ensure defaults for new settings if existing file doesn't have them
         if (!settings.m3uSources) settings.m3uSources = [];
         if (!settings.epgSources) settings.epgSources = [];
+        // Ensure each source has a refreshHours property
         settings.m3uSources.forEach(s => { if (s.refreshHours === undefined) s.refreshHours = 0; });
         settings.epgSources.forEach(s => { if (s.refreshHours === undefined) s.refreshHours = 0; });
+
         if (settings.notificationLeadTime === undefined) settings.notificationLeadTime = 10;
-        if (!settings.streamProfiles) settings.streamProfiles = [];
-        if (!settings.searchScope) settings.searchScope = 'channels_only'; // Ensure existing settings also default to channels_only if not set
-
-        // Filter out the "aggressive" profile if it exists and update existing ones.
-        const updatedProfiles = settings.streamProfiles
-            .filter(p => p.id !== 'ffmpeg-force-transcode') // Remove the problematic aggressive profile
-            .map(p => {
-                if (p.id === 'ffmpeg-copy') {
-                    return { id: 'ffmpeg-copy', name: 'FFmpeg (Stream Copy)', command: '-user_agent "{clientUserAgent}" -i "{streamUrl}" -c copy -f mpegts -bsf:v h264_mp4toannexb -flags +global_header pipe:1', isDefault: p.isDefault };
-                }
-                if (p.id === 'ffmpeg-transcode') {
-                    return { id: 'ffmpeg-transcode', name: 'FFmpeg (Transcode to H264/AAC)', command: '-user_agent "{clientUserAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -flags +global_header -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: p.isDefault };
-                }
-                if (p.id === 'redirect') { // Ensure redirect is properly configured
-                    return { id: 'redirect', name: 'Direct Redirect', command: 'redirect', isDefault: p.isDefault };
-                }
-                return p; // Return other existing profiles as is
-            });
-
-        // Add back standard profiles if they were somehow missing (e.g., in an old settings file)
-        const currentProfileIds = new Set(updatedProfiles.map(p => p.id));
-        if (!currentProfileIds.has('ffmpeg-copy')) {
-            updatedProfiles.unshift({ id: 'ffmpeg-copy', name: 'FFmpeg (Stream Copy)', command: '-user_agent "{clientUserAgent}" -i "{streamUrl}" -c copy -f mpegts -bsf:v h264_mp4toannexb -flags +global_header pipe:1', isDefault: true });
-        }
-        if (!currentProfileIds.has('ffmpeg-transcode')) {
-            updatedProfiles.push({ id: 'ffmpeg-transcode', name: 'FFmpeg (Transcode to H264/AAC)', command: '-user_agent "{clientUserAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -flags +global_header -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false });
-        }
-        if (!currentProfileIds.has('redirect')) {
-            updatedProfiles.push({ id: 'redirect', name: 'Direct Redirect', command: 'redirect', isDefault: true });
-        }
-        
-        settings.streamProfiles = updatedProfiles;
-
-        // Ensure activeStreamProfileId is set to a valid profile. If the aggressive one was active, switch to ffmpeg-copy.
-        if (!settings.activeStreamProfileId || !new Set(settings.streamProfiles.map(p => p.id)).has(settings.activeStreamProfileId)) {
-            settings.activeStreamProfileId = 'ffmpeg-copy'; // Default to 'ffmpeg-copy' if current is invalid
-            console.log('[SETTINGS] Resetting activeStreamProfileId to "ffmpeg-copy" due to old or missing ID.');
-        }
-
         console.log('[SETTINGS] Settings loaded successfully.');
         return settings;
     } catch (e) {
         console.error("[SETTINGS] Could not parse settings.json, returning default. Error:", e.message);
-        return { m3uSources: [], epgSources: [], notificationLeadTime: 10, searchScope: 'channels_only' }; // Ensure default is returned here too
+        // Fallback to minimal defaults if file is corrupted
+        return { m3uSources: [], epgSources: [], notificationLeadTime: 10 };
     }
 }
 
@@ -346,6 +281,7 @@ function saveSettings(settings) {
     try {
         fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
         console.log('[SETTINGS] Settings saved successfully.');
+        // After saving, immediately update the background refresh schedules
         updateAndScheduleSourceRefreshes();
     } catch (e) {
         console.error("[SETTINGS] Error saving settings:", e);
@@ -379,12 +315,13 @@ function fetchUrlContent(url) {
     });
 }
 
+
 // --- EPG Parsing and Caching Logic ---
 const parseEpgTime = (timeStr, offsetHours = 0) => {
     const match = timeStr.match(/(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s*(([+-])(\d{2})(\d{2}))?/);
     if (!match) {
         console.warn(`[EPG_PARSE] Invalid time format encountered: ${timeStr}`);
-        return new Date();
+        return new Date(); // Return current date as fallback for invalid format
     }
     
     const [ , year, month, day, hours, minutes, seconds, , sign, tzHours, tzMinutes] = match;
@@ -402,7 +339,7 @@ const parseEpgTime = (timeStr, offsetHours = 0) => {
 
 async function processAndMergeSources() {
     console.log('[PROCESS] Starting to process and merge all active sources.');
-    const settings = getSettings();
+    const settings = getSettings(); // Re-fetch latest settings
 
     let mergedM3uContent = '#EXTM3U\n';
     const activeM3uSources = settings.m3uSources.filter(s => s.isActive);
@@ -414,10 +351,10 @@ async function processAndMergeSources() {
         console.log(`[M3U] Processing source: "${source.name}" (ID: ${source.id}, Type: ${source.type}, Path: ${source.path})`);
         try {
             let content = '';
-            let sourcePathForLog = source.path;
+            let sourcePathForLog = source.path; // Use original path for logging
 
             if (source.type === 'file') {
-                const sourceFilePath = path.join(SOURCES_DIR, path.basename(source.path));
+                const sourceFilePath = path.join(SOURCES_DIR, path.basename(source.path)); // Use basename for safety
                 if (fs.existsSync(sourceFilePath)) {
                     content = fs.readFileSync(sourceFilePath, 'utf-8');
                     sourcePathForLog = sourceFilePath;
@@ -468,7 +405,7 @@ async function processAndMergeSources() {
         } catch (error) {
             console.error(`[M3U] Failed to process source "${source.name}" from ${source.path}:`, error.message);
             source.status = 'Error';
-            source.statusMessage = `Processing failed: ${error.message.substring(0, 100)}...`;
+            source.statusMessage = `Processing failed: ${error.message.substring(0, 100)}...`; // Truncate error
         }
         source.lastUpdated = new Date().toISOString();
     }
@@ -478,6 +415,7 @@ async function processAndMergeSources() {
     } catch (writeErr) {
         console.error(`[M3U] Error writing merged M3U file: ${writeErr.message}`);
     }
+
 
     const mergedProgramData = {};
     const timezoneOffset = settings.timezoneOffset || 0;
@@ -490,12 +428,13 @@ async function processAndMergeSources() {
         console.log(`[EPG] Processing source: "${source.name}" (ID: ${source.id}, Type: ${source.type}, Path: ${source.path})`);
         try {
             let xmlString = '';
-            let epgFilePath = path.join(SOURCES_DIR, `epg_${source.id}.xml`);
+            let epgFilePath = path.join(SOURCES_DIR, `epg_${source.id}.xml`); // Standardized EPG file path
 
             if (source.type === 'file') {
+                // For file types, the source.path should already be the saved file path in SOURCES_DIR
                 if (fs.existsSync(source.path)) {
                     xmlString = fs.readFileSync(source.path, 'utf-8');
-                    epgFilePath = source.path;
+                    epgFilePath = source.path; // Use the actual path for logging
                 } else {
                     console.error(`[EPG] File not found for source "${source.name}": ${source.path}. Skipping.`);
                     source.status = 'Error';
@@ -519,6 +458,7 @@ async function processAndMergeSources() {
                 console.warn(`[EPG] No programs found in EPG source "${source.name}". Check XML structure.`);
             }
 
+            // Iterate over all M3U sources to ensure correct channel ID mapping
             const m3uSourceProviders = settings.m3uSources.filter(m3u => m3u.isActive);
 
             for (const prog of programs) {
@@ -553,7 +493,7 @@ async function processAndMergeSources() {
         } catch (error) {
             console.error(`[EPG] Failed to process source "${source.name}" from ${source.path}:`, error.message);
             source.status = 'Error';
-            source.statusMessage = `Processing failed: ${error.message.substring(0, 100)}...`;
+            source.statusMessage = `Processing failed: ${error.message.substring(0, 100)}...`; // Truncate error
         }
          source.lastUpdated = new Date().toISOString();
     }
@@ -567,8 +507,11 @@ async function processAndMergeSources() {
         console.error(`[EPG] Error writing merged EPG JSON file: ${writeErr.message}`);
     }
     
+    // This function no longer saves settings itself. The caller should do it.
+    // This prevents recursive calls from updateAndScheduleSourceRefreshes -> saveSettings -> processAndMergeSources
     return { success: true, message: 'Sources merged successfully.', updatedSettings: settings };
 }
+
 
 // --- NEW: Per-Source Refresh Scheduler ---
 const updateAndScheduleSourceRefreshes = () => {
@@ -577,35 +520,45 @@ const updateAndScheduleSourceRefreshes = () => {
     const allSources = [...(settings.m3uSources || []), ...(settings.epgSources || [])];
     const activeUrlSources = new Set();
 
+    // Schedule new or updated timers
     allSources.forEach(source => {
         if (source.type === 'url' && source.isActive && source.refreshHours > 0) {
             activeUrlSources.add(source.id);
+            // If a timer already exists, clear it to reschedule with potentially new interval
             if (sourceRefreshTimers.has(source.id)) {
                 clearTimeout(sourceRefreshTimers.get(source.id));
             }
+
             console.log(`[SCHEDULER] Scheduling refresh for "${source.name}" (ID: ${source.id}) every ${source.refreshHours} hours.`);
             
             const scheduleNext = () => {
                 const timeoutId = setTimeout(async () => {
                     console.log(`[SCHEDULER_RUN] Auto-refresh triggered for "${source.name}".`);
                     try {
+                        // The processAndMergeSources function already handles fetching from URLs.
+                        // We just need to trigger it and then save the updated statuses.
                         const result = await processAndMergeSources();
                         if(result.success) {
+                            // We need to save the settings with updated lastUpdated timestamps.
+                            // Use a version of saveSettings that doesn't re-trigger this scheduler to avoid loops.
                             fs.writeFileSync(SETTINGS_PATH, JSON.stringify(result.updatedSettings, null, 2));
                             console.log(`[SCHEDULER_RUN] Successfully refreshed and processed sources for "${source.name}".`);
                         }
                     } catch (error) {
                         console.error(`[SCHEDULER_RUN] Auto-refresh for "${source.name}" failed:`, error.message);
                     }
+                    // Reschedule for the next interval
                     scheduleNext();
                 }, source.refreshHours * 3600 * 1000);
 
                 sourceRefreshTimers.set(source.id, timeoutId);
             };
+
             scheduleNext();
         }
     });
 
+    // Clean up timers for sources that are no longer scheduled
     for (const [sourceId, timeoutId] of sourceRefreshTimers.entries()) {
         if (!activeUrlSources.has(sourceId)) {
             console.log(`[SCHEDULER] Clearing obsolete refresh timer for source ID: ${sourceId}`);
@@ -615,6 +568,7 @@ const updateAndScheduleSourceRefreshes = () => {
     }
     console.log(`[SCHEDULER] Finished scheduling. Active timers: ${sourceRefreshTimers.size}`);
 };
+
 
 // --- Authentication API Endpoints ---
 app.get('/api/auth/needs-setup', (req, res) => {
@@ -727,6 +681,7 @@ app.get('/api/auth/status', (req, res) => {
         res.json({ isLoggedIn: false });
     }
 });
+
 
 // --- User Management API Endpoints (Admin only) ---
 app.get('/api/users', requireAdmin, (req, res) => {
@@ -848,14 +803,16 @@ app.delete('/api/users/:id', requireAdmin, (req, res) => {
     });
 });
 
+
 // --- Protected IPTV API Endpoints ---
 app.get('/api/config', requireAuth, (req, res) => {
     console.log('[API] Fetching /api/config for user:', req.session.username);
     try {
         let config = { m3uContent: null, epgContent: null, settings: {} };
         let globalSettings = getSettings();
-        config.settings = globalSettings;
+        config.settings = globalSettings; // Start with global settings
 
+        // Read merged M3U and EPG files
         if (fs.existsSync(MERGED_M3U_PATH)) {
             config.m3uContent = fs.readFileSync(MERGED_M3U_PATH, 'utf-8');
             console.log(`[API] Loaded M3U content from ${MERGED_M3U_PATH}.`);
@@ -874,9 +831,11 @@ app.get('/api/config', requireAuth, (req, res) => {
             console.log(`[API] No merged EPG JSON file found at ${MERGED_EPG_JSON_PATH}.`);
         }
         
+        // Fetch user-specific settings and merge them
         db.all(`SELECT key, value FROM user_settings WHERE user_id = ?`, [req.session.userId], (err, rows) => {
             if (err) {
                 console.error("[API] Error fetching user settings:", err);
+                // Still send global settings if user settings fail
                 return res.status(200).json(config);
             }
             if (rows) {
@@ -885,10 +844,11 @@ app.get('/api/config', requireAuth, (req, res) => {
                     try {
                         userSettings[row.key] = JSON.parse(row.value);
                     } catch (e) {
-                        userSettings[row.key] = row.value;
+                        userSettings[row.key] = row.value; // Store as string if not valid JSON
                         console.warn(`[API] User setting key "${row.key}" could not be parsed as JSON. Storing as raw string.`);
                     }
                 });
+                // Merge user settings on top of global settings (user settings override global)
                 config.settings = { ...config.settings, ...userSettings };
                 console.log(`[API] Merged user settings for user ID: ${req.session.userId}`);
             }
@@ -900,6 +860,7 @@ app.get('/api/config', requireAuth, (req, res) => {
         res.status(500).json({ error: "Could not load configuration from server." });
     }
 });
+
 
 const upload = multer({
     storage: multer.diskStorage({
@@ -915,12 +876,13 @@ const upload = multer({
     })
 });
 
+
 app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, res) => {
     const { sourceType, name, url, isActive, id, refreshHours } = req.body;
     console.log(`[SOURCES_API] ${id ? 'Updating' : 'Adding'} source. Type: ${sourceType}, Name: ${name}`);
 
     if (!sourceType || !name) {
-        if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path); // Clean up uploaded file
         console.warn('[SOURCES_API] Source type or name missing for source operation.');
         return res.status(400).json({ error: 'Source type and name are required.' });
     }
@@ -928,10 +890,10 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
     const settings = getSettings();
     const sourceList = sourceType === 'm3u' ? settings.m3uSources : settings.epgSources;
 
-    if (id) {
+    if (id) { // Update existing source
         const sourceIndex = sourceList.findIndex(s => s.id === id);
         if (sourceIndex === -1) {
-            if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path); // Clean up uploaded file
             console.warn(`[SOURCES_API] Source ID ${id} not found for update.`);
             return res.status(404).json({ error: 'Source to update not found.' });
         }
@@ -943,7 +905,7 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
         sourceToUpdate.refreshHours = parseInt(refreshHours, 10) || 0;
         sourceToUpdate.lastUpdated = new Date().toISOString();
 
-        if (req.file) {
+        if (req.file) { // New file uploaded
             console.log(`[SOURCES_API] New file uploaded for source ${id}. Deleting old file if exists.`);
             if (sourceToUpdate.type === 'file' && fs.existsSync(sourceToUpdate.path)) {
                 try {
@@ -963,7 +925,7 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
                 console.error('[SOURCES_API] Error renaming updated source file:', e);
                 return res.status(500).json({ error: 'Could not save updated file.' });
             }
-        } else if (url !== undefined) {
+        } else if (url !== undefined) { // URL provided, could be same or new URL, or changing from file to URL
             console.log(`[SOURCES_API] URL provided for source ${id}.`);
             if (sourceToUpdate.type === 'file' && fs.existsSync(sourceToUpdate.path)) {
                 try {
@@ -974,14 +936,17 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
             sourceToUpdate.path = url;
             sourceToUpdate.type = 'url';
         } else if (sourceToUpdate.type === 'file' && !req.file && (!sourceToUpdate.path || !fs.existsSync(sourceToUpdate.path))) {
+            // This case handles existing file source where no new file is uploaded and original path is missing
             console.warn(`[SOURCES_API] Existing file source ${id} has no file and no new file/URL provided.`);
             return res.status(400).json({ error: 'Existing file source requires a new file if original is missing.' });
         }
 
+
         saveSettings(settings);
         console.log(`[SOURCES_API] Source ${id} updated successfully.`);
-        res.json({ success: true, message: 'Source updated successfully.', settings: getSettings() });
-    } else {
+        res.json({ success: true, message: 'Source updated successfully.', settings: getSettings() }); // Re-fetch to send merged settings
+
+    } else { // Add new source
         const newSource = {
             id: `src-${Date.now()}`,
             name,
@@ -1023,6 +988,7 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
     }
 });
 
+
 app.put('/api/sources/:sourceType/:id', requireAuth, (req, res) => {
     const { sourceType, id } = req.params;
     const { name, path: newPath, isActive } = req.body;
@@ -1039,8 +1005,8 @@ app.put('/api/sources/:sourceType/:id', requireAuth, (req, res) => {
 
     const source = sourceList[sourceIndex];
     source.name = name ?? source.name;
-    source.isActive = isActive ?? source.isActive;
-    if (source.type === 'url' && newPath !== undefined) {
+    source.isActive = isActive ?? source.isActive; // Handle boolean conversion from client if needed
+    if (source.type === 'url' && newPath !== undefined) { // Only allow path update for URL types here
         source.path = newPath;
     }
     source.lastUpdated = new Date().toISOString();
@@ -1087,6 +1053,7 @@ app.post('/api/process-sources', requireAuth, async (req, res) => {
     try {
         const result = await processAndMergeSources();
         if (result.success) {
+            // Manually save settings here because processAndMergeSources no longer does it
             fs.writeFileSync(SETTINGS_PATH, JSON.stringify(result.updatedSettings, null, 2));
             console.log('[API] Source processing completed and settings saved (manual trigger).');
             res.json({ success: true, message: 'Sources merged successfully.'});
@@ -1100,6 +1067,7 @@ app.post('/api/process-sources', requireAuth, async (req, res) => {
     }
 });
 
+
 app.post('/api/save/settings', requireAuth, async (req, res) => {
     console.log('[API] Received request to /api/save/settings.');
     try {
@@ -1107,8 +1075,11 @@ app.post('/api/save/settings', requireAuth, async (req, res) => {
         
         const oldTimezone = currentSettings.timezoneOffset;
 
+        // Merge incoming settings, ensuring we don't accidentally save user-specific settings as global
         const updatedSettings = { ...currentSettings };
         for (const key in req.body) {
+            // These keys are explicitly managed as user-specific on the client,
+            // so they should not be written to the global settings.json
             if (!['favorites', 'playerDimensions', 'programDetailsDimensions', 'recentChannels', 'multiviewLayouts'].includes(key)) {
                 updatedSettings[key] = req.body[key];
             } else {
@@ -1118,15 +1089,17 @@ app.post('/api/save/settings', requireAuth, async (req, res) => {
 
         saveSettings(updatedSettings);
         
+        // Trigger re-processing if timezone changed
         if (updatedSettings.timezoneOffset !== oldTimezone) {
             console.log("[API] Timezone setting changed, re-processing sources.");
             const result = await processAndMergeSources();
              if (result.success) {
+                // Manually save settings here after processing
                 fs.writeFileSync(SETTINGS_PATH, JSON.stringify(result.updatedSettings, null, 2));
              }
         }
 
-        res.json({ success: true, message: 'Settings saved.', settings: getSettings() });
+        res.json({ success: true, message: 'Settings saved.', settings: getSettings() }); // Return the full, current global settings
     } catch (error) {
         console.error("[API] Error saving global settings:", error);
         res.status(500).json({ error: "Could not save settings. Check server logs." });
@@ -1144,6 +1117,7 @@ app.post('/api/user/settings', requireAuth, (req, res) => {
     const valueJson = JSON.stringify(value);
     const userId = req.session.userId;
 
+    // UPSERT operation: try to update, if no rows changed, then insert
     db.run(
         `UPDATE user_settings SET value = ? WHERE user_id = ? AND key = ?`,
         [valueJson, userId, key],
@@ -1176,6 +1150,7 @@ app.post('/api/user/settings', requireAuth, (req, res) => {
 });
 
 // --- Notification Endpoints ---
+
 app.get('/api/notifications/vapid-public-key', requireAuth, (req, res) => {
     console.log('[PUSH_API] Request for VAPID public key.');
     if (!vapidKeys.publicKey) {
@@ -1197,6 +1172,7 @@ app.post('/api/notifications/subscribe', requireAuth, (req, res) => {
 
     const { endpoint, keys: { p256dh, auth } } = subscription;
 
+    // UPSERT logic: Insert or update if endpoint already exists
     db.run(
         `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) VALUES (?, ?, ?, ?)
          ON CONFLICT(endpoint) DO UPDATE SET user_id=excluded.user_id, p256dh=excluded.p256dh, auth=excluded.auth`,
@@ -1291,13 +1267,15 @@ app.delete('/api/notifications/:id', requireAuth, (req, res) => {
             }
             console.log(`[PUSH_API] Notification ${id} deleted successfully for user ${req.session.userId}.`);
             res.json({ success: true });
-    });
+        }
+    );
 });
+
 
 app.delete('/api/data', requireAuth, (req, res) => {
     console.log(`[API] Received request to /api/data (clear all data) for user ${req.session.userId}.`);
     try {
-        [MERGED_M3U_PATH, MERGED_EPG_JSON_PATH, SETTINGS_PATH, JWT_SECRET_PATH].forEach(file => {
+        [MERGED_M3U_PATH, MERGED_EPG_JSON_PATH, SETTINGS_PATH].forEach(file => {
             if (fs.existsSync(file)) {
                 fs.unlinkSync(file);
                 console.log(`[API] Deleted file: ${file}`);
@@ -1310,6 +1288,7 @@ app.delete('/api/data', requireAuth, (req, res) => {
             console.log(`[API] Recreated empty sources directory: ${SOURCES_DIR}`);
         }
         
+        // Delete user-specific data from DB
         db.run(`DELETE FROM user_settings WHERE user_id = ?`, [req.session.userId], (err) => {
             if (err) console.error(`[API] Error clearing user settings for user ${req.session.userId}:`, err.message);
             else console.log(`[API] Cleared user settings for user ${req.session.userId}.`);
@@ -1331,56 +1310,12 @@ app.delete('/api/data', requireAuth, (req, res) => {
     }
 });
 
-// NEW: Endpoint to generate a temporary stream token
-app.get('/api/stream-token', requireAuth, (req, res) => {
-    if (!JWT_SECRET) {
-        console.error('[AUTH_API] JWT_SECRET is not configured. Cannot generate stream token.');
-        return res.status(500).json({ error: 'Server not configured for stream tokens.' });
-    }
-    try {
-        const token = jwt.sign({ userId: req.session.userId }, JWT_SECRET, { expiresIn: '5m' });
-        console.log(`[AUTH_API] Stream token generated for user ${req.session.userId}.`);
-        res.json({ token });
-    } catch (error) {
-        console.error('[AUTH_API] Error generating stream token:', error);
-        res.status(500).json({ error: 'Failed to generate stream token.' });
-    }
-});
-
-// MODIFIED: Stream endpoint now validates token instead of session cookie
-app.get('/stream', (req, res) => {
-    const { url: streamUrl, profileId, userAgentId, token } = req.query;
-    
-    let authenticatedUserId = null;
-
-    if (token) {
-        if (!JWT_SECRET) {
-            console.error('[AUTH] JWT_SECRET is not configured. Cannot validate stream token.');
-            return res.status(500).send('Authentication error: Server misconfiguration.');
-        }
-        try {
-            const decoded = jwt.verify(token, JWT_SECRET);
-            authenticatedUserId = decoded.userId;
-            console.log(`[AUTH] Stream token valid for user ID: ${authenticatedUserId}.`);
-        } catch (error) {
-            console.warn(`[AUTH] Invalid or expired stream token for /stream request: ${error.message}`);
-            return res.status(401).send('Unauthorized: Invalid or expired stream token.');
-        }
-    } else {
-        if (req.session && req.session.userId) {
-            authenticatedUserId = req.session.userId;
-            console.log(`[AUTH] Stream accessed by authenticated session for user ID: ${authenticatedUserId}.`);
-        } else {
-            console.warn('[AUTH] Unauthorized access attempt to /stream: No token or valid session.');
-            return res.status(401).send('Unauthorized: Stream token or active session required.');
-        }
-    }
-
-    console.log(`[STREAM_DEBUG] Stream request received for user ${authenticatedUserId}.`);
-    console.log(`[STREAM_DEBUG]   Query Parameters: url=${streamUrl}, profileId=${profileId}, userAgentId=${userAgentId}`);
+app.get('/stream', requireAuth, (req, res) => {
+    const { url: streamUrl, profileId, userAgentId } = req.query;
+    console.log(`[STREAM] Stream request received. URL: ${streamUrl}, Profile ID: ${profileId}, User Agent ID: ${userAgentId}`);
 
     if (!streamUrl) {
-        console.warn('[STREAM_DEBUG] Missing stream URL in request. Sending 400.');
+        console.warn('[STREAM] Missing stream URL in request.');
         return res.status(400).send('Error: `url` query parameter is required.');
     }
 
@@ -1388,86 +1323,66 @@ app.get('/stream', (req, res) => {
     
     const profile = (settings.streamProfiles || []).find(p => p.id === profileId);
     if (!profile) {
-        console.error(`[STREAM_DEBUG] Stream profile with ID "${profileId}" not found in settings. Sending 404.`);
+        console.error(`[STREAM] Stream profile with ID "${profileId}" not found in settings.`);
         return res.status(404).send(`Error: Stream profile with ID "${profileId}" not found.`);
     }
-    console.log(`[STREAM_DEBUG] Found stream profile: ${JSON.stringify(profile)}`);
 
     if (profile.command === 'redirect') {
-        console.log(`[STREAM_DEBUG] Stream profile command is 'redirect'. Redirecting to stream URL: ${streamUrl}`);
+        console.log(`[STREAM] Redirecting to stream URL: ${streamUrl}`);
         return res.redirect(302, streamUrl);
     }
     
     const userAgent = (settings.userAgents || []).find(ua => ua.id === userAgentId);
     if (!userAgent) {
-        console.error(`[STREAM_DEBUG] User agent with ID "${userAgentId}" not found in settings. Sending 404.`);
+        console.error(`[STREAM] User agent with ID "${userAgentId}" not found in settings.`);
         return res.status(404).send(`Error: User agent with ID "${userAgentId}" not found.`);
     }
-    console.log(`[STREAM_DEBUG] Found user agent: ${JSON.stringify(userAgent)}`);
     
-    console.log(`[STREAM_DEBUG] Initiating FFmpeg proxy for stream: ${streamUrl}`);
-    console.log(`[STREAM_DEBUG]   Using Profile Name: "${profile.name}"`);
-    console.log(`[STREAM_DEBUG]   Using User Agent String: "${userAgent.value}"`);
+    console.log(`[STREAM] Proxying stream: ${streamUrl}`);
+    console.log(`[STREAM] Using Profile: "${profile.name}"`);
+    console.log(`[STREAM] Using User Agent: "${userAgent.name}"`);
 
-    // Replace {clientUserAgent} with the user agent value, ensuring it's properly quoted
     const commandTemplate = profile.command
         .replace(/{streamUrl}/g, streamUrl)
-        .replace(/{clientUserAgent}/g, userAgent.value);
-
-    console.log(`[STREAM_DEBUG] Constructed FFmpeg command template: "${commandTemplate}"`);
+        .replace(/{userAgent}|{clientUserAgent}/g, userAgent.value);
         
+    // Split command into arguments, handling quoted strings
     const args = (commandTemplate.match(/(?:[^\s"]+|"[^"]*")+/g) || []).map(arg => arg.replace(/^"|"$/g, ''));
-    
-    // Add debug logging flag if enabled
-    if (ENABLE_FFMPEG_DEBUG_LOGS) {
-        args.unshift('-loglevel', 'debug');
-        console.log('[STREAM_DEBUG] Added -loglevel debug to FFmpeg arguments.');
-    }
 
-    console.log(`[STREAM_DEBUG] Final FFmpeg arguments array: [${args.map(a => `"${a}"`).join(', ')}]`);
-
+    console.log(`[STREAM] FFmpeg command args: ${args.join(' ')}`);
     const ffmpeg = spawn('ffmpeg', args);
-    console.log(`[STREAM_DEBUG] FFmpeg process spawned with PID: ${ffmpeg.pid}`);
-    res.setHeader('Content-Type', 'video/mp2t'); // Standard for MPEG Transport Stream
-    console.log(`[STREAM_DEBUG] Response header 'Content-Type: video/mp2t' set.`);
+    res.setHeader('Content-Type', 'video/mp2t'); // Standard MIME type for MPEG Transport Stream
     
     ffmpeg.stdout.pipe(res);
-    console.log('[STREAM_DEBUG] FFmpeg stdout piped to response.');
     
     ffmpeg.stderr.on('data', (data) => {
-        console.error(`[FFMPEG_ERROR] PID: ${ffmpeg.pid} Stream: ${streamUrl} - ${data.toString().trim()}`);
+        // Log FFMPEG errors to the server console, but don't send to client directly
+        console.error(`[FFMPEG_ERROR] Stream: ${streamUrl} - ${data.toString().trim()}`);
     });
 
     ffmpeg.on('close', (code) => {
         if (code !== 0) {
-            console.log(`[STREAM_DEBUG] FFmpeg process for ${streamUrl} (PID: ${ffmpeg.pid}) exited with code ${code}.`);
+            console.log(`[STREAM] ffmpeg process for ${streamUrl} exited with code ${code}`);
         } else {
-            console.log(`[STREAM_DEBUG] FFmpeg process for ${streamUrl} (PID: ${ffmpeg.pid}) exited gracefully (code ${code}).`);
+            console.log(`[STREAM] ffmpeg process for ${streamUrl} exited gracefully.`);
         }
-        if (!res.headersSent) {
-             console.error(`[STREAM_DEBUG] FFmpeg closed before headers sent. Sending 500 error.`);
+        if (!res.headersSent) { // Only end response if headers haven't been sent yet
              res.status(500).send('FFmpeg stream ended unexpectedly or failed to start.');
         } else {
-            console.log(`[STREAM_DEBUG] Response already sent. Ending response stream.`);
-            res.end();
+            res.end(); // End the response when ffmpeg closes
         }
     });
 
     ffmpeg.on('error', (err) => {
-        console.error(`[STREAM_DEBUG] Failed to start ffmpeg process for ${streamUrl} (PID: ${ffmpeg.pid || 'N/A'}): ${err.message}`);
+        console.error(`[STREAM] Failed to start ffmpeg process for ${streamUrl}: ${err.message}`);
         if (!res.headersSent) {
             res.status(500).send('Failed to start streaming service. Check server logs.');
         }
     });
 
     req.on('close', () => {
-        console.log(`[STREAM_DEBUG] Client closed connection for ${streamUrl}. Attempting to kill ffmpeg process (PID: ${ffmpeg.pid}).`);
-        if (!ffmpeg.killed) {
-            ffmpeg.kill('SIGKILL');
-            console.log(`[STREAM_DEBUG] FFmpeg process (PID: ${ffmpeg.pid}) kill signal sent.`);
-        } else {
-            console.log(`[STREAM_DEBUG] FFmpeg process (PID: ${ffmpeg.pid}) already dead.`);
-        }
+        console.log(`[STREAM] Client closed connection for ${streamUrl}. Killing ffmpeg process (PID: ${ffmpeg.pid}).`);
+        ffmpeg.kill('SIGKILL'); // Force kill ffmpeg process
     });
 });
 
@@ -1479,6 +1394,7 @@ app.get('/api/multiview/layouts', requireAuth, (req, res) => {
             console.error('[LAYOUT_API] Error fetching layouts:', err.message);
             return res.status(500).json({ error: 'Could not retrieve layouts.' });
         }
+        // Parse the layout_data from JSON string to an object
         const layouts = rows.map(row => ({
             ...row,
             layout_data: JSON.parse(row.layout_data)
@@ -1528,11 +1444,13 @@ app.delete('/api/multiview/layouts/:id', requireAuth, (req, res) => {
     });
 });
 
+
 async function checkAndSendNotifications() {
     console.log('[PUSH_CHECKER] Running scheduled notification check.');
     try {
         const now = new Date();
         const nowIso = now.toISOString();
+        // Select only pending notifications where notificationTime is due
         const dueNotifications = await new Promise((resolve, reject) => {
             db.all("SELECT * FROM notifications WHERE status = 'pending' AND notificationTime <= ?", [nowIso], (err, rows) => {
                 if (err) reject(err);
@@ -1548,12 +1466,14 @@ async function checkAndSendNotifications() {
 
         for (const notification of dueNotifications) {
             console.log(`[PUSH_CHECKER] Processing notification ID: ${notification.id} for "${notification.programTitle}".`);
+            // Check if the program has already ended
             if (new Date(notification.programStop).getTime() <= now.getTime()) {
+                // Program has ended, mark notification as 'expired'
                 db.run("UPDATE notifications SET status = 'expired', triggeredAt = ? WHERE id = ?", [nowIso, notification.id], (err) => {
                     if (err) console.error(`[PUSH_CHECKER] Error marking notification ${notification.id} as expired:`, err.message);
                 });
                 console.log(`[PUSH_CHECKER] Notification for "${notification.programTitle}" (ID: ${notification.id}) expired. Program already ended.`);
-                continue;
+                continue; // Skip sending this notification
             }
 
             const subscriptions = await new Promise((resolve, reject) => {
@@ -1589,13 +1509,14 @@ async function checkAndSendNotifications() {
                 return webpush.sendNotification(pushSubscription, payload)
                     .then(() => {
                         console.log(`[PUSH_CHECKER] Notification "${notification.programTitle}" (ID: ${notification.id}) sent to endpoint: ${sub.endpoint}`);
+                        // Mark notification as 'sent' after successful delivery
                         db.run("UPDATE notifications SET status = 'sent', triggeredAt = ? WHERE id = ?", [nowIso, notification.id], (err) => {
                             if (err) console.error(`[PUSH_CHECKER] Error updating notification ${notification.id} status to sent:`, err.message);
                         });
                     })
                     .catch(error => {
                         console.error(`[PUSH_CHECKER] Error sending notification ${notification.id} to ${sub.endpoint}:`, error.statusCode, error.body || error.message);
-                        if (error.statusCode === 410 || error.statusCode === 404) {
+                        if (error.statusCode === 410 || error.statusCode === 404) { // 410 Gone means subscription is no longer valid
                             console.log(`[PUSH_CHECKER] Subscription expired or invalid (410/404). Deleting endpoint: ${sub.endpoint}`);
                             db.run("DELETE FROM push_subscriptions WHERE endpoint = ?", [sub.endpoint], (err) => {
                                 if (err) console.error(`[PUSH_CHECKER] Error deleting expired subscription ${sub.endpoint}:`, err.message);
@@ -1611,14 +1532,19 @@ async function checkAndSendNotifications() {
     }
 }
 
+
 // --- Main Route Handling ---
 app.get('*', (req, res) => {
+    // This serves index.html for all non-file paths, enabling client-side routing.
+    // Ensure the path is relative to PUBLIC_DIR
     const filePath = path.join(PUBLIC_DIR, req.path);
 
+    // If the request path corresponds to an actual file in PUBLIC_DIR, serve it
     if(fs.existsSync(filePath) && fs.lstatSync(filePath).isFile()){
         console.log(`[HTTP] Serving static file: ${req.path}`);
         return res.sendFile(filePath);
     }
+    // Otherwise, serve index.html for client-side routing
     console.log(`[HTTP] Serving index.html for path: ${req.path}`);
     res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
@@ -1631,17 +1557,20 @@ app.listen(port, () => {
     console.log(` Serving frontend from: ${PUBLIC_DIR}`);
     console.log(`======================================================\n`);
 
+    // Initial processing of sources on server boot
     processAndMergeSources().then((result) => {
         console.log('[INIT] Initial source processing complete.');
         if(result.success) {
+             // Manually save settings here after processing
              fs.writeFileSync(SETTINGS_PATH, JSON.stringify(result.updatedSettings, null, 2));
         }
-        updateAndScheduleSourceRefreshes();
+        updateAndScheduleSourceRefreshes(); // Schedule subsequent refreshes for all sources
     }).catch(error => {
         console.error('[INIT] Initial source processing failed:', error.message);
     });
 
+    // Clear any existing interval to prevent duplicates on hot-reload (if applicable)
     if (notificationCheckInterval) clearInterval(notificationCheckInterval);
-    notificationCheckInterval = setInterval(checkAndSendNotifications, 60000);
+    notificationCheckInterval = setInterval(checkAndSendNotifications, 60000); // Check every minute
     console.log('[Push] Notification checker started. Will check for due notifications every minute.');
 });
