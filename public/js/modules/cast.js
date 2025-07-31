@@ -3,7 +3,7 @@
  * Manages all Google Cast related functionality.
  */
 
-import { showNotification } from './ui.js';
+import { showNotification, openModal } from './ui.js';
 import { UIElements } from './state.js';
 import { apiFetch } from './api.js'; // NEW: Import apiFetch
 // NEW: Import stopAndCleanupPlayer from player.js (aliased for clarity)
@@ -161,7 +161,7 @@ function handleSessionStateChange(event) {
              break;
         case cast.framework.SessionState.REQUEST_SESSION_FAILED:
              console.error('[CAST_DEBUG] REQUEST_SESSION_FAILED: Request for session failed. User may have cancelled or an error occurred.', event.error);
-             if (event.error !== "cancel") { // 'cancel' is a user action, not an error we need to alert.
+             if (event.error !== "cancel" && event.error.code !== "cancel") { // 'cancel' is a user action, not an error we need to alert.
                  showNotification('Failed to start Cast session. See console for details.', true);
              }
              break;
