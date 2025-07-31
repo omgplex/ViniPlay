@@ -276,7 +276,7 @@ function getSettings() {
             ],
             activeUserAgentId: `default-ua-${Date.now()}`,
             activeStreamProfileId: 'ffmpeg-copy',
-            searchScope: 'channels_programs',
+            searchScope: 'channels_only', // MODIFIED: Set default to 'channels_only'
             timezoneOffset: Math.round(-(new Date().getTimezoneOffset() / 60)),
             notificationLeadTime: 10
         };
@@ -296,6 +296,7 @@ function getSettings() {
         settings.epgSources.forEach(s => { if (s.refreshHours === undefined) s.refreshHours = 0; });
         if (settings.notificationLeadTime === undefined) settings.notificationLeadTime = 10;
         if (!settings.streamProfiles) settings.streamProfiles = [];
+        if (!settings.searchScope) settings.searchScope = 'channels_only'; // Ensure existing settings also default to channels_only if not set
 
         // Filter out the "aggressive" profile if it exists and update existing ones.
         const updatedProfiles = settings.streamProfiles
@@ -337,7 +338,7 @@ function getSettings() {
         return settings;
     } catch (e) {
         console.error("[SETTINGS] Could not parse settings.json, returning default. Error:", e.message);
-        return { m3uSources: [], epgSources: [], notificationLeadTime: 10 };
+        return { m3uSources: [], epgSources: [], notificationLeadTime: 10, searchScope: 'channels_only' }; // Ensure default is returned here too
     }
 }
 
