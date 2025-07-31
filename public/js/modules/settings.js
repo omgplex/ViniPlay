@@ -80,7 +80,19 @@ export const updateUIFromSettings = () => {
 
     // Ensure settings have default values if not present
     settings.timezoneOffset = settings.timezoneOffset ?? Math.round(-(new Date().getTimezoneOffset() / 60));
-    settings.searchScope = settings.searchScope || 'channels_programs';
+    
+    // NEW: Display detected IANA timezone
+    try {
+        const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (userTimezone && UIElements.detectedTimezoneInfo) {
+            UIElements.detectedTimezoneInfo.textContent = `We've pre-selected your browser's timezone (${userTimezone}).`;
+            UIElements.detectedTimezoneInfo.classList.remove('hidden');
+        }
+    } catch (e) {
+        console.warn("Could not detect user's IANA timezone.", e);
+    }
+    
+    settings.searchScope = settings.searchScope || 'channels_only'; // MODIFIED: Changed default
     settings.notificationLeadTime = settings.notificationLeadTime ?? 10; 
 
     // Update dropdowns and inputs
