@@ -171,186 +171,195 @@ export function finalizeGuideLoad(isFirstLoad = false) {
  * Renders the guide using UI virtualization.
  * @param {Array<object>} channelsToRender - The filtered list of channels to display.
  * @param {boolean} resetScroll - If true, scrolls the guide to the top-left.
+ * @returns {Promise<boolean>} A promise that resolves when the initial render is complete.
  */
 const renderGuide = (channelsToRender, resetScroll = false) => {
-    guideState.visibleChannels = channelsToRender;
-    const totalRows = channelsToRender.length;
-    const showNoData = totalRows === 0;
+    // MODIFIED: Entire function is now wrapped in a Promise
+    return new Promise((resolve) => {
+        guideState.visibleChannels = channelsToRender;
+        const totalRows = channelsToRender.length;
+        const showNoData = totalRows === 0;
 
-    // Toggle placeholder vs. guide content visibility
-    UIElements.guidePlaceholder.classList.toggle('hidden', !showNoData);
-    UIElements.noDataMessage.classList.toggle('hidden', !showNoData);
-    UIElements.initialLoadingIndicator.classList.add('hidden');
-    UIElements.guideGrid.classList.toggle('hidden', showNoData);
-    if (showNoData) {
-        UIElements.guideGrid.innerHTML = '';
-        return;
-    }
-
-    // --- Static Header/Time Bar Setup (Done once per full render) ---
-    const guideStart = new Date(guideState.currentDate);
-    guideStart.setHours(0, 0, 0, 0);
-    // Create a stable UTC reference for midnight
-    const guideStartUtc = new Date(Date.UTC(guideStart.getUTCFullYear(), guideStart.getUTCMonth(), guideStart.getUTCDate()));
-    const timelineWidth = guideState.guideDurationHours * guideState.hourWidthPixels;
-    UIElements.guideGrid.style.setProperty('--timeline-width', `${timelineWidth}px`);
-    UIElements.guideDateDisplay.textContent = guideState.currentDate.toLocaleDateString([], { weekday: 'short', month: 'long', day: 'numeric' });
-
-    // Populate Time Bar
-    const timeBarCellEl = UIElements.guideGrid.querySelector('.time-bar-cell');
-    if (timeBarCellEl) {
-        timeBarCellEl.innerHTML = '';
-        for (let i = 0; i < guideState.guideDurationHours; i++) {
-            const time = new Date(guideStartUtc.getTime() + i * 3600 * 1000);
-            timeBarCellEl.innerHTML += `<div class="absolute top-0 bottom-0 flex items-center justify-start px-2 text-xs text-gray-400 border-r border-gray-700/50" style="left: ${i * guideState.hourWidthPixels}px; width: ${guideState.hourWidthPixels}px;">${time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>`;
+        // Toggle placeholder vs. guide content visibility
+        UIElements.guidePlaceholder.classList.toggle('hidden', !showNoData);
+        UIElements.noDataMessage.classList.toggle('hidden', !showNoData);
+        UIElements.initialLoadingIndicator.classList.add('hidden');
+        UIElements.guideGrid.classList.toggle('hidden', showNoData);
+        if (showNoData) {
+            UIElements.guideGrid.innerHTML = '';
+            resolve(true); // Resolve even if there's no data
+            return;
         }
-        timeBarCellEl.style.width = `${timelineWidth}px`;
-    }
 
-    // --- Virtualization Setup ---
-    const guideContainer = UIElements.guideContainer;
-    const guideGrid = UIElements.guideGrid;
+        // --- Static Header/Time Bar Setup (Done once per full render) ---
+        const guideStart = new Date(guideState.currentDate);
+        guideStart.setHours(0, 0, 0, 0);
+        // Create a stable UTC reference for midnight
+        const guideStartUtc = new Date(Date.UTC(guideStart.getUTCFullYear(), guideStart.getUTCMonth(), guideStart.getUTCDate()));
+        const timelineWidth = guideState.guideDurationHours * guideState.hourWidthPixels;
+        UIElements.guideGrid.style.setProperty('--timeline-width', `${timelineWidth}px`);
+        UIElements.guideDateDisplay.textContent = guideState.currentDate.toLocaleDateString([], { weekday: 'short', month: 'long', day: 'numeric' });
 
-    // Ensure the main grid container is clear of old virtual content
-    let contentWrapper = guideGrid.querySelector('#virtual-content-wrapper');
-    if (contentWrapper) {
-        guideGrid.removeChild(contentWrapper);
-    }
-
-    // This wrapper acts as a spacer, creating the full scrollable height.
-    contentWrapper = document.createElement('div');
-    contentWrapper.id = 'virtual-content-wrapper';
-    contentWrapper.style.gridColumn = '1 / -1'; // Span across both grid columns
-    contentWrapper.style.position = 'relative';
-    contentWrapper.style.height = `${totalRows * ROW_HEIGHT}px`;
-
-    // This container holds the visible rows and will be moved with `transform`.
-    const rowContainer = document.createElement('div');
-    rowContainer.id = 'virtual-row-container';
-    rowContainer.style.position = 'absolute';
-    rowContainer.style.width = '100%';
-    rowContainer.style.top = '0';
-    rowContainer.style.left = '0';
-    // The row container needs to be a subgrid to align with the main grid's columns
-    rowContainer.style.display = 'grid';
-    rowContainer.style.gridTemplateColumns = 'var(--channel-col-width, 180px) 1fr';
-
-    contentWrapper.appendChild(rowContainer);
-    guideGrid.appendChild(contentWrapper);
-
-    // --- Core Virtualization Logic ---
-    const updateVisibleRows = () => {
-        if (!guideContainer) return;
-        const scrollTop = guideContainer.scrollTop;
-        const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN_COUNT);
-        const endIndex = Math.min(totalRows, Math.ceil((scrollTop + guideContainer.clientHeight) / ROW_HEIGHT) + OVERSCAN_COUNT);
-
-        let rowsHTML = '';
-        const sourceColors = ['bg-blue-600', 'bg-green-600', 'bg-pink-600', 'bg-yellow-500', 'bg-indigo-600', 'bg-red-600'];
-        const sourceColorMap = new Map();
-        let colorIndex = 0;
-
-        for (let i = startIndex; i < endIndex; i++) {
-            const channel = channelsToRender[i];
-            const channelName = channel.displayName || channel.name;
-
-            // Assign a consistent color to each source for the badge
-            if (!sourceColorMap.has(channel.source)) {
-                sourceColorMap.set(channel.source, sourceColors[colorIndex % sourceColors.length]);
-                colorIndex++;
+        // Populate Time Bar
+        const timeBarCellEl = UIElements.guideGrid.querySelector('.time-bar-cell');
+        if (timeBarCellEl) {
+            timeBarCellEl.innerHTML = '';
+            for (let i = 0; i < guideState.guideDurationHours; i++) {
+                const time = new Date(guideStartUtc.getTime() + i * 3600 * 1000);
+                timeBarCellEl.innerHTML += `<div class="absolute top-0 bottom-0 flex items-center justify-start px-2 text-xs text-gray-400 border-r border-gray-700/50" style="left: ${i * guideState.hourWidthPixels}px; width: ${guideState.hourWidthPixels}px;">${time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>`;
             }
-            const sourceBadgeColor = sourceColorMap.get(channel.source);
-            const sourceBadgeHTML = guideState.channelSources.size > 1 ? `<span class="source-badge ${sourceBadgeColor} text-white">${channel.source}</span>` : '';
-            const chnoBadgeHTML = channel.chno ? `<span class="chno-badge">${channel.chno}</span>` : '';
+            timeBarCellEl.style.width = `${timelineWidth}px`;
+        }
 
-            // Sticky Channel Info Cell
-            // Added data-channel-index to help with programmatic scrolling if needed
-            const channelInfoHTML = `
-                <div class="channel-info p-2 flex items-center justify-between cursor-pointer" data-url="${channel.url}" data-name="${channelName}" data-id="${channel.id}" data-channel-index="${i}">
-                    <div class="flex items-center overflow-hidden flex-grow min-w-0">
-                        <img src="${channel.logo}" onerror="this.onerror=null; this.src='https://placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-3 flex-shrink-0 rounded-md bg-gray-700">
-                        <div class="flex-grow min-w-0 channel-details">
-                            <span class="font-semibold text-sm truncate block">${channelName}</span>
-                            <div class="flex items-center gap-2 mt-1">
-                                ${chnoBadgeHTML}
-                                ${sourceBadgeHTML}
+        // --- Virtualization Setup ---
+        const guideContainer = UIElements.guideContainer;
+        const guideGrid = UIElements.guideGrid;
+
+        // Ensure the main grid container is clear of old virtual content
+        let contentWrapper = guideGrid.querySelector('#virtual-content-wrapper');
+        if (contentWrapper) {
+            guideGrid.removeChild(contentWrapper);
+        }
+
+        // This wrapper acts as a spacer, creating the full scrollable height.
+        contentWrapper = document.createElement('div');
+        contentWrapper.id = 'virtual-content-wrapper';
+        contentWrapper.style.gridColumn = '1 / -1'; // Span across both grid columns
+        contentWrapper.style.position = 'relative';
+        contentWrapper.style.height = `${totalRows * ROW_HEIGHT}px`;
+
+        // This container holds the visible rows and will be moved with `transform`.
+        const rowContainer = document.createElement('div');
+        rowContainer.id = 'virtual-row-container';
+        rowContainer.style.position = 'absolute';
+        rowContainer.style.width = '100%';
+        rowContainer.style.top = '0';
+        rowContainer.style.left = '0';
+        // The row container needs to be a subgrid to align with the main grid's columns
+        rowContainer.style.display = 'grid';
+        rowContainer.style.gridTemplateColumns = 'var(--channel-col-width, 180px) 1fr';
+
+        contentWrapper.appendChild(rowContainer);
+        guideGrid.appendChild(contentWrapper);
+
+        // --- Core Virtualization Logic ---
+        const updateVisibleRows = () => {
+            if (!guideContainer) return;
+            const scrollTop = guideContainer.scrollTop;
+            const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN_COUNT);
+            const endIndex = Math.min(totalRows, Math.ceil((scrollTop + guideContainer.clientHeight) / ROW_HEIGHT) + OVERSCAN_COUNT);
+
+            let rowsHTML = '';
+            const sourceColors = ['bg-blue-600', 'bg-green-600', 'bg-pink-600', 'bg-yellow-500', 'bg-indigo-600', 'bg-red-600'];
+            const sourceColorMap = new Map();
+            let colorIndex = 0;
+
+            for (let i = startIndex; i < endIndex; i++) {
+                const channel = channelsToRender[i];
+                const channelName = channel.displayName || channel.name;
+
+                // Assign a consistent color to each source for the badge
+                if (!sourceColorMap.has(channel.source)) {
+                    sourceColorMap.set(channel.source, sourceColors[colorIndex % sourceColors.length]);
+                    colorIndex++;
+                }
+                const sourceBadgeColor = sourceColorMap.get(channel.source);
+                const sourceBadgeHTML = guideState.channelSources.size > 1 ? `<span class="source-badge ${sourceBadgeColor} text-white">${channel.source}</span>` : '';
+                const chnoBadgeHTML = channel.chno ? `<span class="chno-badge">${channel.chno}</span>` : '';
+
+                // Sticky Channel Info Cell
+                // Added data-channel-index to help with programmatic scrolling if needed
+                const channelInfoHTML = `
+                    <div class="channel-info p-2 flex items-center justify-between cursor-pointer" data-url="${channel.url}" data-name="${channelName}" data-id="${channel.id}" data-channel-index="${i}">
+                        <div class="flex items-center overflow-hidden flex-grow min-w-0">
+                            <img src="${channel.logo}" onerror="this.onerror=null; this.src='https://placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-3 flex-shrink-0 rounded-md bg-gray-700">
+                            <div class="flex-grow min-w-0 channel-details">
+                                <span class="font-semibold text-sm truncate block">${channelName}</span>
+                                <div class="flex items-center gap-2 mt-1">
+                                    ${chnoBadgeHTML}
+                                    ${sourceBadgeHTML}
+                                </div>
                             </div>
                         </div>
+                        <svg data-channel-id="${channel.id}" class="w-6 h-6 text-gray-500 hover:text-yellow-400 favorite-star cursor-pointer flex-shrink-0 ml-2 ${channel.isFavorite ? 'favorited' : ''}" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10.868 2.884c.321-.772 1.415-.772 1.736 0l1.884 4.545a1.5 1.5 0 001.292.934l4.892.38c.787.061 1.1.99.444 1.527l-3.623 2.805a1.5 1.5 0 00-.48 1.644l1.449 4.493c.25.777-.606 1.378-1.292.934l-4.148-2.564a1.5 1.5 0 00-1.543 0l-4.148 2.564c-.686.444-1.542-.157-1.292-.934l1.449-4.493a1.5 1.5 0 00-.48-1.644L2.008 10.26c-.656-.537-.345-1.466.444-1.527l4.892-.38a1.5 1.5 0 001.292-.934l1.884-4.545z" clip-rule="evenodd" /></svg>
                     </div>
-                    <svg data-channel-id="${channel.id}" class="w-6 h-6 text-gray-500 hover:text-yellow-400 favorite-star cursor-pointer flex-shrink-0 ml-2 ${channel.isFavorite ? 'favorited' : ''}" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10.868 2.884c.321-.772 1.415-.772 1.736 0l1.884 4.545a1.5 1.5 0 001.292.934l4.892.38c.787.061 1.1.99.444 1.527l-3.623 2.805a1.5 1.5 0 00-.48 1.644l1.449 4.493c.25.777-.606 1.378-1.292.934l-4.148-2.564a1.5 1.5 0 00-1.543 0l-4.148 2.564c-.686.444-1.542-.157-1.292-.934l1.449-4.493a1.5 1.5 0 00-.48-1.644L2.008 10.26c-.656-.537-.345-1.466.444-1.527l4.892-.38a1.5 1.5 0 001.292-.934l1.884-4.545z" clip-rule="evenodd" /></svg>
-                </div>
-            `;
+                `;
 
-            // Scrollable Timeline Row
-            let programsHTML = '';
+                // Scrollable Timeline Row
+                let programsHTML = '';
+                const now = new Date();
+                const guideEnd = new Date(guideStartUtc.getTime() + guideState.guideDurationHours * 3600 * 1000);
+                (guideState.programs[channel.id] || []).forEach(prog => {
+                    const progStart = new Date(prog.start);
+                    const progStop = new Date(prog.stop);
+                    if (progStop < guideStartUtc || progStart > guideEnd) return;
+
+                    const durationMs = progStop - progStart;
+                    if (durationMs <= 0) return;
+
+                    const left = ((progStart.getTime() - guideStartUtc.getTime()) / 3600000) * guideState.hourWidthPixels;
+                    const width = (durationMs / 3600000) * guideState.hourWidthPixels;
+                    const isLive = now >= progStart && now < progStop;
+                    const progressWidth = isLive ? ((now - progStart) / durationMs) * 100 : 0;
+                    
+                    // Construct the unique programId using channel.id, program start, and program stop
+                    const uniqueProgramId = `${channel.id}-${progStart.toISOString()}-${progStop.toISOString()}`;
+
+                    // NEW: Check if this program has ANY notification (pending, sent, or expired)
+                    // We're iterating through all user notifications to see if this program ID exists.
+                    const hasNotification = guideState.userNotifications.some(n =>
+                        n.channelId === channel.id &&
+                        n.programId === uniqueProgramId
+                    );
+                    const notificationClass = hasNotification ? 'has-notification' : '';
+
+                    // Added data-prog-id attribute as requested
+                    programsHTML += `<div class="programme-item absolute top-1 bottom-1 bg-gray-800 rounded-md p-2 overflow-hidden flex flex-col justify-center z-5 ${isLive ? 'live' : ''} ${progStop < now ? 'past' : ''} ${notificationClass}" style="left:${left}px; width:${Math.max(0, width - 2)}px" data-channel-url="${channel.url}" data-channel-id="${channel.id}" data-channel-name="${channelName}" data-prog-title="${prog.title}" data-prog-desc="${prog.desc}" data-prog-start="${progStart.toISOString()}" data-prog-stop="${progStop.toISOString()}" data-prog-id="${uniqueProgramId}"><div class="programme-progress" style="width:${progressWidth}%"></div><p class="prog-title text-white font-semibold truncate relative z-10">${prog.title}</p><p class="prog-time text-gray-400 truncate relative z-10">${progStart.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p></div>`;
+                });
+                const timelineRowHTML = `<div class="timeline-row" style="width: ${timelineWidth}px;">${programsHTML}</div>`;
+
+                rowsHTML += channelInfoHTML + timelineRowHTML;
+            }
+
+            rowContainer.innerHTML = rowsHTML;
+            rowContainer.style.transform = `translateY(${startIndex * ROW_HEIGHT}px)`;
+        };
+
+        // Attach scroll listener
+        if (guideState.scrollHandler) {
+            guideContainer.removeEventListener('scroll', guideState.scrollHandler);
+        }
+        guideState.scrollHandler = throttle(updateVisibleRows, 16); // Throttle to roughly 60fps
+        guideContainer.addEventListener('scroll', guideState.scrollHandler);
+
+        // Initial render and positioning
+        if (resetScroll) {
+            guideContainer.scrollTop = 0;
+        }
+        updateVisibleRows();
+        updateNowLine(guideStartUtc, resetScroll);
+
+        // --- Re-attach date navigation listeners ---
+        const nowBtn = UIElements.guideGrid.querySelector('#now-btn');
+        
+        // Use .onclick to ensure we're not adding duplicate listeners on re-renders
+        if (nowBtn) nowBtn.onclick = () => {
             const now = new Date();
-            const guideEnd = new Date(guideStartUtc.getTime() + guideState.guideDurationHours * 3600 * 1000);
-            (guideState.programs[channel.id] || []).forEach(prog => {
-                const progStart = new Date(prog.start);
-                const progStop = new Date(prog.stop);
-                if (progStop < guideStartUtc || progStart > guideEnd) return;
+            if (guideState.currentDate.toDateString() !== now.toDateString()) {
+                guideState.currentDate = now;
+                finalizeGuideLoad(true);
+            } else {
+                const guideStart = new Date(guideState.currentDate);
+                guideStart.setHours(0, 0, 0, 0);
+                const guideStartUtc = new Date(Date.UTC(guideStart.getUTCFullYear(), guideStart.getUTCMonth(), guideStart.getUTCDate()));
+                updateNowLine(guideStartUtc, true);
+            }
+        };
 
-                const durationMs = progStop - progStart;
-                if (durationMs <= 0) return;
-
-                const left = ((progStart.getTime() - guideStartUtc.getTime()) / 3600000) * guideState.hourWidthPixels;
-                const width = (durationMs / 3600000) * guideState.hourWidthPixels;
-                const isLive = now >= progStart && now < progStop;
-                const progressWidth = isLive ? ((now - progStart) / durationMs) * 100 : 0;
-                
-                // Construct the unique programId using channel.id, program start, and program stop
-                const uniqueProgramId = `${channel.id}-${progStart.toISOString()}-${progStop.toISOString()}`;
-
-                // NEW: Check if this program has ANY notification (pending, sent, or expired)
-                // We're iterating through all user notifications to see if this program ID exists.
-                const hasNotification = guideState.userNotifications.some(n =>
-                    n.channelId === channel.id &&
-                    n.programId === uniqueProgramId
-                );
-                const notificationClass = hasNotification ? 'has-notification' : '';
-
-                // Added data-prog-id attribute as requested
-                programsHTML += `<div class="programme-item absolute top-1 bottom-1 bg-gray-800 rounded-md p-2 overflow-hidden flex flex-col justify-center z-5 ${isLive ? 'live' : ''} ${progStop < now ? 'past' : ''} ${notificationClass}" style="left:${left}px; width:${Math.max(0, width - 2)}px" data-channel-url="${channel.url}" data-channel-id="${channel.id}" data-channel-name="${channelName}" data-prog-title="${prog.title}" data-prog-desc="${prog.desc}" data-prog-start="${progStart.toISOString()}" data-prog-stop="${progStop.toISOString()}" data-prog-id="${uniqueProgramId}"><div class="programme-progress" style="width:${progressWidth}%"></div><p class="prog-title text-white font-semibold truncate relative z-10">${prog.title}</p><p class="prog-time text-gray-400 truncate relative z-10">${progStart.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p></div>`;
-            });
-            const timelineRowHTML = `<div class="timeline-row" style="width: ${timelineWidth}px;">${programsHTML}</div>`;
-
-            rowsHTML += channelInfoHTML + timelineRowHTML;
-        }
-
-        rowContainer.innerHTML = rowsHTML;
-        rowContainer.style.transform = `translateY(${startIndex * ROW_HEIGHT}px)`;
-    };
-
-    // Attach scroll listener
-    if (guideState.scrollHandler) {
-        guideContainer.removeEventListener('scroll', guideState.scrollHandler);
-    }
-    guideState.scrollHandler = throttle(updateVisibleRows, 16); // Throttle to roughly 60fps
-    guideContainer.addEventListener('scroll', guideState.scrollHandler);
-
-    // Initial render and positioning
-    if (resetScroll) {
-        guideContainer.scrollTop = 0;
-    }
-    updateVisibleRows();
-    updateNowLine(guideStartUtc, resetScroll);
-
-    // --- Re-attach date navigation listeners ---
-    const nowBtn = UIElements.guideGrid.querySelector('#now-btn');
-    
-    // Use .onclick to ensure we're not adding duplicate listeners on re-renders
-    if (nowBtn) nowBtn.onclick = () => {
-        const now = new Date();
-        if (guideState.currentDate.toDateString() !== now.toDateString()) {
-            guideState.currentDate = now;
-            finalizeGuideLoad(true);
-        } else {
-            const guideStart = new Date(guideState.currentDate);
-            guideStart.setHours(0, 0, 0, 0);
-            const guideStartUtc = new Date(Date.UTC(guideStart.getUTCFullYear(), guideStart.getUTCMonth(), guideStart.getUTCDate()));
-            updateNowLine(guideStartUtc, true);
-        }
-    };
+        // MODIFIED: Resolve the promise after the first render is done.
+        // A small timeout ensures the browser has painted the changes before the promise resolves.
+        setTimeout(() => resolve(true), 100);
+    });
 };
 
 /**
@@ -455,6 +464,7 @@ const populateSourceFilter = () => {
 /**
  * Filters channels based on dropdowns and rerenders the guide.
  * @param {boolean} isFirstLoad - Indicates if this is the initial load.
+ * @returns {Promise<boolean>} A promise that resolves when the re-render is complete.
  */
 export function handleSearchAndFilter(isFirstLoad = false) {
     const searchTerm = UIElements.searchInput.value.trim();
@@ -503,7 +513,8 @@ export function handleSearchAndFilter(isFirstLoad = false) {
         UIElements.searchResultsContainer.classList.add('hidden');
     }
 
-    renderGuide(channelsForGuide, isFirstLoad);
+    // MODIFIED: Return the promise from renderGuide
+    return renderGuide(channelsForGuide, isFirstLoad);
 };
 
 /**
