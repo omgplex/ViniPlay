@@ -174,7 +174,6 @@ export function finalizeGuideLoad(isFirstLoad = false) {
  * @returns {Promise<boolean>} A promise that resolves when the initial render is complete.
  */
 const renderGuide = (channelsToRender, resetScroll = false) => {
-    // MODIFIED: Entire function is now wrapped in a Promise
     return new Promise((resolve) => {
         guideState.visibleChannels = channelsToRender;
         const totalRows = channelsToRender.length;
@@ -356,8 +355,6 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
             }
         };
 
-        // MODIFIED: Resolve the promise after the first render is done.
-        // A small timeout ensures the browser has painted the changes before the promise resolves.
         setTimeout(() => resolve(true), 100);
     });
 };
@@ -513,7 +510,6 @@ export function handleSearchAndFilter(isFirstLoad = false) {
         UIElements.searchResultsContainer.classList.add('hidden');
     }
 
-    // MODIFIED: Return the promise from renderGuide
     return renderGuide(channelsForGuide, isFirstLoad);
 };
 
@@ -584,30 +580,33 @@ const throttle = (func, limit) => {
 /**
  * Scrolls the guide vertically to bring a specific channel into view.
  * This is aware of the virtualization and calculates the correct scroll position.
- * @param {string} channelId - The ID of the channel to scroll to.
- * @returns {Promise<boolean>} - Resolves to true if the channel element is found and scrolled to, false otherwise (e.g., if channel is not in the currently filtered/rendered list after a reasonable wait).
+ * @param {string} channelId - The full or partial (stable) ID of the channel to scroll to.
+ * @returns {Promise<boolean>} - Resolves to true if the channel element is found and scrolled to, false otherwise.
  */
 export const scrollToChannel = (channelId) => {
     return new Promise((resolve) => {
-        const maxAttempts = 50; // Max attempts to find the channel (50 * 50ms = 2.5 seconds)
+        const maxAttempts = 50;
         let attempts = 0;
 
         const checkChannel = setInterval(() => {
-            const channelIndex = guideState.visibleChannels.findIndex(ch => ch.id === channelId);
+            // --- FINAL FIX: Use flexible matching (exact match or suffix match) ---
+            const channelIndex = guideState.visibleChannels.findIndex(ch => 
+                ch.id === channelId || ch.id.endsWith(channelId)
+            );
+
             if (channelIndex > -1) {
+                const foundChannel = guideState.visibleChannels[channelIndex];
+                console.log(`[GUIDE_SCROLL] Found channel for ID "${channelId}". Matched with "${foundChannel.id}". Scrolling to index ${channelIndex}.`);
                 const targetScrollTop = channelIndex * ROW_HEIGHT;
                 UIElements.guideContainer.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
-                console.log(`[GUIDE_SCROLL] Scrolled to channel ID: ${channelId} at index ${channelIndex}.`);
                 clearInterval(checkChannel);
                 resolve(true); // Channel found and scrolled
             } else {
                 attempts++;
                 if (attempts >= maxAttempts) {
                     clearInterval(checkChannel);
-                    // --- NEW DEBUG LOG ---
                     console.warn(`[GUIDE_SCROLL_FAIL] Max attempts reached for channel ID ${channelId}.`);
                     console.log(`[GUIDE_SCROLL_FAIL] Currently visible channels (${guideState.visibleChannels.length} total):`, guideState.visibleChannels.map(ch => ch.id));
-                    // --- END NEW DEBUG LOG ---
                     resolve(false); // Channel not found after max attempts
                 }
             }
@@ -658,8 +657,6 @@ export function setupGuideEventListeners() {
                     UIElements.guideDatePicker.showPicker();
                 } catch (error) {
                     console.error("Could not programmatically open date picker:", error);
-                    // Fallback for browsers that don't support showPicker()
-                    // The label's 'for' attribute should handle this, but this is an explicit backup.
                 }
             }
         });
@@ -667,8 +664,6 @@ export function setupGuideEventListeners() {
 
 
     // --- Interactions (Clicks on the new grid) ---
-    // Event delegation is used here on the guideGrid, which is now efficient
-    // because only visible rows are in the DOM at any time.
     UIElements.guideGrid.addEventListener('click', (e) => {
         const favoriteStar = e.target.closest('.favorite-star');
         const channelInfo = e.target.closest('.channel-info');
@@ -708,7 +703,7 @@ export function setupGuideEventListeners() {
                 start: progItem.dataset.progStart,
                 stop: progItem.dataset.progStop,
                 channelId: channelId,
-                programId: progItem.dataset.progId, // This now correctly retrieves the unique ID
+                programId: progItem.dataset.progId,
             };
 
             const channelData = guideState.channels.find(c => c.id === channelId);
@@ -732,14 +727,12 @@ export function setupGuideEventListeners() {
             const programStopTime = new Date(programData.stop).getTime();
             const isProgramRelevantForNotification = programStopTime > now.getTime();
             
-            // Pass programData object directly to findNotificationForProgram
-            // This now looks for PENDING notifications to decide the button state
             const notification = findNotificationForProgram(programData, channelId);
 
             if (isProgramRelevantForNotification) {
                 UIElements.programDetailsNotifyBtn.classList.remove('hidden');
                 UIElements.programDetailsNotifyBtn.textContent = notification ? 'Notification Set' : 'Notify Me';
-                UIElements.programDetailsNotifyBtn.disabled = !notification && Notification.permission === 'denied'; // Disable if notif already denied
+                UIElements.programDetailsNotifyBtn.disabled = !notification && Notification.permission === 'denied';
                 UIElements.programDetailsNotifyBtn.classList.toggle('bg-yellow-600', !notification);
                 UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-yellow-700', !notification);
                 UIElements.programDetailsNotifyBtn.classList.toggle('bg-gray-600', !!notification);
@@ -747,7 +740,7 @@ export function setupGuideEventListeners() {
 
                 UIElements.programDetailsNotifyBtn.onclick = async () => {
                     await addOrRemoveNotification({
-                        id: notification ? notification.id : null, // Pass existing ID if updating/removing
+                        id: notification ? notification.id : null,
                         channelId: programData.channelId,
                         channelName: channelName,
                         channelLogo: channelLogo,
@@ -755,10 +748,10 @@ export function setupGuideEventListeners() {
                         programStart: programData.start,
                         programStop: programData.stop,
                         programDesc: programData.desc,
-                        programId: programData.programId // Unique ID for program within channel
+                        programId: programData.programId
                     });
                     // Re-render button state after action
-                    const updatedNotification = findNotificationForProgram(programData, channelId); // Re-check for pending notification
+                    const updatedNotification = findNotificationForProgram(programData, channelId);
                     UIElements.programDetailsNotifyBtn.textContent = updatedNotification ? 'Notification Set' : 'Notify Me';
                     UIElements.programDetailsNotifyBtn.classList.toggle('bg-yellow-600', !updatedNotification);
                     UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-yellow-700', !updatedNotification);
@@ -860,4 +853,3 @@ export function setupGuideEventListeners() {
 
     UIElements.guideContainer.addEventListener('scroll', handleScrollHeader);
 }
-
