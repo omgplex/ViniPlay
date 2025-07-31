@@ -99,7 +99,7 @@ export const loadAndScheduleNotifications = async () => {
         
         renderNotifications(); // Render upcoming notifications
         renderPastNotifications(); // Render past notifications
-        handleSearchAndFilter(false); // Update guide with indicators (e.g., yellow border)
+        await handleSearchAndFilter(false); // Update guide with indicators (e.g., yellow border)
     } catch (error) {
         console.error('[NOTIF] Error loading notifications:', error);
         showNotification('An error occurred loading notifications.', true);
@@ -323,135 +323,124 @@ export const renderPastNotifications = () => {
  * Sets up event listeners for the dynamically rendered notification lists.
  */
 const setupNotificationListEventListeners = () => {
-    console.log('[NOTIF_UI] Setting up notification list event listeners.');
-    // Remove previous listeners to prevent duplicates
-    UIElements.notificationsList?.removeEventListener('click', handleNotificationListClick);
-    UIElements.pastNotificationsList?.removeEventListener('click', handleNotificationListClick);
+    // This function is now more robust by attaching to the parent and handling all clicks
+    const handleClicks = (e) => {
+        const deleteBtn = e.target.closest('.delete-notification-btn');
+        const viewBtn = e.target.closest('.view-program-btn');
 
-    // Add new listeners
-    UIElements.notificationsList?.addEventListener('click', handleNotificationListClick);
-    UIElements.pastNotificationsList?.addEventListener('click', handleNotificationListClick);
-};
-
-/**
- * Handles clicks within the notification lists.
- * @param {Event} e - The click event.
- */
-const handleNotificationListClick = (e) => {
-    const deleteBtn = e.target.closest('.delete-notification-btn');
-    const viewBtn = e.target.closest('.view-program-btn');
-
-    if (deleteBtn) {
-        const notificationId = deleteBtn.dataset.notificationId;
-        console.log(`[NOTIF_UI_EVENT] Delete notification button clicked for ID: ${notificationId}.`);
-        const notification = guideState.userNotifications.find(n => n.id == notificationId);
-        if (notification) {
-            showConfirm(
-                'Delete Notification?',
-                `Are you sure you want to delete the notification for "${notification.programTitle}"?`,
-                async () => {
-                    const success = await deleteProgramNotification(notificationId);
-                    if (success) {
-                        guideState.userNotifications = guideState.userNotifications.filter(n => n.id != notificationId);
-                        renderNotifications();
-                        renderPastNotifications(); // Re-render past notifications too
-                        await handleSearchAndFilter(false); // Update guide with indicators
-                        showNotification(`Notification for "${notification.programTitle}" removed.`);
+        if (deleteBtn) {
+            const notificationId = deleteBtn.dataset.notificationId;
+            const notification = guideState.userNotifications.find(n => n.id == notificationId);
+            if (notification) {
+                showConfirm(
+                    'Delete Notification?',
+                    `Are you sure you want to delete the notification for "${notification.programTitle}"?`,
+                    async () => {
+                        const success = await deleteProgramNotification(notificationId);
+                        if (success) {
+                            guideState.userNotifications = guideState.userNotifications.filter(n => n.id != notificationId);
+                            renderNotifications();
+                            renderPastNotifications();
+                            await handleSearchAndFilter(false);
+                            showNotification(`Notification for "${notification.programTitle}" removed.`);
+                        }
                     }
-                }
-            );
-        } else {
-            console.warn(`[NOTIF_UI_EVENT] Notification with ID ${notificationId} not found in local state.`);
+                );
+            }
+        } else if (viewBtn) {
+            const channelId = viewBtn.dataset.channelId;
+            const programStart = viewBtn.dataset.programStart;
+            const programId = viewBtn.dataset.programId; // Keep this for potential future use
+            navigateToProgramInGuide(channelId, programStart, programId);
         }
-    } else if (viewBtn) {
-        const channelId = viewBtn.dataset.channelId;
-        const programStart = viewBtn.dataset.programStart;
-        const programId = viewBtn.dataset.programId;
-        console.log(`[NOTIF_UI_EVENT] View program button clicked. Channel ID: ${channelId}, Program Start: ${programStart}, Program ID: ${programId}.`);
-        navigateToProgramInGuide(channelId, programStart, programId);
-    }
+    };
+
+    // Remove old listeners before adding new ones
+    UIElements.notificationsList?.removeEventListener('click', handleClicks);
+    UIElements.pastNotificationsList?.removeEventListener('click', handleClicks);
+    
+    // Add new listeners
+    UIElements.notificationsList?.addEventListener('click', handleClicks);
+    UIElements.pastNotificationsList?.addEventListener('click', handleClicks);
+};
+
+// No setup needed on initial load, called by render functions.
+const handleNotificationListClick = (e) => {
+    // This function is kept for backward compatibility but is now empty.
+    // The logic is moved into setupNotificationListEventListeners's handleClicks.
 };
 
 
 /**
- * Navigates to the TV Guide page and attempts to scroll to and open the program popup.
- * This function is enhanced to handle cases where the program is on a different day
- * or not currently in the DOM due to virtualization.
- * @param {string} channelId - The ID of the channel.
+ * Navigates to the TV Guide, scrolls to the channel, and opens the program details.
+ * @param {string} channelId - The full, dynamic channel ID from the notification.
  * @param {string} programStart - The ISO string of the program's start time.
- * @param {string} programId - The unique ID of the program (channelId-programStart-programStop).
+ * @param {string} programId - The unique program ID (can be ignored as it's also dynamic).
  */
 export const navigateToProgramInGuide = async (channelId, programStart, programId) => {
-    console.log(`[NOTIF_NAV] Navigating to program in guide: Channel ID ${channelId}, Program Start ${programStart}, Program ID ${programId}`);
-    // First, navigate to the TV Guide page
-    navigate('/tvguide');
+    console.log(`[NOTIF_NAV] Navigating to program. Original Channel ID: ${channelId}, Start: ${programStart}`);
 
+    // --- FINAL FIX: Extract the stable part of the channel ID ---
+    const stableChannelIdSuffix = channelId.includes('_') ? '_' + channelId.split('_').pop() : channelId;
+    console.log(`[NOTIF_NAV] Using stable channel ID suffix for matching: "${stableChannelIdSuffix}"`);
+
+    // Navigate to the TV Guide page
+    navigate('/tvguide');
     await new Promise(resolve => setTimeout(resolve, 150));
 
     const targetProgramStart = new Date(programStart);
     const currentGuideDate = new Date(guideState.currentDate);
     currentGuideDate.setHours(0, 0, 0, 0);
 
-    // --- NEW DEBUG LOGS ---
-    console.log(`[NOTIF_NAV_DEBUG] Target Program Date: ${targetProgramStart.toDateString()}`);
-    console.log(`[NOTIF_NAV_DEBUG] Current Guide Date: ${currentGuideDate.toDateString()}`);
-    console.log(`[NOTIF_NAV_DEBUG] Do dates match? ${targetProgramStart.toDateString() === currentGuideDate.toDateString()}`);
-    console.log(`[NOTIF_NAV_DEBUG] Current Filters - Group: "${UIElements.groupFilter.value}", Source: "${UIElements.sourceFilter.value}"`);
-    // --- END NEW DEBUG LOGS ---
-
-    // Step 1: Check and adjust guide date if necessary
+    // Adjust guide date if the program is on a different day
     if (targetProgramStart.toDateString() !== currentGuideDate.toDateString()) {
-        console.log(`[NOTIF_NAV] Program is on a different day. Adjusting guide date to: ${targetProgramStart.toDateString()}`);
+        console.log(`[NOTIF_NAV] Program is on a different day. Adjusting guide date.`);
         guideState.currentDate = targetProgramStart;
-        
-        await handleSearchAndFilter(true);
+        await handleSearchAndFilter(true); // Re-render guide for the new date
     }
 
-    // --- NEW DEBUG LOG ---
-    console.log(`[NOTIF_NAV_DEBUG] Before scrolling, there are ${guideState.visibleChannels.length} channels in the visible list.`);
-    // --- END NEW DEBUG LOG ---
-
-    // Step 2: Ensure the target channel is vertically visible using scrollToChannel
-    console.log(`[NOTIF_NAV] Attempting to scroll channel ${channelId} into view.`);
-    const channelScrolled = await scrollToChannel(channelId);
+    // Scroll to the channel using the stable ID suffix
+    console.log(`[NOTIF_NAV] Attempting to scroll to channel with suffix: ${stableChannelIdSuffix}`);
+    const channelScrolled = await scrollToChannel(stableChannelIdSuffix);
 
     if (!channelScrolled) {
-        console.warn(`[NOTIF_NAV] Channel element for ID ${channelId} could not be made visible.`);
-        showNotification("Could not find the channel in the guide. It might be filtered out or took too long to render.", false, 6000);
-        return; // Stop if channel isn't found
+        showNotification("Could not find the channel in the guide. It might be filtered out.", false, 6000);
+        return;
     }
 
-    // Step 3: Now that the channel is visible, poll for the program element
+    // Poll for the program element to appear in the DOM
     const maxProgramAttempts = 30;
     let programAttempts = 0;
     const findProgramInterval = setInterval(() => {
-        let programElement;
-        if (programId) {
-            programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-id="${programId}"][data-channel-id="${channelId}"]`);
-        }
-        if (!programElement) {
-            programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programStart}"][data-channel-id="${channelId}"]`);
-        }
+        // Find the channel element in the DOM using the stable suffix to get its CURRENT full ID
+        const channelElement = UIElements.guideGrid.querySelector(`.channel-info[data-id$="${stableChannelIdSuffix}"]`);
+        
+        if (channelElement) {
+            const currentDynamicChannelId = channelElement.dataset.id;
+            // Now, find the program using the current full channel ID and the reliable start time
+            const programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programStart}"][data-channel-id="${currentDynamicChannelId}"]`);
 
-        if (programElement) {
-            console.log(`[NOTIF_NAV] Program element found on attempt ${programAttempts + 1}. Scrolling horizontally and clicking.`);
-            clearInterval(findProgramInterval);
-
-            const scrollLeft = programElement.offsetLeft - (UIElements.guideContainer.clientWidth / 4);
-            UIElements.guideContainer.scrollTo({ left: Math.max(0, scrollLeft), behavior: 'smooth' });
-
-            programElement.click(); 
-            
-            programElement.classList.add('highlighted-search');
-            setTimeout(() => { programElement.classList.remove('highlighted-search'); }, 2500);
-
-        } else {
-            programAttempts++;
-            if (programAttempts >= maxProgramAttempts) {
+            if (programElement) {
+                console.log(`[NOTIF_NAV] Program element found. Scrolling horizontally and clicking.`);
                 clearInterval(findProgramInterval);
-                console.warn(`[NOTIF_NAV] Max program attempts reached. Could not find program element in current guide view. (ID: ${programId}).`);
-                showNotification("Could not find program in guide to open details. It might be outside the current 48-hour guide window.", false, 6000);
+
+                const scrollLeft = programElement.offsetLeft - (UIElements.guideContainer.clientWidth / 4);
+                UIElements.guideContainer.scrollTo({ left: Math.max(0, scrollLeft), behavior: 'smooth' });
+
+                programElement.click(); 
+                
+                programElement.classList.add('highlighted-search');
+                setTimeout(() => { programElement.classList.remove('highlighted-search'); }, 2500);
+                return;
             }
+        }
+
+        programAttempts++;
+        if (programAttempts >= maxProgramAttempts) {
+            clearInterval(findProgramInterval);
+            console.warn(`[NOTIF_NAV] Max attempts reached. Could not find program element.`);
+            showNotification("Could not find program in guide to open details.", false, 6000);
         }
     }, 100);
 };
+
