@@ -623,6 +623,8 @@ export function setupGuideEventListeners() {
     });
 
     // --- Date Picker Event Listener ---
+    // Modified: Removed the direct change listener from here, as the input's change event will bubble up,
+    // and the label's click will trigger the input's click.
     UIElements.guideDatePicker.addEventListener('change', (e) => {
         const selectedDate = e.target.value; // YYYY-MM-DD
         if (selectedDate) {
@@ -636,16 +638,15 @@ export function setupGuideEventListeners() {
     });
 
     // FIX: Explicitly open the date picker when the calendar icon/label is clicked.
+    // Instead of showPicker(), we trigger a click directly on the hidden input.
     const datePickerLabel = document.querySelector('label[for="guide-date-picker"]');
     if (datePickerLabel) {
         datePickerLabel.addEventListener('click', (e) => {
-            if (UIElements.guideDatePicker && typeof UIElements.guideDatePicker.showPicker === 'function') {
+            if (UIElements.guideDatePicker) {
                 try {
-                    UIElements.guideDatePicker.showPicker();
+                    UIElements.guideDatePicker.click(); // Trigger a direct click on the input
                 } catch (error) {
-                    console.error("Could not programmatically open date picker:", error);
-                    // Fallback for browsers that don't support showPicker()
-                    // The label's 'for' attribute should handle this, but this is an explicit backup.
+                    console.error("Could not programmatically click date picker input:", error);
                 }
             }
         });
