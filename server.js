@@ -157,6 +157,14 @@ app.use(
   })
 );
 
+// --- NEW DEBUG LOGGING MIDDLEWARE ---
+app.use((req, res, next) => {
+    const user_info = req.session.userId ? `User ID: ${req.session.userId}, Admin: ${req.session.isAdmin}` : 'No session';
+    console.log(`[HTTP_TRACE] ${req.method} ${req.originalUrl} - Session: [${user_info}]`);
+    next();
+});
+// --- END NEW DEBUG LOGGING MIDDLEWARE ---
+
 // --- Authentication Middleware ---
 // MOVED: These definitions are now before their first usage in any routes.
 const requireAuth = (req, res, next) => {
@@ -608,16 +616,15 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 app.get('/api/auth/status', (req, res) => {
-    console.log('[AUTH_API] Received request for /api/auth/status');
+    console.log(`[AUTH_API] GET /api/auth/status - Checking session ID: ${req.sessionID}`);
     if (req.session && req.session.userId) {
-        console.log(`[AUTH_API] User ${req.session.username} (ID: ${req.session.userId}) is logged in.`);
+        console.log(`[AUTH_API_STATUS] Valid session found for user "${req.session.username}" (ID: ${req.session.userId}). Responding with isLoggedIn: true.`);
         res.json({ isLoggedIn: true, user: { username: req.session.username, isAdmin: req.session.isAdmin } });
     } else {
-        console.log('[AUTH_API] No active session found. User is not logged in.');
+        console.log('[AUTH_API_STATUS] No valid session found. Responding with isLoggedIn: false.');
         res.json({ isLoggedIn: false });
     }
 });
-
 
 // --- User Management API Endpoints (Admin only) ---
 app.get('/api/users', requireAdmin, (req, res) => {
@@ -1774,3 +1781,4 @@ function parseM3U(data) {
     }
     return channels;
 }
+
