@@ -91,8 +91,9 @@ const initializeUIElements = () => {
     UIElements.recordingVideoElement = document.getElementById('recording-video-element');
     UIElements.recordingTitle = document.getElementById('recording-title');
     UIElements.closeRecordingPlayerBtn = document.getElementById('close-recording-player-btn');
-    UIElements.dvrPreRollInput = document.getElementById('dvr-pre-roll-input');
-    UIElements.dvrPostRollInput = document.getElementById('dvr-post-roll-input');
+    // FIX: Correcting the ID mapping for DVR buffer inputs.
+    UIElements.dvrPreBufferInput = document.getElementById('dvr-pre-buffer-input');
+    UIElements.dvrPostBufferInput = document.getElementById('dvr-post-buffer-input');
     UIElements.addRecordingProfileBtn = document.getElementById('add-recording-profile-btn');
     UIElements.editRecordingProfileBtn = document.getElementById('edit-recording-profile-btn');
     UIElements.deleteRecordingProfileBtn = document.getElementById('delete-recording-profile-btn');
