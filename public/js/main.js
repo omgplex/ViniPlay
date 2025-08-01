@@ -5,7 +5,7 @@
  * Initializes the app by setting up authentication, event listeners, and loading initial data.
  */
 
-import { appState, guideState, UIElements, initializeUIElements } from './modules/state.js';
+import { appState, guideState, UIElements } from './modules/state.js';
 import { apiFetch, fetchConfig } from './modules/api.js'; // IMPORTED fetchConfig
 import { checkAuthStatus, setupAuthEventListeners } from './modules/auth.js';
 import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './modules/guide.js';
@@ -253,9 +253,6 @@ function setupCoreEventListeners() {
 
 // --- App Start ---
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('[APP_START] DOMContentLoaded event fired. Initializing UI elements.');
-    initializeUIElements();
-
     // Register Service Worker
     if ('serviceWorker' in navigator && 'PushManager' in window) {
         console.log('[APP_START] Service Worker and Push API are supported by browser.');
