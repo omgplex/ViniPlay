@@ -349,64 +349,71 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
     console.log(`[NOTIF_NAV] Using stable channel ID suffix for matching: "${stableChannelIdSuffix}"`);
 
     navigate('/tvguide');
-    await new Promise(resolve => setTimeout(resolve, 150));
+    await new Promise(resolve => setTimeout(resolve, 150)); // Wait for navigation
 
     const targetProgramStart = new Date(programStart);
     const currentGuideDate = new Date(guideState.currentDate);
     currentGuideDate.setHours(0, 0, 0, 0);
 
+    // Change date if necessary
     if (targetProgramStart.toDateString() !== currentGuideDate.toDateString()) {
         console.log(`[NOTIF_NAV] Program is on a different day. Adjusting guide date.`);
         guideState.currentDate = targetProgramStart;
         await handleSearchAndFilter(true);
+        await new Promise(resolve => setTimeout(resolve, 150)); // Wait for rerender
     }
 
-    console.log(`[NOTIF_NAV] Attempting to scroll to channel with suffix: ${stableChannelIdSuffix}`);
+    // Scroll vertically to the channel
     const channelScrolled = await scrollToChannel(stableChannelIdSuffix);
-
     if (!channelScrolled) {
         showNotification("Could not find the channel in the guide. It might be filtered out.", false, 6000);
         return;
     }
+    
+    // Wait for vertical scroll to finish and the element to be available
+    await new Promise(resolve => setTimeout(resolve, 500)); 
 
-    const maxProgramAttempts = 30;
-    let programAttempts = 0;
-    const findProgramInterval = setInterval(() => {
-        const channelElement = UIElements.guideGrid.querySelector(`.channel-info[data-id$="${stableChannelIdSuffix}"]`);
+    // Find the dynamic ID of the channel now it's in view
+    const channelElement = UIElements.guideGrid.querySelector(`.channel-info[data-id$="${stableChannelIdSuffix}"]`);
+    if (!channelElement) {
+        console.warn(`[NOTIF_NAV] Channel element with suffix ${stableChannelIdSuffix} not found in DOM after scrolling.`);
+        showNotification("Could not highlight the channel.", true);
+        return;
+    }
+    const currentDynamicChannelId = channelElement.dataset.id;
+    
+    // Now find the program element
+    const programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programStart}"][data-channel-id="${currentDynamicChannelId}"]`);
+
+    if (programElement) {
+        console.log(`[NOTIF_NAV] Program element found. Centering and clicking.`);
         
-        if (channelElement) {
-            const currentDynamicChannelId = channelElement.dataset.id;
-            const programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programStart}"][data-channel-id="${currentDynamicChannelId}"]`);
+        const guideContainer = UIElements.guideContainer;
+        
+        // --- Centering Logic ---
+        const programRect = programElement.getBoundingClientRect();
+        const containerRect = guideContainer.getBoundingClientRect();
+        
+        // Vertical centering
+        const desiredScrollTop = guideContainer.scrollTop + programRect.top - containerRect.top - (containerRect.height / 2) + (programRect.height / 2);
+        
+        // Horizontal centering
+        const desiredScrollLeft = guideContainer.scrollLeft + programRect.left - containerRect.left - (containerRect.width / 2) + (programRect.width / 2);
 
-            if (programElement) {
-                console.log(`[NOTIF_NAV] Program element found. Scrolling horizontally and clicking.`);
-                clearInterval(findProgramInterval);
+        guideContainer.scrollTo({
+            top: Math.max(0, desiredScrollTop),
+            left: Math.max(0, desiredScrollLeft),
+            behavior: 'smooth'
+        });
 
-                // --- FINAL FIX: Improved scrolling logic ---
-                const guideContainer = UIElements.guideContainer;
-                const scrollLeft = programElement.offsetLeft + (programElement.offsetWidth / 2) - (guideContainer.clientWidth / 2);
-
-                guideContainer.scrollTo({ 
-                    left: Math.max(0, scrollLeft), 
-                    behavior: 'smooth' 
-                });
-
-                // Use a short timeout to ensure click happens after scroll starts
-                setTimeout(() => {
-                    programElement.click(); 
-                    programElement.classList.add('highlighted-search');
-                    setTimeout(() => { programElement.classList.remove('highlighted-search'); }, 2500);
-                }, 300); // 300ms delay for smooth scroll animation to begin
-                return;
-            }
-        }
-
-        programAttempts++;
-        if (programAttempts >= maxProgramAttempts) {
-            clearInterval(findProgramInterval);
-            console.warn(`[NOTIF_NAV] Max attempts reached. Could not find program element.`);
-            showNotification("Could not find program in guide to open details.", false, 6000);
-        }
-    }, 100);
+        // Use a short timeout to ensure click happens after scroll starts
+        setTimeout(() => {
+            programElement.click(); // This will trigger the existing listener in guide.js to open the modal
+            programElement.classList.add('highlighted-search');
+            setTimeout(() => { programElement.classList.remove('highlighted-search'); }, 2500);
+        }, 300);
+    } else {
+        console.warn(`[NOTIF_NAV] Program element could not be found in DOM for channel ${currentDynamicChannelId} and start time ${programStart}.`);
+        showNotification("Could not find program in guide to open details.", false, 6000);
+    }
 };
-
