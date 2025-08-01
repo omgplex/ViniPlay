@@ -112,8 +112,9 @@ export const updateUIFromSettings = () => {
     UIElements.timezoneOffsetSelect.value = settings.timezoneOffset;
     UIElements.searchScopeSelect.value = settings.searchScope;
     UIElements.notificationLeadTimeInput.value = settings.notificationLeadTime;
-    UIElements.dvrPreBufferInput.value = settings.dvr.preBufferMinutes;
-    UIElements.dvrPostRollInput.value = settings.dvr.postBufferMinutes;
+    // FIX: Use the correct UIElements names for DVR inputs
+    if (UIElements.dvrPreBufferInput) UIElements.dvrPreBufferInput.value = settings.dvr.preBufferMinutes;
+    if (UIElements.dvrPostBufferInput) UIElements.dvrPostBufferInput.value = settings.dvr.postBufferMinutes;
 
 
     // Render tables
@@ -309,33 +310,36 @@ const saveSettingAndNotify = async (saveFunction, ...args) => {
 export function setupSettingsEventListeners() {
 
     // --- Source Management ---
-    UIElements.processSourcesBtn.addEventListener('click', async () => {
-        const originalContent = UIElements.processSourcesBtnContent.innerHTML;
-        setButtonLoadingState(UIElements.processSourcesBtn, true, originalContent);
-        const res = await apiFetch('/api/process-sources', { method: 'POST' });
-        if (res && res.ok) {
-            const configResponse = await apiFetch(`/api/config?t=${Date.now()}`);
-            if (configResponse && configResponse.ok) {
-                const config = await configResponse.json();
-                if (!config.m3uContent) {
-                    showNotification("No active M3U sources found or sources are empty.", true);
-                    handleGuideLoad('', '');
+    // Ensure processSourcesBtn exists before adding event listener
+    if (UIElements.processSourcesBtn) {
+        UIElements.processSourcesBtn.addEventListener('click', async () => {
+            const originalContent = UIElements.processSourcesBtnContent.innerHTML;
+            setButtonLoadingState(UIElements.processSourcesBtn, true, originalContent);
+            const res = await apiFetch('/api/process-sources', { method: 'POST' });
+            if (res && res.ok) {
+                const configResponse = await apiFetch(`/api/config?t=${Date.now()}`);
+                if (configResponse && configResponse.ok) {
+                    const config = await configResponse.json();
+                    if (!config.m3uContent) {
+                        showNotification("No active M3U sources found or sources are empty.", true);
+                        handleGuideLoad('', '');
+                    } else {
+                        handleGuideLoad(config.m3uContent, config.epgContent);
+                        Object.assign(guideState.settings, config.settings || {}); // Merge settings
+                        updateUIFromSettings();
+                        navigate('/tvguide');
+                        showNotification('Sources processed successfully!');
+                    }
                 } else {
-                    handleGuideLoad(config.m3uContent, config.epgContent);
-                    Object.assign(guideState.settings, config.settings || {}); // Merge settings
-                    updateUIFromSettings();
-                    navigate('/tvguide');
-                    showNotification('Sources processed successfully!');
+                    showNotification("Failed to reload config after processing.", true);
                 }
             } else {
-                showNotification("Failed to reload config after processing.", true);
+                const data = res ? await res.json() : { error: 'Unknown error' };
+                showNotification(`Error processing sources: ${data.error}`, true);
             }
-        } else {
-            const data = res ? await res.json() : { error: 'Unknown error' };
-            showNotification(`Error processing sources: ${data.error}`, true);
-        }
-        setButtonLoadingState(UIElements.processSourcesBtn, false, originalContent);
-    });
+            setButtonLoadingState(UIElements.processSourcesBtn, false, originalContent);
+        });
+    }
     
     UIElements.addM3uBtn.addEventListener('click', () => openSourceEditor('m3u'));
     UIElements.addEpgBtn.addEventListener('click', () => openSourceEditor('epg'));
@@ -451,8 +455,13 @@ export function setupSettingsEventListeners() {
     });
 
     // --- NEW: DVR Settings ---
-    UIElements.dvrPreRollInput.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { dvr: { ...guideState.settings.dvr, preBufferMinutes: parseInt(e.target.value, 10) } }));
-    UIElements.dvrPostRollInput.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { dvr: { ...guideState.settings.dvr, postBufferMinutes: parseInt(e.target.value, 10) } }));
+    // FIX: Use the correct UIElements names for DVR inputs
+    if (UIElements.dvrPreBufferInput) {
+        UIElements.dvrPreBufferInput.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { dvr: { ...guideState.settings.dvr, preBufferMinutes: parseInt(e.target.value, 10) } }));
+    }
+    if (UIElements.dvrPostBufferInput) {
+        UIElements.dvrPostBufferInput.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { dvr: { ...guideState.settings.dvr, postBufferMinutes: parseInt(e.target.value, 10) } }));
+    }
     UIElements.dvrRecordingProfileSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { dvr: { ...guideState.settings.dvr, activeRecordingProfileId: e.target.value } }));
 
 
@@ -506,7 +515,7 @@ export function setupSettingsEventListeners() {
         const selectedId = UIElements.dvrRecordingProfileSelect.value;
         showConfirm('Delete Recording Profile?', 'Are you sure?', async () => {
             const updatedList = (guideState.settings.dvr?.recordingProfiles || []).filter(p => p.id !== selectedId);
-            const newActiveId = (guideState.settings.dvr?.activeRecordingProfileId === selectedId) ? (updatedList[0]?.id || null) : guideState.settings.dvr?.activeRecordingProfileId;
+            const newActiveId = (guideState.settings.dvr?.activeRecordingProfileId === selectedId) ? (updatedList[0]?.id || null) : guideState.dvr?.settings.activeRecordingProfileId;
             const settingsToSave = {
                 dvr: {
                     ...guideState.settings.dvr,
@@ -622,3 +631,4 @@ export function setupSettingsEventListeners() {
         });
     });
 }
+```
