@@ -12,10 +12,8 @@ services:
     container_name: viniplay
     
     # Map port 8998 on your host machine to port 8998 inside the container.
-    # NEW: Map port 9229 for Node.js debugging/profiling.
     ports:
       - "8998:8998"
-      - "9229:9229" # Expose the default inspect port
       
     # Define the restart policy.
     # 'unless-stopped' ensures the container automatically restarts if it crashes,
@@ -25,18 +23,14 @@ services:
     # Add volumes for persistent data.
     # This maps the './viniplay-data' directory on your host to the '/data'
     # directory inside the container for app settings and sources.
-    # NEW: A new volume for DVR recordings.
+    # A new volume for DVR recordings.
     volumes:
       - ./viniplay-data:/data
-      - ./viniplay-dvr:/dvr # NEW: Mapped volume for DVR recordings
+      - ./viniplay-dvr:/dvr # Mapped volume for DVR recordings
     
-    # NEW: Load environment variables from a file on the host.
+    # Load environment variables from a file on the host.
     # This allows you to set sensitive values like the session secret
     # without hardcoding them in the source code or this file.
     env_file:
       - ./.env
 
-    # NEW: Modify the entrypoint to start Node.js with the --inspect flag.
-    # This enables the debugger, which the profiler connects to.
-    command: >
-      sh -c "npm_config_loglevel=silent npm start -- --inspect=0.0.0.0:9229"
