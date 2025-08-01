@@ -11,11 +11,98 @@ import { saveUserSetting } from './api.js';
 import { parseM3U } from './utils.js';
 import { playChannel } from './player.js';
 import { showNotification, openModal, closeModal } from './ui.js';
-import { addOrRemoveNotification, findNotificationForProgram } from './notification.js'; // NEW: Import notification functions
+import { addOrRemoveNotification, findNotificationForProgram } from './notification.js';
 
 // --- Virtualization Constants ---
 const ROW_HEIGHT = 96; // Height in pixels of a single channel row (.channel-info + .timeline-row)
 const OVERSCAN_COUNT = 5; // Number of extra rows to render above and below the visible area for smooth scrolling
+
+/**
+ * NEW: Opens the program details modal. This is now a standalone, exportable function.
+ * @param {HTMLElement} progItem - The program item element that was clicked.
+ */
+export function openProgramDetails(progItem) {
+    console.log('[GUIDE_DEBUG] openProgramDetails function called for element:', progItem);
+    if (!progItem || !progItem.dataset) {
+        console.error('[GUIDE_DEBUG] openProgramDetails called with an invalid or null element.');
+        return;
+    }
+
+    const channelId = progItem.dataset.channelId;
+    const programData = {
+        title: progItem.dataset.progTitle,
+        desc: progItem.dataset.progDesc,
+        start: progItem.dataset.progStart,
+        stop: progItem.dataset.progStop,
+        channelId: channelId,
+        programId: progItem.dataset.progId,
+    };
+
+    const channelData = guideState.channels.find(c => c.id === channelId);
+    if (!channelData) {
+        console.error(`[GUIDE_DEBUG] Could not find channel data for ID: ${channelId}`);
+        showNotification("Error: Could not find channel data for this program.", true);
+        return;
+    }
+    
+    const channelName = channelData.displayName || channelData.name;
+    const channelLogo = channelData.logo;
+    const channelUrl = channelData.url;
+
+    UIElements.detailsTitle.textContent = programData.title;
+    const progStart = new Date(programData.start);
+    const progStop = new Date(programData.stop);
+    UIElements.detailsTime.textContent = `${progStart.toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})}`;
+    UIElements.detailsDesc.textContent = programData.desc || "No description available.";
+    
+    UIElements.detailsPlayBtn.onclick = () => {
+        playChannel(channelUrl, channelName, channelId);
+        closeModal(UIElements.programDetailsModal);
+    };
+
+    const now = new Date();
+    const programStopTime = new Date(programData.stop).getTime();
+    const isProgramRelevantForNotification = programStopTime > now.getTime();
+    
+    const notification = findNotificationForProgram(programData, channelId);
+
+    if (isProgramRelevantForNotification) {
+        UIElements.programDetailsNotifyBtn.classList.remove('hidden');
+        UIElements.programDetailsNotifyBtn.textContent = notification ? 'Notification Set' : 'Notify Me';
+        UIElements.programDetailsNotifyBtn.disabled = !notification && Notification.permission === 'denied';
+        UIElements.programDetailsNotifyBtn.classList.toggle('bg-yellow-600', !notification);
+        UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-yellow-700', !notification);
+        UIElements.programDetailsNotifyBtn.classList.toggle('bg-gray-600', !!notification);
+        UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-gray-500', !!notification);
+
+        UIElements.programDetailsNotifyBtn.onclick = async () => {
+            await addOrRemoveNotification({
+                id: notification ? notification.id : null,
+                channelId: programData.channelId,
+                channelName: channelName,
+                channelLogo: channelLogo,
+                programTitle: programData.title,
+                programStart: programData.start,
+                programStop: programData.stop,
+                programDesc: programData.desc,
+                programId: programData.programId
+            });
+            const updatedNotification = findNotificationForProgram(programData, channelId);
+            UIElements.programDetailsNotifyBtn.textContent = updatedNotification ? 'Notification Set' : 'Notify Me';
+            UIElements.programDetailsNotifyBtn.classList.toggle('bg-yellow-600', !updatedNotification);
+            UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-yellow-700', !updatedNotification);
+            UIElements.programDetailsNotifyBtn.classList.toggle('bg-gray-600', !!updatedNotification);
+            UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-gray-500', !!updatedNotification);
+            handleSearchAndFilter(false); 
+        };
+    } else {
+        UIElements.programDetailsNotifyBtn.classList.add('hidden');
+    }
+    
+    console.log('[GUIDE_DEBUG] Opening program details modal via openProgramDetails function.');
+    openModal(UIElements.programDetailsModal);
+}
+
 
 // --- Data Loading and Processing ---
 
@@ -291,7 +378,6 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
                     
                     const uniqueProgramId = `${channel.id}-${progStart.toISOString()}-${progStop.toISOString()}`;
 
-                    // --- FINAL FIX: Robust notification check ---
                     const currentChannelStableId = channel.id.includes('_') ? channel.id.substring(channel.id.lastIndexOf('_')) : channel.id;
                     const hasNotification = guideState.userNotifications.some(n => {
                         const notificationStableId = n.channelId.includes('_') ? n.channelId.substring(n.channelId.lastIndexOf('_')) : n.channelId;
@@ -626,6 +712,9 @@ export function setupGuideEventListeners() {
     }
 
     UIElements.guideGrid.addEventListener('click', (e) => {
+        // DEBUG LOG to confirm if this event listener is being triggered
+        console.log('[GUIDE_DEBUG] guideGrid click event fired. Target:', e.target);
+        
         const favoriteStar = e.target.closest('.favorite-star');
         const channelInfo = e.target.closest('.channel-info');
         const progItem = e.target.closest('.programme-item');
@@ -653,72 +742,8 @@ export function setupGuideEventListeners() {
         }
 
         if (progItem) {
-            const channelId = progItem.dataset.channelId;
-            const programData = {
-                title: progItem.dataset.progTitle,
-                desc: progItem.dataset.progDesc,
-                start: progItem.dataset.progStart,
-                stop: progItem.dataset.progStop,
-                channelId: channelId,
-                programId: progItem.dataset.progId,
-            };
-
-            const channelData = guideState.channels.find(c => c.id === channelId);
-            const channelName = channelData ? (channelData.displayName || channelData.name) : 'Unknown Channel';
-            const channelLogo = channelData ? channelData.logo : '';
-            const channelUrl = channelData ? channelData.url : '';
-
-            UIElements.detailsTitle.textContent = programData.title;
-            const progStart = new Date(programData.start);
-            const progStop = new Date(programData.stop);
-            UIElements.detailsTime.textContent = `${progStart.toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})}`;
-            UIElements.detailsDesc.textContent = programData.desc || "No description available.";
-            
-            UIElements.detailsPlayBtn.onclick = () => {
-                playChannel(channelUrl, channelName, channelId);
-                closeModal(UIElements.programDetailsModal);
-            };
-
-            const now = new Date();
-            const programStopTime = new Date(programData.stop).getTime();
-            const isProgramRelevantForNotification = programStopTime > now.getTime();
-            
-            const notification = findNotificationForProgram(programData, channelId);
-
-            if (isProgramRelevantForNotification) {
-                UIElements.programDetailsNotifyBtn.classList.remove('hidden');
-                UIElements.programDetailsNotifyBtn.textContent = notification ? 'Notification Set' : 'Notify Me';
-                UIElements.programDetailsNotifyBtn.disabled = !notification && Notification.permission === 'denied';
-                UIElements.programDetailsNotifyBtn.classList.toggle('bg-yellow-600', !notification);
-                UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-yellow-700', !notification);
-                UIElements.programDetailsNotifyBtn.classList.toggle('bg-gray-600', !!notification);
-                UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-gray-500', !!notification);
-
-                UIElements.programDetailsNotifyBtn.onclick = async () => {
-                    await addOrRemoveNotification({
-                        id: notification ? notification.id : null,
-                        channelId: programData.channelId,
-                        channelName: channelName,
-                        channelLogo: channelLogo,
-                        programTitle: programData.title,
-                        programStart: programData.start,
-                        programStop: programData.stop,
-                        programDesc: programData.desc,
-                        programId: programData.programId
-                    });
-                    const updatedNotification = findNotificationForProgram(programData, channelId);
-                    UIElements.programDetailsNotifyBtn.textContent = updatedNotification ? 'Notification Set' : 'Notify Me';
-                    UIElements.programDetailsNotifyBtn.classList.toggle('bg-yellow-600', !updatedNotification);
-                    UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-yellow-700', !updatedNotification);
-                    UIElements.programDetailsNotifyBtn.classList.toggle('bg-gray-600', !!updatedNotification);
-                    UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-gray-500', !!updatedNotification);
-                    handleSearchAndFilter(false); 
-                };
-            } else {
-                UIElements.programDetailsNotifyBtn.classList.add('hidden');
-            }
-
-            openModal(UIElements.programDetailsModal);
+            // REFACTORED: Call the new standalone function
+            openProgramDetails(progItem);
         }
     });
 
