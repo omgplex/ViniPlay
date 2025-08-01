@@ -22,11 +22,13 @@ services:
     # but not when you manually stop it.
     restart: unless-stopped
     
-    # Add a volume for persistent data.
+    # Add volumes for persistent data.
     # This maps the './viniplay-data' directory on your host to the '/data'
-    # directory inside the container.
+    # directory inside the container for app settings and sources.
+    # NEW: A new volume for DVR recordings.
     volumes:
       - ./viniplay-data:/data
+      - ./viniplay-dvr:/dvr # NEW: Mapped volume for DVR recordings
     
     # NEW: Load environment variables from a file on the host.
     # This allows you to set sensitive values like the session secret
@@ -38,4 +40,3 @@ services:
     # This enables the debugger, which the profiler connects to.
     command: >
       sh -c "npm_config_loglevel=silent npm start -- --inspect=0.0.0.0:9229"
-
