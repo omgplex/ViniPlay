@@ -8,6 +8,7 @@ import { UIElements, appState, guideState } from './state.js';
 import { refreshUserList, updateUIFromSettings } from './settings.js';
 import { renderNotifications } from './notification.js'; // NEW: Import renderNotifications
 import { initMultiView, isMultiViewActive, cleanupMultiView } from './multiview.js';
+import { initDvrPage } from './dvr.js'; // NEW: Import DVR page initializer
 
 let confirmCallback = null;
 let currentPage = '/'; // ADDED: To track the current page for navigation logic
@@ -255,6 +256,7 @@ export const handleRouteChange = () => {
 function proceedWithRouteChange(path) {
     const isGuide = path.startsWith('/tvguide') || path === '/';
     const isMultiView = path.startsWith('/multiview');
+    const isDvr = path.startsWith('/dvr'); // NEW: DVR check
     const isNotifications = path.startsWith('/notifications');
     const isSettings = path.startsWith('/settings');
 
@@ -264,12 +266,14 @@ function proceedWithRouteChange(path) {
     // Toggle active state for desktop navigation buttons
     UIElements.tabGuide?.classList.toggle('active', isGuide);
     UIElements.tabMultiview?.classList.toggle('active', isMultiView);
+    UIElements.tabDvr?.classList.toggle('active', isDvr); // NEW: DVR Tab
     UIElements.tabNotifications?.classList.toggle('active', isNotifications);
     UIElements.tabSettings?.classList.toggle('active', isSettings);
     
     // Toggle active state for mobile navigation buttons
     UIElements.mobileNavGuide?.classList.toggle('active', isGuide);
     UIElements.mobileNavMultiview?.classList.toggle('active', isMultiView);
+    UIElements.mobileNavDvr?.classList.toggle('active', isDvr); // NEW: Mobile DVR Nav
     UIElements.mobileNavNotifications?.classList.toggle('active', isNotifications);
     UIElements.mobileNavSettings?.classList.toggle('active', isSettings);
 
@@ -278,6 +282,8 @@ function proceedWithRouteChange(path) {
     UIElements.pageGuide.classList.toggle('flex', isGuide);
     UIElements.pageMultiview.classList.toggle('hidden', !isMultiView);
     UIElements.pageMultiview.classList.toggle('flex', isMultiView);
+    UIElements.pageDvr.classList.toggle('hidden', !isDvr); // NEW: DVR Page
+    UIElements.pageDvr.classList.toggle('flex', isDvr); // NEW: DVR Page
     UIElements.pageNotifications.classList.toggle('hidden', !isNotifications);
     UIElements.pageNotifications.classList.toggle('flex', isNotifications);
     UIElements.pageSettings.classList.toggle('hidden', !isSettings);
@@ -306,16 +312,18 @@ function proceedWithRouteChange(path) {
         // Ensure page-guide padding is reset when leaving guide page
         UIElements.pageGuide.style.paddingTop = `0px`; 
 
-        // If navigating to the settings page, refresh relevant data
+        // If navigating to a specific page, refresh relevant data
         if (isSettings) {
             updateUIFromSettings();
             if (appState.currentUser?.isAdmin) {
                 refreshUserList();
             }
         } else if (isNotifications) {
-            renderNotifications(); // NEW: Render notifications when navigating to the notifications page
+            renderNotifications();
         } else if (isMultiView) {
             initMultiView();
+        } else if (isDvr) { // NEW: Init DVR page
+            initDvrPage();
         }
     }
     // Update the current page tracker
@@ -336,8 +344,8 @@ export const navigate = (path) => {
 };
 
 /**
- * Switches between the 'Guide', 'Multi-View', 'Notifications' and 'Settings' tabs.
- * @param {string} activeTab - The tab to switch to ('guide', 'multiview', 'notifications', or 'settings').
+ * Switches between the tabs.
+ * @param {string} activeTab - The tab to switch to ('guide', 'multiview', 'dvr', 'notifications', or 'settings').
  */
 export const switchTab = (activeTab) => {
     let newPath;
@@ -345,6 +353,8 @@ export const switchTab = (activeTab) => {
         newPath = '/tvguide';
     } else if (activeTab === 'multiview') {
         newPath = '/multiview';
+    } else if (activeTab === 'dvr') { // NEW: DVR case
+        newPath = '/dvr';
     } else if (activeTab === 'notifications') {
         newPath = '/notifications';
     } else {
