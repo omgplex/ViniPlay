@@ -6,7 +6,7 @@
 
 import { showNotification, showConfirm, navigate, openModal, closeModal } from './ui.js';
 import { UIElements, guideState, appState } from './state.js';
-import { handleSearchAndFilter, scrollToChannel } from './guide.js'; // Import scrollToChannel
+import { handleSearchAndFilter, scrollToChannel, openProgramDetails } from './guide.js'; // Import scrollToChannel & openProgramDetails
 import { getVapidKey, subscribeToPush, addProgramNotification, getProgramNotifications, deleteProgramNotification, unsubscribeFromPush } from './api.js';
 
 let isSubscribed = false;
@@ -385,18 +385,14 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
             if (foundProgram) {
                 clearInterval(findProgramInterval);
                 programElement = foundProgram;
-                console.log(`[NOTIF_NAV] Program element found after ${attempts} attempts. Centering and clicking.`);
+                console.log(`[NOTIF_DEBUG] Program element found after ${attempts} attempts. Ready to proceed.`);
                 
                 const guideContainer = UIElements.guideContainer;
                 
                 // --- Centering Logic ---
                 const programRect = programElement.getBoundingClientRect();
                 const containerRect = guideContainer.getBoundingClientRect();
-                
-                // Vertical centering
                 const desiredScrollTop = guideContainer.scrollTop + programRect.top - containerRect.top - (containerRect.height / 2) + (programRect.height / 2);
-                
-                // Horizontal centering
                 const desiredScrollLeft = guideContainer.scrollLeft + programRect.left - containerRect.left - (containerRect.width / 2) + (programRect.width / 2);
 
                 guideContainer.scrollTo({
@@ -405,15 +401,16 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
                     behavior: 'smooth'
                 });
 
-                // Use a short timeout to ensure click happens after scroll starts
+                // Use a short timeout to allow the smooth scroll to start
                 setTimeout(() => {
-                    // This will trigger the existing listener in guide.js to open the modal
-                    programElement.click(); 
+                    console.log('[NOTIF_DEBUG] Calling openProgramDetails directly.');
+                    // THE FIX: Directly call the function instead of simulating a click
+                    openProgramDetails(programElement);
                     
                     // Highlight the element
                     programElement.classList.add('highlighted-search');
                     setTimeout(() => { programElement.classList.remove('highlighted-search'); }, 2500);
-                }, 300); // 300ms delay for smooth scroll animation to begin
+                }, 300);
                 return;
             }
         }
