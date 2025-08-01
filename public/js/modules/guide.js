@@ -29,6 +29,17 @@ export function openProgramDetails(progItem) {
         return;
     }
 
+    // CRITICAL FIX: Ensure programDetailsModal is correctly referenced in UIElements
+    if (!UIElements.programDetailsModal) {
+        UIElements.programDetailsModal = document.getElementById('program-details-modal');
+        if (!UIElements.programDetailsModal) {
+            console.error('[GUIDE_DEBUG] programDetailsModal element not found in DOM.');
+            showNotification('Error: Program details modal is missing.', true);
+            return;
+        }
+    }
+
+
     const channelId = progItem.dataset.channelId;
     const programData = {
         title: progItem.dataset.progTitle,
@@ -899,4 +910,3 @@ export function setupGuideEventListeners() {
         UIElements.guideContainer.addEventListener('scroll', handleScrollHeader);
     }
 }
-
