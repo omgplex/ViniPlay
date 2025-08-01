@@ -634,39 +634,57 @@ const throttle = (func, limit) => {
 };
 
 /**
- * Scrolls the guide vertically to bring a specific channel into view.
+ * Scrolls the guide vertically to bring a specific channel into view and confirms its visibility.
  * @param {string} channelId - The full or partial (stable) ID of the channel to scroll to.
- * @returns {Promise<boolean>} - Resolves to true if the channel element is found and scrolled to, false otherwise.
+ * @returns {Promise<boolean>} - Resolves to true once the channel element is rendered in the DOM, false otherwise.
  */
 export const scrollToChannel = (channelId) => {
     return new Promise((resolve) => {
-        const maxAttempts = 50;
+        // Find the index of the channel in the currently filtered list
+        const channelIndex = guideState.visibleChannels.findIndex(ch =>
+            ch.id === channelId || ch.id.endsWith(channelId)
+        );
+
+        // If channel isn't in the list, we can't scroll to it.
+        if (channelIndex === -1) {
+            console.warn(`[GUIDE_SCROLL_FAIL] Channel with ID/suffix "${channelId}" not found in visibleChannels list.`);
+            resolve(false);
+            return;
+        }
+
+        const foundChannel = guideState.visibleChannels[channelIndex];
+        console.log(`[GUIDE_SCROLL] Found channel for ID "${channelId}". Matched with "${foundChannel.id}". Scrolling to index ${channelIndex}.`);
+        
+        // Calculate the target scroll position
+        const targetScrollTop = channelIndex * ROW_HEIGHT;
+
+        // Initiate the scroll
+        UIElements.guideContainer.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
+
+        // --- NEW ROBUST WAITER ---
+        // Now, wait for the element to actually be rendered by the virtualization logic.
         let attempts = 0;
+        const maxAttempts = 100; // 100 * 50ms = 5 second timeout
+        const checkInterval = setInterval(() => {
+            const channelElement = UIElements.guideGrid.querySelector(`.channel-info[data-id="${foundChannel.id}"]`);
 
-        const checkChannel = setInterval(() => {
-            const channelIndex = guideState.visibleChannels.findIndex(ch => 
-                ch.id === channelId || ch.id.endsWith(channelId)
-            );
-
-            if (channelIndex > -1) {
-                const foundChannel = guideState.visibleChannels[channelIndex];
-                console.log(`[GUIDE_SCROLL] Found channel for ID "${channelId}". Matched with "${foundChannel.id}". Scrolling to index ${channelIndex}.`);
-                const targetScrollTop = channelIndex * ROW_HEIGHT;
-                UIElements.guideContainer.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
-                clearInterval(checkChannel);
+            if (channelElement) {
+                // Element is in the DOM! We can now safely proceed.
+                clearInterval(checkInterval);
+                console.log(`[GUIDE_SCROLL] Channel element for "${foundChannel.id}" is now visible in the DOM.`);
                 resolve(true);
             } else {
                 attempts++;
                 if (attempts >= maxAttempts) {
-                    clearInterval(checkChannel);
-                    console.warn(`[GUIDE_SCROLL_FAIL] Max attempts reached for channel ID ${channelId}.`);
-                    console.log(`[GUIDE_SCROLL_FAIL] Currently visible channels (${guideState.visibleChannels.length} total):`, guideState.visibleChannels.map(ch => ch.id));
+                    clearInterval(checkInterval);
+                    console.warn(`[GUIDE_SCROLL_FAIL] Max attempts reached waiting for channel element "${foundChannel.id}" to be rendered.`);
                     resolve(false);
                 }
             }
-        }, 50);
+        }, 50); // Check every 50ms
     });
 };
+
 
 
 // --- Event Listeners ---
