@@ -112,7 +112,7 @@
             background-color: #111827; /* Match body background */
             overflow: auto; /* Handles both vertical and horizontal scrolling */
             position: relative; /* For the now-line's absolute positioning relative to scrolled content */
-            /* padding-top: 0; This will be set by JS */
+            /* Removed padding-top here as it's controlled by JS based on collapsed header */
         }
         #guide-grid {
             display: grid;
@@ -127,12 +127,12 @@
 
         .sticky-corner {
             position: sticky;
-            top: 0;
+            top: 0; /* Ensure it sticks to the very top */
             left: 0;
-            z-index: 30; /* Highest z-index for the corner */
+            z-index: 40; /* Highest z-index for the corner */
             background-color: #1a2233; /* Match channel-info background */
             height: 64px; /* Explicit height, matches time-bar-cell */
-            width: var(--channel-col-width, 180px); /* Default or dynamic width - this needs to be calculated by JS if responsive */
+            width: var(--channel-col-width, 180px); /* Default or dynamic width */
             border-bottom: 1px solid #374151;
             border-right: 1px solid #374151;
             box-sizing: border-box;
@@ -151,7 +151,7 @@
             bottom: 0;
             width: 8px; /* Make it a narrow vertical bar */
             cursor: ew-resize; /* East-West resize cursor */
-            z-index: 35; /* Higher than sticky corner and time bar */
+            z-index: 45; /* Higher than sticky corner */
         }
         .channel-resize-handle::after {
             content: '';
@@ -173,8 +173,8 @@
         
         .time-bar-cell {
             position: sticky;
-            top: 0;
-            z-index: 25; /* Above programs, below corner */
+            top: 0; /* Ensure it sticks to the very top */
+            z-index: 35; /* Above programs, below corner */
             background-color: #111827; /* Match body/guide background */
             height: 64px; /* Explicit height */
             display: flex;
@@ -187,7 +187,7 @@
         .channel-info {
             position: sticky;
             left: 0;
-            z-index: 30; /* Above programs, below corner */
+            z-index: 30; /* Above programs, below corner and time bar */
             background-color: #1a2233; /* Darker than gray-800 */
             border-right: 1px solid #374151;
             box-sizing: border-box;
@@ -205,7 +205,8 @@
             position: absolute;
             top: 0;
             background-color: #ef4444; /* red-500 */
-            width: 2px; /* w-0.5 */
+            width: 2px; /* Fixed width for the line */
+            height: 100%; /* Make it span the entire height of its parent */
             z-index: 28; /* Should be above programs but below sticky headers for a cleaner look */
             pointer-events: none; /* Corrected: Use Tailwind class for pointer-events */
             transition: left 0.5s ease; /* Smooth movement when scrolling to now */
@@ -228,7 +229,7 @@
 
         /* --- NEW: Scroll-driven header animations --- */
         /* Default state of top headers */
-        #main-header, #unified-guide-header { /* Removed #desktop-tabs */
+        #main-header, #unified-guide-header {
             transition: transform 0.3s ease-out, opacity 0.3s ease-out, height 0.3s ease-out, padding 0.3s ease-out;
             transform: translateY(0);
             opacity: 1;
@@ -240,14 +241,13 @@
             padding-bottom: initial;
         }
         
-        /* Specific padding for main-header and desktop-tabs to control collapse */
+        /* Specific padding for main-header and unified-guide-header to control collapse */
         #main-header { padding: 1rem; } /* Equivalent to p-4 */
-        /* #desktop-tabs { padding-top: 0.75rem; padding-bottom: 0.75rem; } Removed this block */
         #unified-guide-header { padding: 0.5rem 1rem; } /* Equivalent to p-2 sm:p-4 */
 
         /* Collapsed state for top headers (applied to app-container by JS) */
         #app-container.header-collapsed #main-header,
-        #app-container.header-collapsed #unified-guide-header { /* Removed #desktop-tabs */
+        #app-container.header-collapsed #unified-guide-header {
             transform: translateY(-100%); /* Move entirely off-screen upwards */
             opacity: 0;
             height: 0 !important; /* Force height to 0 to collapse space */
@@ -261,7 +261,10 @@
         
         /* Adjust page-guide padding based on header state */
         #page-guide {
-            transition: padding-top 0.3s ease-out; /* Smooth transition for padding */
+            /* Keep transition for smooth padding change */
+            transition: padding-top 0.3s ease-out;
+            /* Set an initial padding-top here to make space for non-collapsed headers */
+            /* This will be dynamically adjusted by JS in guide.js depending on header state */
         }
         /* NEW: Visual indicator for programs with notifications */
         .programme-item.has-notification {
@@ -391,6 +394,24 @@
         .status-badge.completed { background-color: #22c55e; color: white; }
         .status-badge.error, .status-badge.cancelled { background-color: #f97316; color: white; }
 
+        /* Notification Modal Styling */
+        #notification-modal {
+            /* Changed from top-5 right-5 */
+            inset: 0; /* Occupy full screen */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent background */
+            pointer-events: none; /* Allow clicks to pass through to elements behind */
+        }
+        #notification-modal > div { /* This targets the inner div, which will be the actual notification box */
+            pointer-events: auto; /* Re-enable pointer events for the notification box itself */
+            position: absolute; /* Position it relative to the modal, but allow it to be at top-right */
+            top: 1.25rem; /* 20px, equivalent to Tailwind top-5 */
+            right: 1.25rem; /* 20px, equivalent to Tailwind right-5 */
+            max-width: 320px; /* Limit width */
+            text-align: center;
+        }
 
     </style>
 </head>
@@ -789,6 +810,7 @@
             <button id="mobile-nav-guide" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors active">
                 <span class="flex items-center gap-2"><svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg> TV Guide</span>
             </button>
+            <!-- NEW: Mobile Multi-View Nav -->
             <button id="mobile-nav-multiview" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors">
                 <span class="flex items-center gap-2"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12h16M12 4v16"></path></svg> Multi-View</span>
             </button>
@@ -854,7 +876,12 @@
         </div>
     </div>
     
-    <div id="notification-modal" class="hidden fixed top-5 right-5 bg-red-500 text-white py-2 px-4 rounded-lg shadow-lg z-[100]"><p id="notification-message"></p></div>
+    <!-- Notification Modal: Now with a centered overlay and top-right positioned actual notification box -->
+    <div id="notification-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-[100]">
+        <div class="bg-gray-900 text-white py-2 px-4 rounded-lg shadow-lg">
+            <p id="notification-message"></p>
+        </div>
+    </div>
 
     <div id="confirm-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
         <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6">
