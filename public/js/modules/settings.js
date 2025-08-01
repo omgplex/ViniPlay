@@ -102,16 +102,18 @@ export const updateUIFromSettings = () => {
     
     settings.searchScope = settings.searchScope || 'channels_only';
     settings.notificationLeadTime = settings.notificationLeadTime ?? 10;
-    // NEW: Set DVR defaults
-    settings.dvrPreRoll = settings.dvrPreRoll ?? 2;
-    settings.dvrPostRoll = settings.dvrPostRoll ?? 5;
+    // NEW: Set DVR defaults if they don't exist
+    settings.dvr = settings.dvr || {};
+    settings.dvr.preBufferMinutes = settings.dvr.preBufferMinutes ?? 1;
+    settings.dvr.postBufferMinutes = settings.dvr.postBufferMinutes ?? 2;
+
 
     // Update dropdowns and inputs
     UIElements.timezoneOffsetSelect.value = settings.timezoneOffset;
     UIElements.searchScopeSelect.value = settings.searchScope;
     UIElements.notificationLeadTimeInput.value = settings.notificationLeadTime;
-    UIElements.dvrPreRollInput.value = settings.dvrPreRoll;
-    UIElements.dvrPostRollInput.value = settings.dvrPostRoll;
+    UIElements.dvrPreBufferInput.value = settings.dvr.preBufferMinutes;
+    UIElements.dvrPostRollInput.value = settings.dvr.postBufferMinutes;
 
 
     // Render tables
@@ -134,7 +136,8 @@ export const updateUIFromSettings = () => {
 
     populateSelect('userAgentSelect', settings.userAgents || [], settings.activeUserAgentId);
     populateSelect('streamProfileSelect', settings.streamProfiles || [], settings.activeStreamProfileId);
-    populateSelect('recordingProfileSelect', settings.recordingProfiles || [], settings.activeRecordingProfileId);
+    populateSelect('dvrRecordingProfileSelect', settings.dvr?.recordingProfiles || [], settings.dvr?.activeRecordingProfileId);
+
 
     // Update button states based on selection
     const selectedProfile = (settings.streamProfiles || []).find(p => p.id === UIElements.streamProfileSelect.value);
@@ -145,9 +148,9 @@ export const updateUIFromSettings = () => {
     UIElements.editUserAgentBtn.disabled = !selectedUA;
     UIElements.deleteUserAgentBtn.disabled = !selectedUA || selectedUA.isDefault;
 
-    const selectedRecordingProfile = (settings.recordingProfiles || []).find(p => p.id === UIElements.recordingProfileSelect.value);
-    UIElements.editRecordingProfileBtn.disabled = !selectedRecordingProfile;
-    UIElements.deleteRecordingProfileBtn.disabled = !selectedRecordingProfile || selectedRecordingProfile.isDefault;
+    const selectedRecordingProfile = (settings.dvr?.recordingProfiles || []).find(p => p.id === UIElements.dvrRecordingProfileSelect.value);
+    UIElements.editDvrProfileBtn.disabled = !selectedRecordingProfile;
+    UIElements.deleteDvrProfileBtn.disabled = !selectedRecordingProfile || selectedRecordingProfile?.isDefault;
 
 
     // Ensure user list is always populated for admins when this page is viewed.
@@ -448,9 +451,10 @@ export function setupSettingsEventListeners() {
     });
 
     // --- NEW: DVR Settings ---
-    UIElements.dvrPreRollInput.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { dvrPreRoll: parseInt(e.target.value, 10) }));
-    UIElements.dvrPostRollInput.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { dvrPostRoll: parseInt(e.target.value, 10) }));
-    UIElements.recordingProfileSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { activeRecordingProfileId: e.target.value }));
+    UIElements.dvrPreRollInput.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { dvr: { ...guideState.settings.dvr, preBufferMinutes: parseInt(e.target.value, 10) } }));
+    UIElements.dvrPostRollInput.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { dvr: { ...guideState.settings.dvr, postBufferMinutes: parseInt(e.target.value, 10) } }));
+    UIElements.dvrRecordingProfileSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { dvr: { ...guideState.settings.dvr, activeRecordingProfileId: e.target.value } }));
+
 
     // --- Player Settings (User Agents & Stream Profiles) ---
     UIElements.addUserAgentBtn.addEventListener('click', () => openEditorModal('userAgent'));
@@ -492,18 +496,25 @@ export function setupSettingsEventListeners() {
     UIElements.userAgentSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { activeUserAgentId: e.target.value }));
     UIElements.streamProfileSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { activeStreamProfileId: e.target.value }));
 
-    // --- NEW: Recording Profiles ---
-    UIElements.addRecordingProfileBtn.addEventListener('click', () => openEditorModal('recordingProfile'));
-    UIElements.editRecordingProfileBtn.addEventListener('click', () => {
-        const profile = guideState.settings.recordingProfiles.find(p => p.id === UIElements.recordingProfileSelect.value);
+    // --- NEW & CORRECTED: Recording Profiles ---
+    UIElements.addDvrProfileBtn.addEventListener('click', () => openEditorModal('recordingProfile'));
+    UIElements.editDvrProfileBtn.addEventListener('click', () => {
+        const profile = (guideState.settings.dvr?.recordingProfiles || []).find(p => p.id === UIElements.dvrRecordingProfileSelect.value);
         if (profile) openEditorModal('recordingProfile', profile);
     });
-    UIElements.deleteRecordingProfileBtn.addEventListener('click', () => {
-        const selectedId = UIElements.recordingProfileSelect.value;
+    UIElements.deleteDvrProfileBtn.addEventListener('click', () => {
+        const selectedId = UIElements.dvrRecordingProfileSelect.value;
         showConfirm('Delete Recording Profile?', 'Are you sure?', async () => {
-            const updatedList = guideState.settings.recordingProfiles.filter(p => p.id !== selectedId);
-            const newActiveId = (guideState.settings.activeRecordingProfileId === selectedId) ? (updatedList[0]?.id || null) : guideState.settings.activeRecordingProfileId;
-            const settings = await saveGlobalSetting({ recordingProfiles: updatedList, activeRecordingProfileId: newActiveId });
+            const updatedList = (guideState.settings.dvr?.recordingProfiles || []).filter(p => p.id !== selectedId);
+            const newActiveId = (guideState.settings.dvr?.activeRecordingProfileId === selectedId) ? (updatedList[0]?.id || null) : guideState.settings.dvr?.activeRecordingProfileId;
+            const settingsToSave = {
+                dvr: {
+                    ...guideState.settings.dvr,
+                    recordingProfiles: updatedList,
+                    activeRecordingProfileId: newActiveId
+                }
+            };
+            const settings = await saveGlobalSetting(settingsToSave);
             if (settings) {
                 Object.assign(guideState.settings, settings);
                 updateUIFromSettings();
@@ -519,31 +530,35 @@ export function setupSettingsEventListeners() {
         const id = UIElements.editorId.value, type = UIElements.editorType.value, name = UIElements.editorName.value.trim(), value = UIElements.editorValue.value.trim();
         if (!name || !value) return showNotification('Name and value cannot be empty.', true);
         
-        const keyMap = {
-            'userAgent': 'userAgents',
-            'streamProfile': 'streamProfiles',
-            'recordingProfile': 'recordingProfiles'
-        };
-        const keyToSave = keyMap[type];
-        if (!keyToSave) return;
+        let settingsToSave = {};
+        const newItem = { id, name, isDefault: false };
 
-        const list = guideState.settings[keyToSave] || [];
-        const existingIndex = list.findIndex(item => item.id === id);
-        const newItem = {
-            id,
-            name,
-            command: type !== 'userAgent' ? value : undefined,
-            value: type === 'userAgent' ? value : undefined,
-            isDefault: false
-        };
-
-        if (existingIndex > -1) {
-            list[existingIndex] = { ...list[existingIndex], ...newItem };
+        if (type === 'userAgent') {
+            newItem.value = value;
+            const list = [...(guideState.settings.userAgents || [])];
+            const existingIndex = list.findIndex(item => item.id === id);
+            if (existingIndex > -1) list[existingIndex] = { ...list[existingIndex], ...newItem };
+            else list.push(newItem);
+            settingsToSave.userAgents = list;
+        } else if (type === 'streamProfile') {
+            newItem.command = value;
+            const list = [...(guideState.settings.streamProfiles || [])];
+            const existingIndex = list.findIndex(item => item.id === id);
+            if (existingIndex > -1) list[existingIndex] = { ...list[existingIndex], ...newItem };
+            else list.push(newItem);
+            settingsToSave.streamProfiles = list;
+        } else if (type === 'recordingProfile') {
+            newItem.command = value;
+            const list = [...(guideState.settings.dvr?.recordingProfiles || [])];
+            const existingIndex = list.findIndex(item => item.id === id);
+            if (existingIndex > -1) list[existingIndex] = { ...list[existingIndex], ...newItem };
+            else list.push(newItem);
+            settingsToSave.dvr = { ...guideState.settings.dvr, recordingProfiles: list };
         } else {
-            list.push(newItem);
+            return;
         }
 
-        const settings = await saveGlobalSetting({ [keyToSave]: list });
+        const settings = await saveGlobalSetting(settingsToSave);
         if (settings) {
             Object.assign(guideState.settings, settings);
             updateUIFromSettings();
