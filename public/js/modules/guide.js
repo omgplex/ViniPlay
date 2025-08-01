@@ -109,8 +109,8 @@ export function openProgramDetails(progItem) {
                     channelName: channelName,
                     channelLogo: channelLogo,
                     programTitle: programData.title,
-                    programStart: programData.start,
-                    programStop: programData.stop,
+                    programStart: programData.programStart, // Corrected from programStart to programStart
+                    programStop: programData.programStop,   // Corrected from programStop to programStop
                     programDesc: programData.desc,
                     programId: programData.programId
                 });
@@ -134,6 +134,11 @@ export function openProgramDetails(progItem) {
 
         if (isProgramRelevant) {
             programDetailsRecordBtn.classList.remove('hidden');
+            // TEMPORARY DEBUGGING LINE: Force display to block to override any CSS `display: none`
+            programDetailsRecordBtn.style.display = 'block';
+            console.log('[DVR_DEBUG] Attempting to show record button. Current display style:', programDetailsRecordBtn.style.display);
+
+
             let buttonText = 'Record';
             let buttonClass = 'bg-red-600';
             let hoverClass = 'hover:bg-red-700';
@@ -164,6 +169,7 @@ export function openProgramDetails(progItem) {
             }
             
             programDetailsRecordBtn.textContent = buttonText;
+            // Ensure tailwind classes are reapplied after temporary style override
             programDetailsRecordBtn.className = `font-bold py-2 px-4 rounded-md transition-colors ${buttonClass} ${hoverClass} text-white`;
             programDetailsRecordBtn.disabled = isDisabled;
 
@@ -177,6 +183,8 @@ export function openProgramDetails(progItem) {
 
         } else {
             programDetailsRecordBtn.classList.add('hidden');
+            programDetailsRecordBtn.style.display = 'none'; // Explicitly hide
+            console.log('[DVR_DEBUG] Hiding record button.');
         }
     }
     
@@ -375,7 +383,7 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
             timeBarCellEl.innerHTML = '';
             for (let i = 0; i < guideState.guideDurationHours; i++) {
                 const time = new Date(guideStartUtc.getTime() + i * 3600 * 1000);
-                timeBarCellEl.innerHTML += `<div class="absolute top-0 bottom-0 flex items-center justify-start px-2 text-xs text-gray-400 border-r border-gray-700/50" style="left: ${i * guideState.hourWidthPixels}px; width: ${guideState.hourWidthPixels}px;">${time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>`;
+                timeBarCellEl.innerHTML += `<div class="absolute top-0 bottom-0 flex items-center justify-start px-2 text-xs text-gray-400 border-r border-gray-700/50" style="left: ${i * guideState.hourWidthPixels}px; width:${guideState.hourWidthPixels}px;">${time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>`;
             }
             timeBarCellEl.style.width = `${timelineWidth}px`;
         }
