@@ -297,8 +297,7 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
                         const notificationStableId = n.channelId.includes('_') ? n.channelId.substring(n.channelId.lastIndexOf('_')) : n.channelId;
                         return notificationStableId === currentChannelStableId &&
                                n.programStart === progStart.toISOString() &&
-                               n.programStop === progStop.toISOString() &&
-                               n.status === 'pending'; // Only show for pending notifications
+                               n.programStop === progStop.toISOString();
                     });
                     const notificationClass = hasNotification ? 'has-notification' : '';
 
