@@ -515,7 +515,8 @@ export function setupSettingsEventListeners() {
         const selectedId = UIElements.dvrRecordingProfileSelect.value;
         showConfirm('Delete Recording Profile?', 'Are you sure?', async () => {
             const updatedList = (guideState.settings.dvr?.recordingProfiles || []).filter(p => p.id !== selectedId);
-            const newActiveId = (guideState.settings.dvr?.activeRecordingProfileId === selectedId) ? (updatedList[0]?.id || null) : guideState.dvr?.settings.activeRecordingProfileId;
+            // FIX: Corrected logical typo here
+            const newActiveId = (guideState.settings.dvr?.activeRecordingProfileId === selectedId) ? (updatedList[0]?.id || null) : guideState.settings.dvr?.activeRecordingProfileId;
             const settingsToSave = {
                 dvr: {
                     ...guideState.settings.dvr,
@@ -631,4 +632,3 @@ export function setupSettingsEventListeners() {
         });
     });
 }
-```
