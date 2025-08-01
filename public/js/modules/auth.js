@@ -31,7 +31,8 @@ const initializeUIElements = () => {
     UIElements.stickyCorner = document.querySelector('.sticky-corner');
     UIElements.channelColumnResizeHandle = document.getElementById('channel-column-resize-handle');
 
-    // Program Details Modal Buttons
+    // Program Details Modal and its Buttons
+    UIElements.programDetailsModal = document.getElementById('program-details-modal'); // ADDED THIS LINE
     UIElements.programDetailsNotifyBtn = document.getElementById('program-details-notify-btn');
     UIElements.programDetailsRecordBtn = document.getElementById('program-details-record-btn');
 
