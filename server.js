@@ -18,15 +18,21 @@ const sqlite3 = require('sqlite3').verbose();
 const SQLiteStore = require('connect-sqlite3')(session);
 const xmlJS = require('xml-js');
 const webpush = require('web-push');
+const schedule = require('node-schedule'); // NEW: For DVR scheduling
 
 const app = express();
 const port = 8998;
 const saltRounds = 10;
-const sourceRefreshTimers = new Map(); // NEW: Manages individual source refresh timers
+const sourceRefreshTimers = new Map();
 let notificationCheckInterval = null;
+
+// --- NEW: DVR State ---
+const activeDvrJobs = new Map(); // Stores active node-schedule jobs
+const runningFFmpegProcesses = new Map(); // Stores PIDs of running ffmpeg recordings
 
 // --- Configuration ---
 const DATA_DIR = '/data';
+const DVR_DIR = '/dvr'; // NEW: DVR recordings directory
 const VAPID_KEYS_PATH = path.join(DATA_DIR, 'vapid.json');
 const SOURCES_DIR = path.join(DATA_DIR, 'sources');
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -49,34 +55,21 @@ try {
         fs.writeFileSync(VAPID_KEYS_PATH, JSON.stringify(vapidKeys, null, 2));
         console.log('[Push] New VAPID keys generated and saved.');
     }
-    // Configure web-push with the loaded/generated keys
-    webpush.setVapidDetails(
-        'mailto:example@example.com', // This can be a placeholder
-        vapidKeys.publicKey,
-        vapidKeys.privateKey
-    );
+    webpush.setVapidDetails('mailto:example@example.com', vapidKeys.publicKey, vapidKeys.privateKey);
 } catch (error) {
     console.error('[Push] FATAL: Could not load or generate VAPID keys.', error);
 }
 
-
-// Ensure the data and public directories exist.
+// Ensure the data and dvr directories exist.
 try {
-    if (!fs.existsSync(DATA_DIR)) {
-        fs.mkdirSync(DATA_DIR, { recursive: true });
-        console.log(`[INIT] Created data directory: ${DATA_DIR}`);
-    }
-    if (!fs.existsSync(PUBLIC_DIR)) {
-        fs.mkdirSync(PUBLIC_DIR, { recursive: true });
-        console.log(`[INIT] Created public directory: ${PUBLIC_DIR}`);
-    }
-    if (!fs.existsSync(SOURCES_DIR)) {
-        fs.mkdirSync(SOURCES_DIR, { recursive: true });
-        console.log(`[INIT] Created sources directory: ${SOURCES_DIR}`);
-    }
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true });
+    if (!fs.existsSync(SOURCES_DIR)) fs.mkdirSync(SOURCES_DIR, { recursive: true });
+    if (!fs.existsSync(DVR_DIR)) fs.mkdirSync(DVR_DIR, { recursive: true }); // NEW: Ensure DVR dir exists
+    console.log(`[INIT] All required directories checked/created.`);
 } catch (mkdirError) {
     console.error(`[INIT] FATAL: Failed to create necessary directories: ${mkdirError.message}`);
-    process.exit(1); // Exit if cannot create essential directories
+    process.exit(1);
 }
 
 
@@ -84,97 +77,54 @@ try {
 const db = new sqlite3.Database(DB_PATH, (err) => {
     if (err) {
         console.error("[DB] Error opening database:", err.message);
-        process.exit(1); // Exit if database cannot be opened
+        process.exit(1);
     } else {
         console.log("[DB] Connected to the SQLite database.");
         db.serialize(() => {
-            db.run(`CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE,
-                password TEXT,
-                isAdmin INTEGER DEFAULT 0
-            )`, (createErr) => {
-                if (createErr) console.error("[DB] Error creating 'users' table:", createErr.message);
-                else console.log("[DB] 'users' table checked/created.");
-            });
-            db.run(`CREATE TABLE IF NOT EXISTS user_settings (
-                user_id INTEGER NOT NULL,
-                key TEXT NOT NULL,
-                value TEXT,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-                PRIMARY KEY (user_id, key)
-            )`, (createErr) => {
-                if (createErr) console.error("[DB] Error creating 'user_settings' table:", createErr.message);
-                else console.log("[DB] 'user_settings' table checked/created.");
-            });
-            // ADDED: multiview_layouts table
-            db.run(`CREATE TABLE IF NOT EXISTS multiview_layouts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                name TEXT NOT NULL,
-                layout_data TEXT NOT NULL,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            )`, (createErr) => {
-                if (createErr) console.error("[DB] Error creating 'multiview_layouts' table:", createErr.message);
-                else console.log("[DB] 'multiview_layouts' table checked/created.");
-            });
-            db.run(`CREATE TABLE IF NOT EXISTS notifications (
+            // Existing tables...
+            db.run(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, isAdmin INTEGER DEFAULT 0)`);
+            db.run(`CREATE TABLE IF NOT EXISTS user_settings (user_id INTEGER NOT NULL, key TEXT NOT NULL, value TEXT, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY (user_id, key))`);
+            db.run(`CREATE TABLE IF NOT EXISTS multiview_layouts (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, name TEXT NOT NULL, layout_data TEXT NOT NULL, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)`);
+            db.run(`CREATE TABLE IF NOT EXISTS notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, channelId TEXT NOT NULL, channelName TEXT NOT NULL, channelLogo TEXT, programTitle TEXT NOT NULL, programDesc TEXT, programStart TEXT NOT NULL, programStop TEXT NOT NULL, notificationTime TEXT NOT NULL, programId TEXT NOT NULL, status TEXT DEFAULT 'pending', triggeredAt TEXT, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)`);
+            db.run(`CREATE TABLE IF NOT EXISTS push_subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, endpoint TEXT UNIQUE NOT NULL, p256dh TEXT NOT NULL, auth TEXT NOT NULL, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)`);
+
+            // --- NEW: DVR Database Tables ---
+            db.run(`CREATE TABLE IF NOT EXISTS dvr_jobs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
                 channelId TEXT NOT NULL,
                 channelName TEXT NOT NULL,
-                channelLogo TEXT,
                 programTitle TEXT NOT NULL,
-                programDesc TEXT,
-                programStart TEXT NOT NULL,
-                programStop TEXT NOT NULL,
-                notificationTime TEXT NOT NULL,
-                programId TEXT NOT NULL,
-                status TEXT DEFAULT 'pending', -- NEW: 'pending', 'sent', 'expired'
-                triggeredAt TEXT,              -- NEW: Timestamp when notification was sent/expired
+                startTime TEXT NOT NULL,
+                endTime TEXT NOT NULL,
+                status TEXT NOT NULL, -- scheduled, recording, completed, error, cancelled
+                ffmpeg_pid INTEGER,
+                filePath TEXT,
+                profileId TEXT,
+                userAgentId TEXT,
+                preBufferMinutes INTEGER,
+                postBufferMinutes INTEGER,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            )`, (createErr) => {
-                if (createErr) console.error("[DB] Error creating 'notifications' table:", createErr.message);
-                else console.log("[DB] 'notifications' table checked/created.");
-
-                // --- Database Migration: Add 'status' and 'triggeredAt' columns if they don't exist ---
-                db.all("PRAGMA table_info(notifications)", (err, rows) => { // Changed db.get to db.all
-                    if (err) {
-                        console.error("[DB_MIGRATION] Error checking notifications table info:", err.message);
-                        return;
-                    }
-                    const columnNames = rows.map(row => row.name);
-                    
-                    if (!columnNames.includes('status')) {
-                        db.run("ALTER TABLE notifications ADD COLUMN status TEXT DEFAULT 'pending'", (alterErr) => {
-                            if (alterErr) console.error("[DB_MIGRATION] Error adding 'status' column:", alterErr.message);
-                            else console.log("[DB_MIGRATION] Added 'status' column to 'notifications' table.");
-                        });
-                    } else {
-                        console.log("[DB_MIGRATION] 'status' column already exists in 'notifications' table.");
-                    }
-
-                    if (!columnNames.includes('triggeredAt')) {
-                        db.run("ALTER TABLE notifications ADD COLUMN triggeredAt TEXT", (alterErr) => {
-                            if (alterErr) console.error("[DB_MIGRATION] Error adding 'triggeredAt' column:", alterErr.message);
-                            else console.log("[DB_MIGRATION] Added 'triggeredAt' column to 'notifications' table.");
-                        });
-                    } else {
-                        console.log("[DB_MIGRATION] 'triggeredAt' column already exists in 'notifications' table.");
-                    }
-                });
-                // --- End Database Migration ---
+            )`, (err) => {
+                if(err) console.error("[DB] Error creating 'dvr_jobs' table:", err.message);
+                else console.log("[DB] 'dvr_jobs' table checked/created.");
             });
-            db.run(`CREATE TABLE IF NOT EXISTS push_subscriptions (
+
+            db.run(`CREATE TABLE IF NOT EXISTS dvr_recordings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER,
                 user_id INTEGER NOT NULL,
-                endpoint TEXT UNIQUE NOT NULL,
-                p256dh TEXT NOT NULL,
-                auth TEXT NOT NULL,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            )`, (createErr) => {
-                if (createErr) console.error("[DB] Error creating 'push_subscriptions' table:", createErr.message);
-                else console.log("[DB] 'push_subscriptions' table checked/created.");
+                channelName TEXT NOT NULL,
+                programTitle TEXT NOT NULL,
+                startTime TEXT NOT NULL,
+                durationSeconds INTEGER,
+                fileSizeBytes INTEGER,
+                filePath TEXT UNIQUE NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (job_id) REFERENCES dvr_jobs(id) ON DELETE SET NULL
+            )`, (err) => {
+                if(err) console.error("[DB] Error creating 'dvr_recordings' table:", err.message);
+                else console.log("[DB] 'dvr_recordings' table checked/created.");
             });
         });
     }
@@ -182,59 +132,37 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
 
 // --- Middleware ---
 app.use(express.static(PUBLIC_DIR));
+app.use('/dvr', requireAuth, express.static(DVR_DIR)); // NEW: Serve recorded files statically
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Log session secret status
 const sessionSecret = process.env.SESSION_SECRET;
-if (!sessionSecret || sessionSecret === 'fallback-secret-key-for-dev' || sessionSecret === 'replace_this_with_a_very_long_random_and_secret_string') {
-    console.warn('[SECURITY] Using a weak or default SESSION_SECRET. Please set a strong, random value in your .env file!');
-} else {
-    console.log('[SECURITY] SESSION_SECRET is configured.');
+if (!sessionSecret || sessionSecret.includes('replace_this')) {
+    console.warn('[SECURITY] Using a weak or default SESSION_SECRET.');
 }
 
 app.use(
   session({
-    store: new SQLiteStore({
-        db: 'viniplay.db',
-        dir: DATA_DIR,
-        table: 'sessions'
-    }),
+    store: new SQLiteStore({ db: 'viniplay.db', dir: DATA_DIR, table: 'sessions' }),
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
-    cookie: {
-        maxAge: 30 * 24 * 60 * 60 * 1000,
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production' // Use secure cookies in production
-    },
+    cookie: { maxAge: 30 * 24 * 60 * 60 * 1000, httpOnly: true, secure: process.env.NODE_ENV === 'production' },
   })
 );
 
 // --- Authentication Middleware ---
 const requireAuth = (req, res, next) => {
-    if (req.session && req.session.userId) {
-        console.log(`[AUTH] User ${req.session.username} (ID: ${req.session.userId}) authenticated for ${req.path}`);
-        return next();
-    } else {
-        console.warn(`[AUTH] Authentication required for ${req.path}. Session invalid or missing.`);
-        return res.status(401).json({ error: 'Authentication required.' });
-    }
+    if (req.session && req.session.userId) return next();
+    return res.status(401).json({ error: 'Authentication required.' });
 };
-
 const requireAdmin = (req, res, next) => {
-    if (req.session && req.session.isAdmin) {
-        console.log(`[AUTH] Admin user ${req.session.username} (ID: ${req.session.userId}) authorized for ${req.path}`);
-        return next();
-    } else {
-        console.warn(`[AUTH] Admin privileges required for ${req.path}. User is not admin or session invalid.`);
-        return res.status(403).json({ error: 'Administrator privileges required.' });
-    }
+    if (req.session && req.session.isAdmin) return next();
+    return res.status(403).json({ error: 'Administrator privileges required.' });
 };
 
 // --- Helper Functions ---
 function getSettings() {
-    console.log('[SETTINGS] Attempting to load settings...');
     if (!fs.existsSync(SETTINGS_PATH)) {
         console.log('[SETTINGS] settings.json not found, creating default settings.');
         const defaultSettings = {
@@ -245,36 +173,41 @@ function getSettings() {
                 { id: 'ffmpeg-default', name: 'ffmpeg (Built in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: true },
                 { id: 'redirect', name: 'Redirect (No Transcoding)', command: 'redirect', isDefault: false }
             ],
+            // --- NEW: DVR Settings ---
+            dvr: {
+                preBufferMinutes: 1,
+                postBufferMinutes: 2,
+                activeRecordingProfileId: 'dvr-mp4-default',
+                recordingProfiles: [{
+                    id: 'dvr-mp4-default',
+                    name: 'Default MP4 (H.264/AAC)',
+                    command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"',
+                    isDefault: true
+                }]
+            },
             activeUserAgentId: `default-ua-${Date.now()}`,
             activeStreamProfileId: 'ffmpeg-default',
             searchScope: 'channels_only',
             notificationLeadTime: 10
-            // REMOVED: timezoneOffset is no longer set by default on the server
         };
-        try {
-            fs.writeFileSync(SETTINGS_PATH, JSON.stringify(defaultSettings, null, 2));
-            console.log('[SETTINGS] Default settings created and saved.');
-        } catch (writeErr) {
-            console.error('[SETTINGS] Error saving default settings:', writeErr);
-        }
+        fs.writeFileSync(SETTINGS_PATH, JSON.stringify(defaultSettings, null, 2));
         return defaultSettings;
     }
     try {
         const settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
-        // Ensure defaults for new settings if existing file doesn't have them
-        if (!settings.m3uSources) settings.m3uSources = [];
-        if (!settings.epgSources) settings.epgSources = [];
-        // Ensure each source has a refreshHours property
-        settings.m3uSources.forEach(s => { if (s.refreshHours === undefined) s.refreshHours = 0; });
-        settings.epgSources.forEach(s => { if (s.refreshHours === undefined) s.refreshHours = 0; });
-
-        if (settings.notificationLeadTime === undefined) settings.notificationLeadTime = 10;
-        console.log('[SETTINGS] Settings loaded successfully.');
+        // Ensure defaults for new settings
+        if (!settings.dvr) {
+            settings.dvr = {
+                preBufferMinutes: 1,
+                postBufferMinutes: 2,
+                activeRecordingProfileId: 'dvr-mp4-default',
+                recordingProfiles: [{ id: 'dvr-mp4-default', name: 'Default MP4 (H.264/AAC)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: true }]
+            };
+        }
         return settings;
     } catch (e) {
         console.error("[SETTINGS] Could not parse settings.json, returning default. Error:", e.message);
-        // Fallback to minimal defaults if file is corrupted
-        return { m3uSources: [], epgSources: [], notificationLeadTime: 10 };
+        return {}; // Return empty to avoid crashes, will be repopulated on next save
     }
 }
 
@@ -282,7 +215,6 @@ function saveSettings(settings) {
     try {
         fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
         console.log('[SETTINGS] Settings saved successfully.');
-        // After saving, immediately update the background refresh schedules
         updateAndScheduleSourceRefreshes();
     } catch (e) {
         console.error("[SETTINGS] Error saving settings:", e);
@@ -508,8 +440,6 @@ async function processAndMergeSources() {
         console.error(`[EPG] Error writing merged EPG JSON file: ${writeErr.message}`);
     }
     
-    // This function no longer saves settings itself. The caller should do it.
-    // This prevents recursive calls from updateAndScheduleSourceRefreshes -> saveSettings -> processAndMergeSources
     return { success: true, message: 'Sources merged successfully.', updatedSettings: settings };
 }
 
@@ -536,19 +466,14 @@ const updateAndScheduleSourceRefreshes = () => {
                 const timeoutId = setTimeout(async () => {
                     console.log(`[SCHEDULER_RUN] Auto-refresh triggered for "${source.name}".`);
                     try {
-                        // The processAndMergeSources function already handles fetching from URLs.
-                        // We just need to trigger it and then save the updated statuses.
                         const result = await processAndMergeSources();
                         if(result.success) {
-                            // We need to save the settings with updated lastUpdated timestamps.
-                            // Use a version of saveSettings that doesn't re-trigger this scheduler to avoid loops.
                             fs.writeFileSync(SETTINGS_PATH, JSON.stringify(result.updatedSettings, null, 2));
                             console.log(`[SCHEDULER_RUN] Successfully refreshed and processed sources for "${source.name}".`);
                         }
                     } catch (error) {
                         console.error(`[SCHEDULER_RUN] Auto-refresh for "${source.name}" failed:`, error.message);
                     }
-                    // Reschedule for the next interval
                     scheduleNext();
                 }, source.refreshHours * 3600 * 1000);
 
@@ -836,7 +761,6 @@ app.get('/api/config', requireAuth, (req, res) => {
         db.all(`SELECT key, value FROM user_settings WHERE user_id = ?`, [req.session.userId], (err, rows) => {
             if (err) {
                 console.error("[API] Error fetching user settings:", err);
-                // Still send global settings if user settings fail
                 return res.status(200).json(config);
             }
             if (rows) {
@@ -845,11 +769,10 @@ app.get('/api/config', requireAuth, (req, res) => {
                     try {
                         userSettings[row.key] = JSON.parse(row.value);
                     } catch (e) {
-                        userSettings[row.key] = row.value; // Store as string if not valid JSON
+                        userSettings[row.key] = row.value;
                         console.warn(`[API] User setting key "${row.key}" could not be parsed as JSON. Storing as raw string.`);
                     }
                 });
-                // Merge user settings on top of global settings (user settings override global)
                 config.settings = { ...config.settings, ...userSettings };
                 console.log(`[API] Merged user settings for user ID: ${req.session.userId}`);
             }
@@ -883,7 +806,7 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
     console.log(`[SOURCES_API] ${id ? 'Updating' : 'Adding'} source. Type: ${sourceType}, Name: ${name}`);
 
     if (!sourceType || !name) {
-        if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path); // Clean up uploaded file
+        if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
         console.warn('[SOURCES_API] Source type or name missing for source operation.');
         return res.status(400).json({ error: 'Source type and name are required.' });
     }
@@ -894,7 +817,7 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
     if (id) { // Update existing source
         const sourceIndex = sourceList.findIndex(s => s.id === id);
         if (sourceIndex === -1) {
-            if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path); // Clean up uploaded file
+            if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
             console.warn(`[SOURCES_API] Source ID ${id} not found for update.`);
             return res.status(404).json({ error: 'Source to update not found.' });
         }
@@ -937,7 +860,6 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
             sourceToUpdate.path = url;
             sourceToUpdate.type = 'url';
         } else if (sourceToUpdate.type === 'file' && !req.file && (!sourceToUpdate.path || !fs.existsSync(sourceToUpdate.path))) {
-            // This case handles existing file source where no new file is uploaded and original path is missing
             console.warn(`[SOURCES_API] Existing file source ${id} has no file and no new file/URL provided.`);
             return res.status(400).json({ error: 'Existing file source requires a new file if original is missing.' });
         }
@@ -945,7 +867,7 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
 
         saveSettings(settings);
         console.log(`[SOURCES_API] Source ${id} updated successfully.`);
-        res.json({ success: true, message: 'Source updated successfully.', settings: getSettings() }); // Re-fetch to send merged settings
+        res.json({ success: true, message: 'Source updated successfully.', settings: getSettings() });
 
     } else { // Add new source
         const newSource = {
@@ -1006,8 +928,8 @@ app.put('/api/sources/:sourceType/:id', requireAuth, (req, res) => {
 
     const source = sourceList[sourceIndex];
     source.name = name ?? source.name;
-    source.isActive = isActive ?? source.isActive; // Handle boolean conversion from client if needed
-    if (source.type === 'url' && newPath !== undefined) { // Only allow path update for URL types here
+    source.isActive = isActive ?? source.isActive;
+    if (source.type === 'url' && newPath !== undefined) {
         source.path = newPath;
     }
     source.lastUpdated = new Date().toISOString();
@@ -1054,7 +976,6 @@ app.post('/api/process-sources', requireAuth, async (req, res) => {
     try {
         const result = await processAndMergeSources();
         if (result.success) {
-            // Manually save settings here because processAndMergeSources no longer does it
             fs.writeFileSync(SETTINGS_PATH, JSON.stringify(result.updatedSettings, null, 2));
             console.log('[API] Source processing completed and settings saved (manual trigger).');
             res.json({ success: true, message: 'Sources merged successfully.'});
@@ -1076,11 +997,8 @@ app.post('/api/save/settings', requireAuth, async (req, res) => {
         
         const oldTimezone = currentSettings.timezoneOffset;
 
-        // Merge incoming settings, ensuring we don't accidentally save user-specific settings as global
         const updatedSettings = { ...currentSettings };
         for (const key in req.body) {
-            // These keys are explicitly managed as user-specific on the client,
-            // so they should not be written to the global settings.json
             if (!['favorites', 'playerDimensions', 'programDetailsDimensions', 'recentChannels', 'multiviewLayouts'].includes(key)) {
                 updatedSettings[key] = req.body[key];
             } else {
@@ -1090,17 +1008,15 @@ app.post('/api/save/settings', requireAuth, async (req, res) => {
 
         saveSettings(updatedSettings);
         
-        // Trigger re-processing if timezone changed
         if (updatedSettings.timezoneOffset !== oldTimezone) {
             console.log("[API] Timezone setting changed, re-processing sources.");
             const result = await processAndMergeSources();
              if (result.success) {
-                // Manually save settings here after processing
                 fs.writeFileSync(SETTINGS_PATH, JSON.stringify(result.updatedSettings, null, 2));
              }
         }
 
-        res.json({ success: true, message: 'Settings saved.', settings: getSettings() }); // Return the full, current global settings
+        res.json({ success: true, message: 'Settings saved.', settings: getSettings() });
     } catch (error) {
         console.error("[API] Error saving global settings:", error);
         res.status(500).json({ error: "Could not save settings. Check server logs." });
@@ -1118,7 +1034,6 @@ app.post('/api/user/settings', requireAuth, (req, res) => {
     const valueJson = JSON.stringify(value);
     const userId = req.session.userId;
 
-    // UPSERT operation: try to update, if no rows changed, then insert
     db.run(
         `UPDATE user_settings SET value = ? WHERE user_id = ? AND key = ?`,
         [valueJson, userId, key],
@@ -1173,7 +1088,6 @@ app.post('/api/notifications/subscribe', requireAuth, (req, res) => {
 
     const { endpoint, keys: { p256dh, auth } } = subscription;
 
-    // UPSERT logic: Insert or update if endpoint already exists
     db.run(
         `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) VALUES (?, ?, ?, ?)
          ON CONFLICT(endpoint) DO UPDATE SET user_id=excluded.user_id, p256dh=excluded.p256dh, auth=excluded.auth`,
@@ -1289,7 +1203,6 @@ app.delete('/api/data', requireAuth, (req, res) => {
             console.log(`[API] Recreated empty sources directory: ${SOURCES_DIR}`);
         }
         
-        // Delete user-specific data from DB
         db.run(`DELETE FROM user_settings WHERE user_id = ?`, [req.session.userId], (err) => {
             if (err) console.error(`[API] Error clearing user settings for user ${req.session.userId}:`, err.message);
             else console.log(`[API] Cleared user settings for user ${req.session.userId}.`);
@@ -1347,17 +1260,15 @@ app.get('/stream', requireAuth, (req, res) => {
         .replace(/{streamUrl}/g, streamUrl)
         .replace(/{userAgent}|{clientUserAgent}/g, userAgent.value);
         
-    // Split command into arguments, handling quoted strings
     const args = (commandTemplate.match(/(?:[^\s"]+|"[^"]*")+/g) || []).map(arg => arg.replace(/^"|"$/g, ''));
 
     console.log(`[STREAM] FFmpeg command args: ${args.join(' ')}`);
     const ffmpeg = spawn('ffmpeg', args);
-    res.setHeader('Content-Type', 'video/mp2t'); // Standard MIME type for MPEG Transport Stream
+    res.setHeader('Content-Type', 'video/mp2t');
     
     ffmpeg.stdout.pipe(res);
     
     ffmpeg.stderr.on('data', (data) => {
-        // Log FFMPEG errors to the server console, but don't send to client directly
         console.error(`[FFMPEG_ERROR] Stream: ${streamUrl} - ${data.toString().trim()}`);
     });
 
@@ -1367,10 +1278,10 @@ app.get('/stream', requireAuth, (req, res) => {
         } else {
             console.log(`[STREAM] ffmpeg process for ${streamUrl} exited gracefully.`);
         }
-        if (!res.headersSent) { // Only end response if headers haven't been sent yet
+        if (!res.headersSent) {
              res.status(500).send('FFmpeg stream ended unexpectedly or failed to start.');
         } else {
-            res.end(); // End the response when ffmpeg closes
+            res.end();
         }
     });
 
@@ -1383,7 +1294,7 @@ app.get('/stream', requireAuth, (req, res) => {
 
     req.on('close', () => {
         console.log(`[STREAM] Client closed connection for ${streamUrl}. Killing ffmpeg process (PID: ${ffmpeg.pid}).`);
-        ffmpeg.kill('SIGKILL'); // Force kill ffmpeg process
+        ffmpeg.kill('SIGKILL');
     });
 });
 
@@ -1395,7 +1306,6 @@ app.get('/api/multiview/layouts', requireAuth, (req, res) => {
             console.error('[LAYOUT_API] Error fetching layouts:', err.message);
             return res.status(500).json({ error: 'Could not retrieve layouts.' });
         }
-        // Parse the layout_data from JSON string to an object
         const layouts = rows.map(row => ({
             ...row,
             layout_data: JSON.parse(row.layout_data)
@@ -1451,7 +1361,6 @@ async function checkAndSendNotifications() {
     try {
         const now = new Date();
         const nowIso = now.toISOString();
-        // Select only pending notifications where notificationTime is due
         const dueNotifications = await new Promise((resolve, reject) => {
             db.all("SELECT * FROM notifications WHERE status = 'pending' AND notificationTime <= ?", [nowIso], (err, rows) => {
                 if (err) reject(err);
@@ -1467,14 +1376,12 @@ async function checkAndSendNotifications() {
 
         for (const notification of dueNotifications) {
             console.log(`[PUSH_CHECKER] Processing notification ID: ${notification.id} for "${notification.programTitle}".`);
-            // Check if the program has already ended
             if (new Date(notification.programStop).getTime() <= now.getTime()) {
-                // Program has ended, mark notification as 'expired'
                 db.run("UPDATE notifications SET status = 'expired', triggeredAt = ? WHERE id = ?", [nowIso, notification.id], (err) => {
                     if (err) console.error(`[PUSH_CHECKER] Error marking notification ${notification.id} as expired:`, err.message);
                 });
                 console.log(`[PUSH_CHECKER] Notification for "${notification.programTitle}" (ID: ${notification.id}) expired. Program already ended.`);
-                continue; // Skip sending this notification
+                continue;
             }
 
             const subscriptions = await new Promise((resolve, reject) => {
@@ -1510,14 +1417,13 @@ async function checkAndSendNotifications() {
                 return webpush.sendNotification(pushSubscription, payload)
                     .then(() => {
                         console.log(`[PUSH_CHECKER] Notification "${notification.programTitle}" (ID: ${notification.id}) sent to endpoint: ${sub.endpoint}`);
-                        // Mark notification as 'sent' after successful delivery
                         db.run("UPDATE notifications SET status = 'sent', triggeredAt = ? WHERE id = ?", [nowIso, notification.id], (err) => {
                             if (err) console.error(`[PUSH_CHECKER] Error updating notification ${notification.id} status to sent:`, err.message);
                         });
                     })
                     .catch(error => {
                         console.error(`[PUSH_CHECKER] Error sending notification ${notification.id} to ${sub.endpoint}:`, error.statusCode, error.body || error.message);
-                        if (error.statusCode === 410 || error.statusCode === 404) { // 410 Gone means subscription is no longer valid
+                        if (error.statusCode === 410 || error.statusCode === 404) {
                             console.log(`[PUSH_CHECKER] Subscription expired or invalid (410/404). Deleting endpoint: ${sub.endpoint}`);
                             db.run("DELETE FROM push_subscriptions WHERE endpoint = ?", [sub.endpoint], (err) => {
                                 if (err) console.error(`[PUSH_CHECKER] Error deleting expired subscription ${sub.endpoint}:`, err.message);
@@ -1534,19 +1440,236 @@ async function checkAndSendNotifications() {
 }
 
 
+// --- NEW: DVR Engine ---
+
+/**
+ * Starts an ffmpeg recording process for a given DVR job.
+ * @param {object} job - The DVR job object from the database.
+ */
+function startRecording(job) {
+    console.log(`[DVR] Starting recording for job ${job.id}: "${job.programTitle}"`);
+    const settings = getSettings();
+    const allChannels = parseM3U(fs.existsSync(MERGED_M3U_PATH) ? fs.readFileSync(MERGED_M3U_PATH, 'utf-8') : '');
+    const channel = allChannels.find(c => c.id === job.channelId);
+
+    if (!channel) {
+        console.error(`[DVR] Cannot start recording job ${job.id}: Channel ID ${job.channelId} not found in M3U.`);
+        db.run("UPDATE dvr_jobs SET status = 'error', ffmpeg_pid = NULL WHERE id = ?", [job.id]);
+        return;
+    }
+
+    const recProfile = (settings.dvr.recordingProfiles || []).find(p => p.id === settings.dvr.activeRecordingProfileId);
+    if (!recProfile) {
+        console.error(`[DVR] Cannot start recording job ${job.id}: Active recording profile not found.`);
+        db.run("UPDATE dvr_jobs SET status = 'error', ffmpeg_pid = NULL WHERE id = ?", [job.id]);
+        return;
+    }
+
+    const userAgent = (settings.userAgents || []).find(ua => ua.id === job.userAgentId);
+    if (!userAgent) {
+        console.error(`[DVR] Cannot start recording job ${job.id}: User agent not found.`);
+        db.run("UPDATE dvr_jobs SET status = 'error', ffmpeg_pid = NULL WHERE id = ?", [job.id]);
+        return;
+    }
+
+    const streamUrlToRecord = channel.url;
+    // Sanitize filename
+    const safeFilename = `${job.id}_${job.programTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.mp4`;
+    const fullFilePath = path.join(DVR_DIR, safeFilename);
+
+    const commandTemplate = recProfile.command
+        .replace(/{streamUrl}/g, streamUrlToRecord)
+        .replace(/{userAgent}/g, userAgent.value)
+        .replace(/{filePath}/g, fullFilePath);
+
+    const args = commandTemplate.split(' ').filter(arg => arg); // Filter out empty strings
+    const command = args.shift();
+
+    console.log(`[DVR] Spawning ffmpeg for job ${job.id} with command: ${command} ${args.join(' ')}`);
+    const ffmpeg = spawn(command, args);
+    runningFFmpegProcesses.set(job.id, ffmpeg.pid);
+
+    db.run("UPDATE dvr_jobs SET status = 'recording', ffmpeg_pid = ?, filePath = ? WHERE id = ?", [ffmpeg.pid, fullFilePath, job.id]);
+
+    ffmpeg.stderr.on('data', (data) => console.log(`[FFMPEG_DVR][${job.id}] ${data.toString().trim()}`));
+
+    ffmpeg.on('close', (code) => {
+        console.log(`[DVR] FFmpeg process for job ${job.id} exited with code ${code}.`);
+        runningFFmpegProcesses.delete(job.id);
+        const status = (code === 0 || code === 255) ? 'completed' : 'error'; // 255 can be from graceful kill
+        db.run("UPDATE dvr_jobs SET status = ?, ffmpeg_pid = NULL WHERE id = ?", [status, job.id]);
+
+        if (status === 'completed' && fs.existsSync(fullFilePath)) {
+            const stats = fs.statSync(fullFilePath);
+            const duration = new Date(job.endTime) - new Date(job.startTime);
+            db.run(`INSERT INTO dvr_recordings (job_id, user_id, channelName, programTitle, startTime, durationSeconds, fileSizeBytes, filePath)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                [job.id, job.user_id, job.channelName, job.programTitle, job.startTime, duration / 1000, stats.size, fullFilePath]);
+        }
+    });
+
+    ffmpeg.on('error', (err) => {
+        console.error(`[DVR] Failed to start ffmpeg for job ${job.id}: ${err.message}`);
+        db.run("UPDATE dvr_jobs SET status = 'error', ffmpeg_pid = NULL WHERE id = ?", [job.id]);
+    });
+}
+
+/**
+ * Schedules a recording job using node-schedule.
+ * @param {object} job - The DVR job object from the database.
+ */
+function scheduleDvrJob(job) {
+    if (activeDvrJobs.has(job.id)) {
+        activeDvrJobs.get(job.id).cancel();
+        activeDvrJobs.delete(job.id);
+    }
+
+    const startTime = new Date(job.startTime);
+    const endTime = new Date(job.endTime);
+    const now = new Date();
+
+    if (endTime <= now) {
+        console.log(`[DVR] Job ${job.id} for "${job.programTitle}" is already in the past. Skipping schedule.`);
+        if (job.status === 'scheduled') {
+            db.run("UPDATE dvr_jobs SET status = 'error' WHERE id = ?", [job.id]);
+        }
+        return;
+    }
+
+    // Schedule the start
+    if (startTime > now) {
+        const startJob = schedule.scheduleJob(startTime, () => startRecording(job));
+        activeDvrJobs.set(job.id, startJob);
+        console.log(`[DVR] Scheduled recording start for job ${job.id} at ${startTime}`);
+    } else {
+        startRecording(job);
+    }
+
+    // Schedule the stop
+    schedule.scheduleJob(endTime, () => {
+        if (runningFFmpegProcesses.has(job.id)) {
+            const pid = runningFFmpegProcesses.get(job.id);
+            console.log(`[DVR] Scheduled stop time reached for job ${job.id}. Killing ffmpeg process PID: ${pid}`);
+            try {
+                process.kill(pid, 'SIGTERM');
+            } catch (e) {
+                console.error(`[DVR] Error killing ffmpeg process for job ${job.id}: ${e.message}`);
+            }
+        }
+    });
+}
+
+/**
+ * Loads all pending DVR jobs from the database and schedules them.
+ */
+function loadAndScheduleAllDvrJobs() {
+    console.log('[DVR] Loading and scheduling all pending DVR jobs from database...');
+    db.run("UPDATE dvr_jobs SET status = 'error' WHERE status = 'recording'");
+
+    db.all("SELECT * FROM dvr_jobs WHERE status = 'scheduled'", [], (err, jobs) => {
+        if (err) {
+            console.error('[DVR] Error fetching pending DVR jobs:', err);
+            return;
+        }
+        console.log(`[DVR] Found ${jobs.length} jobs to schedule.`);
+        jobs.forEach(scheduleDvrJob);
+    });
+}
+
+
+// --- NEW: DVR API Endpoints ---
+
+app.post('/api/dvr/schedule', requireAuth, (req, res) => {
+    const { channelId, channelName, programTitle, programStart, programStop } = req.body;
+    const settings = getSettings();
+    const dvrSettings = settings.dvr || {};
+    const preBuffer = (dvrSettings.preBufferMinutes || 0) * 60 * 1000;
+    const postBuffer = (dvrSettings.postBufferMinutes || 0) * 60 * 1000;
+
+    const startTime = new Date(new Date(programStart).getTime() - preBuffer).toISOString();
+    const endTime = new Date(new Date(programStop).getTime() + postBuffer).toISOString();
+
+    const newJob = {
+        user_id: req.session.userId,
+        channelId,
+        channelName,
+        programTitle,
+        startTime,
+        endTime,
+        status: 'scheduled',
+        profileId: dvrSettings.activeRecordingProfileId,
+        userAgentId: settings.activeUserAgentId,
+        preBufferMinutes: dvrSettings.preBufferMinutes || 0,
+        postBufferMinutes: dvrSettings.postBufferMinutes || 0
+    };
+
+    db.run(`INSERT INTO dvr_jobs (user_id, channelId, channelName, programTitle, startTime, endTime, status, profileId, userAgentId, preBufferMinutes, postBufferMinutes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [newJob.user_id, newJob.channelId, newJob.channelName, newJob.programTitle, newJob.startTime, newJob.endTime, newJob.status, newJob.profileId, newJob.userAgentId, newJob.preBufferMinutes, newJob.postBufferMinutes],
+        function(err) {
+            if (err) {
+                console.error('[DVR_API] Error scheduling new recording:', err);
+                return res.status(500).json({ error: 'Could not schedule recording.' });
+            }
+            const jobWithId = { ...newJob, id: this.lastID };
+            scheduleDvrJob(jobWithId);
+            res.status(201).json({ success: true, job: jobWithId });
+        }
+    );
+});
+
+app.get('/api/dvr/jobs', requireAuth, (req, res) => {
+    db.all("SELECT * FROM dvr_jobs WHERE user_id = ? ORDER BY startTime DESC", [req.session.userId], (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Failed to retrieve recording jobs.' });
+        res.json(rows);
+    });
+});
+
+app.get('/api/dvr/recordings', requireAuth, (req, res) => {
+    db.all("SELECT * FROM dvr_recordings WHERE user_id = ? ORDER BY startTime DESC", [req.session.userId], (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Failed to retrieve recordings.' });
+        const recordingsWithFilename = rows.map(r => ({...r, filename: path.basename(r.filePath)}));
+        res.json(recordingsWithFilename);
+    });
+});
+
+app.delete('/api/dvr/jobs/:id', requireAuth, (req, res) => {
+    const { id } = req.params;
+    const jobId = parseInt(id, 10);
+    if (activeDvrJobs.has(jobId)) {
+        activeDvrJobs.get(jobId).cancel();
+        activeDvrJobs.delete(jobId);
+    }
+    db.run("UPDATE dvr_jobs SET status = 'cancelled' WHERE id = ? AND user_id = ?", [jobId, req.session.userId], function(err) {
+        if (err) return res.status(500).json({ error: 'Could not cancel job.' });
+        res.json({ success: true });
+    });
+});
+
+app.delete('/api/dvr/recordings/:id', requireAuth, (req, res) => {
+    const { id } = req.params;
+    db.get("SELECT filePath FROM dvr_recordings WHERE id = ? AND user_id = ?", [id, req.session.userId], (err, row) => {
+        if (err || !row) return res.status(404).json({ error: 'Recording not found.' });
+
+        if (fs.existsSync(row.filePath)) {
+            fs.unlink(row.filePath, (unlinkErr) => {
+                if (unlinkErr) console.error(`[DVR_API] Failed to delete file ${row.filePath}:`, unlinkErr);
+            });
+        }
+        db.run("DELETE FROM dvr_recordings WHERE id = ?", [id], (deleteErr) => {
+            if (deleteErr) return res.status(500).json({ error: 'Failed to delete recording record.' });
+            res.json({ success: true });
+        });
+    });
+});
+
+
 // --- Main Route Handling ---
 app.get('*', (req, res) => {
-    // This serves index.html for all non-file paths, enabling client-side routing.
-    // Ensure the path is relative to PUBLIC_DIR
     const filePath = path.join(PUBLIC_DIR, req.path);
-
-    // If the request path corresponds to an actual file in PUBLIC_DIR, serve it
     if(fs.existsSync(filePath) && fs.lstatSync(filePath).isFile()){
-        console.log(`[HTTP] Serving static file: ${req.path}`);
         return res.sendFile(filePath);
     }
-    // Otherwise, serve index.html for client-side routing
-    console.log(`[HTTP] Serving index.html for path: ${req.path}`);
     res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 
@@ -1554,24 +1677,52 @@ app.get('*', (req, res) => {
 app.listen(port, () => {
     console.log(`\n======================================================`);
     console.log(` VINI PLAY server listening at http://localhost:${port}`);
-    console.log(` Data is stored persistently in your host's viniplay-data folder`);
-    console.log(` Serving frontend from: ${PUBLIC_DIR}`);
     console.log(`======================================================\n`);
 
-    // Initial processing of sources on server boot
     processAndMergeSources().then((result) => {
         console.log('[INIT] Initial source processing complete.');
-        if(result.success) {
-             // Manually save settings here after processing
-             fs.writeFileSync(SETTINGS_PATH, JSON.stringify(result.updatedSettings, null, 2));
-        }
-        updateAndScheduleSourceRefreshes(); // Schedule subsequent refreshes for all sources
-    }).catch(error => {
-        console.error('[INIT] Initial source processing failed:', error.message);
-    });
+        if(result.success) fs.writeFileSync(SETTINGS_PATH, JSON.stringify(result.updatedSettings, null, 2));
+        updateAndScheduleSourceRefreshes();
+    }).catch(error => console.error('[INIT] Initial source processing failed:', error.message));
 
-    // Clear any existing interval to prevent duplicates on hot-reload (if applicable)
     if (notificationCheckInterval) clearInterval(notificationCheckInterval);
-    notificationCheckInterval = setInterval(checkAndSendNotifications, 60000); // Check every minute
-    console.log('[Push] Notification checker started. Will check for due notifications every minute.');
+    notificationCheckInterval = setInterval(checkAndSendNotifications, 60000);
+    console.log('[Push] Notification checker started.');
+
+    loadAndScheduleAllDvrJobs();
 });
+
+// --- Helper Functions (Full Implementation) ---
+function parseM3U(data) {
+    if (!data) return [];
+    const lines = data.split('\n');
+    const channels = [];
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.startsWith('#EXTINF:')) {
+            const nextLine = lines[i + 1]?.trim();
+            if (nextLine && (nextLine.startsWith('http') || nextLine.startsWith('rtp'))) {
+                const idMatch = line.match(/tvg-id="([^"]*)"/);
+                const logoMatch = line.match(/tvg-logo="([^"]*)"/);
+                const nameMatch = line.match(/tvg-name="([^"]*)"/);
+                const groupMatch = line.match(/group-title="([^"]*)"/);
+                const chnoMatch = line.match(/tvg-chno="([^"]*)"/);
+                const sourceMatch = line.match(/vini-source="([^"]*)"/);
+                const commaIndex = line.lastIndexOf(',');
+                const displayName = (commaIndex !== -1) ? line.substring(commaIndex + 1).trim() : 'Unknown';
+                channels.push({
+                    id: idMatch ? idMatch[1] : `unknown-${Math.random()}`,
+                    logo: logoMatch ? logoMatch[1] : '',
+                    name: nameMatch ? nameMatch[1] : displayName,
+                    group: groupMatch ? groupMatch[1] : 'Uncategorized',
+                    chno: chnoMatch ? chnoMatch[1] : null,
+                    source: sourceMatch ? sourceMatch[1] : 'Default',
+                    displayName: displayName,
+                    url: nextLine
+                });
+                i++;
+            }
+        }
+    }
+    return channels;
+}
