@@ -3,7 +3,7 @@
  * Manages all client-side functionality for the DVR page.
  */
 
-import { UIElements, dvrState } from './state.js';
+import { UIElements, dvrState, guideState } from './state.js';
 import { apiFetch } from './api.js';
 import { showNotification, showConfirm, openModal, closeModal } from './ui.js';
 
@@ -20,7 +20,7 @@ export async function initDvrPage() {
 }
 
 /**
- * Fetches scheduled recording jobs from the server and renders them.
+ * Fetches scheduled recording jobs from the server and updates the state.
  */
 async function loadScheduledJobs() {
     const res = await apiFetch('/api/dvr/jobs');
@@ -33,7 +33,7 @@ async function loadScheduledJobs() {
 }
 
 /**
- * Fetches completed recordings from the server and renders them.
+ * Fetches completed recordings from the server and updates the state.
  */
 async function loadCompletedRecordings() {
     const res = await apiFetch('/api/dvr/recordings');
@@ -161,6 +161,55 @@ export function setupDvrEventListeners() {
         closeModal(UIElements.recordingPlayerModal);
     });
 }
+
+/**
+ * Finds a scheduled DVR job for a specific program.
+ * @param {object} program - The program object from the guide.
+ * @returns {object|undefined} The DVR job if found, otherwise undefined.
+ */
+export function findDvrJobForProgram(program) {
+    return dvrState.scheduledJobs.find(job =>
+        job.channelId === program.channelId &&
+        job.programTitle === program.title &&
+        new Date(job.startTime).getTime() <= new Date(program.start).getTime() &&
+        new Date(job.endTime).getTime() >= new Date(program.stop).getTime()
+    );
+}
+
+/**
+ * Schedules a new DVR job or cancels an existing one.
+ * @param {object} programData - Details of the program to record/cancel.
+ */
+export async function addOrRemoveDvrJob(programData) {
+    const existingJob = findDvrJobForProgram(programData);
+
+    if (existingJob && existingJob.status === 'scheduled') {
+        showConfirm('Cancel Recording?', 'Are you sure you want to cancel this recording?', async () => {
+            const res = await apiFetch(`/api/dvr/jobs/${existingJob.id}`, { method: 'DELETE' });
+            if (res && res.ok) {
+                showNotification('Recording cancelled.');
+                loadScheduledJobs(); // Refresh the list
+            }
+        });
+    } else if (!existingJob) {
+        const res = await apiFetch('/api/dvr/schedule', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                channelId: programData.channelId,
+                channelName: guideState.channels.find(c => c.id === programData.channelId)?.name || 'Unknown Channel',
+                programTitle: programData.title,
+                programStart: programData.start,
+                programStop: programData.stop
+            })
+        });
+        if (res && res.ok) {
+            showNotification(`"${programData.title}" scheduled to record.`);
+            loadScheduledJobs(); // Refresh the list
+        }
+    }
+}
+
 
 // --- Helper Functions ---
 
