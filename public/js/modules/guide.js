@@ -83,7 +83,12 @@ export function openProgramDetails(progItem) {
 
     const now = new Date();
     const programStopTime = new Date(programData.stop).getTime();
+    // Debugging logs for the record button visibility
+    console.log('[DVR_DEBUG] Program Data:', programData);
+    console.log('[DVR_DEBUG] Current Time (now):', now.toISOString());
+    console.log('[DVR_DEBUG] Program Stop Time:', new Date(programStopTime).toISOString());
     const isProgramRelevant = programStopTime > now.getTime();
+    console.log('[DVR_DEBUG] Is Program Relevant (programStopTime > now.getTime()):', isProgramRelevant);
     
     // --- Notification Button Logic ---
     if (programDetailsNotifyBtn) {
