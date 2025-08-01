@@ -22,13 +22,14 @@ RUN apt-get update && apt-get install -y ffmpeg --no-install-recommends && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# NEW: Create and declare a volume for persistent data.
+# Create and declare volumes for persistent data.
 # The server.js file is now configured to use /data as its storage root.
 # This instruction ensures the directory is created and tells Docker that this
 # path is intended for persistent data storage.
-RUN mkdir /data 
+RUN mkdir /data
+RUN mkdir /dvr # NEW: Create the directory for DVR recordings
 VOLUME /data
+VOLUME /dvr   # NEW: Declare the DVR directory as a volume
 
 # Define the command to run your app
 CMD [ "npm", "start" ]
-
