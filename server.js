@@ -123,7 +123,11 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 FOREIGN KEY (job_id) REFERENCES dvr_jobs(id) ON DELETE SET NULL
             )`, (err) => {
                 if(err) console.error("[DB] Error creating 'dvr_recordings' table:", err.message);
-                else console.log("[DB] 'dvr_recordings' table checked/created.");
+                else {
+                    console.log("[DB] 'dvr_recordings' table checked/created.");
+                    // MOVED: Call loadAndScheduleAllDvrJobs here, after all tables are guaranteed to be created
+                    loadAndScheduleAllDvrJobs();
+                }
             });
         });
     }
@@ -1498,17 +1502,15 @@ function startRecording(job) {
     ffmpeg.stderr.on('data', (data) => console.log(`[FFMPEG_DVR][${job.id}] ${data.toString().trim()}`));
 
     ffmpeg.on('close', (code) => {
-        console.log(`[DVR] FFmpeg process for job ${job.id} exited with code ${code}.`);
-        runningFFmpegProcesses.delete(job.id);
-        const status = (code === 0 || code === 255) ? 'completed' : 'error'; // 255 can be from graceful kill
-        db.run("UPDATE dvr_jobs SET status = ?, ffmpeg_pid = NULL WHERE id = ?", [status, job.id]);
-
-        if (status === 'completed' && fs.existsSync(fullFilePath)) {
-            const stats = fs.statSync(fullFilePath);
-            const duration = new Date(job.endTime) - new Date(job.startTime);
-            db.run(`INSERT INTO dvr_recordings (job_id, user_id, channelName, programTitle, startTime, durationSeconds, fileSizeBytes, filePath)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                [job.id, job.user_id, job.channelName, job.programTitle, job.startTime, duration / 1000, stats.size, fullFilePath]);
+        if (code !== 0) {
+            console.log(`[DVR] ffmpeg process for job ${job.id} exited with code ${code}`);
+        } else {
+            console.log(`[DVR] ffmpeg process for ${job.id} exited gracefully.`);
+        }
+        if (!res.headersSent) {
+             res.status(500).send('FFmpeg stream ended unexpectedly or failed to start.');
+        } else {
+            res.end();
         }
     });
 
@@ -1568,15 +1570,26 @@ function scheduleDvrJob(job) {
  */
 function loadAndScheduleAllDvrJobs() {
     console.log('[DVR] Loading and scheduling all pending DVR jobs from database...');
-    db.run("UPDATE dvr_jobs SET status = 'error' WHERE status = 'recording'");
-
-    db.all("SELECT * FROM dvr_jobs WHERE status = 'scheduled'", [], (err, jobs) => {
+    // Mark any 'recording' jobs as 'error' on startup, as they were not gracefully stopped
+    db.run("UPDATE dvr_jobs SET status = 'error' WHERE status = 'recording'", [], (err) => {
         if (err) {
-            console.error('[DVR] Error fetching pending DVR jobs:', err);
-            return;
+            console.error('[DVR] Error updating recording jobs status on startup:', err.message);
+            // If the UPDATE fails because dvr_jobs doesn't exist, proceed to SELECT
+            // This is a common pattern for "fire and forget" updates at startup
+            // but for mission critical updates it's better to ensure it's completed first.
+        } else {
+            console.log("[DVR] Updated status of previous 'recording' jobs to 'error'.");
         }
-        console.log(`[DVR] Found ${jobs.length} jobs to schedule.`);
-        jobs.forEach(scheduleDvrJob);
+        
+        // NOW fetch the scheduled jobs, this query will only run after the UPDATE (or its error) is handled
+        db.all("SELECT * FROM dvr_jobs WHERE status = 'scheduled'", [], (err, jobs) => {
+            if (err) {
+                console.error('[DVR] Error fetching pending DVR jobs:', err);
+                return;
+            }
+            console.log(`[DVR] Found ${jobs.length} jobs to schedule.`);
+            jobs.forEach(scheduleDvrJob);
+        });
     });
 }
 
@@ -1693,7 +1706,8 @@ app.listen(port, () => {
     notificationCheckInterval = setInterval(checkAndSendNotifications, 60000);
     console.log('[Push] Notification checker started.');
 
-    loadAndScheduleAllDvrJobs();
+    // Removed direct call here, moved into db.serialize callback for dvr_recordings table
+    // loadAndScheduleAllDvrJobs();
 });
 
 // --- Helper Functions (Full Implementation) ---
