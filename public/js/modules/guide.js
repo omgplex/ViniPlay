@@ -29,7 +29,6 @@ export function openProgramDetails(progItem) {
         return;
     }
 
-    // CRITICAL FIX: Directly get the modal element from the DOM here
     const programDetailsModal = document.getElementById('program-details-modal');
     if (!programDetailsModal) {
         console.error('[GUIDE_DEBUG] programDetailsModal element not found in DOM when opening details.');
@@ -45,7 +44,7 @@ export function openProgramDetails(progItem) {
         stop: progItem.dataset.progStop,
         channelId: channelId,
         programId: progItem.dataset.progId,
-        url: progItem.dataset.channelUrl, // NEW: Pass channel URL
+        url: progItem.dataset.channelUrl, 
     };
 
     const channelData = guideState.channels.find(c => c.id === channelId);
@@ -59,13 +58,13 @@ export function openProgramDetails(progItem) {
     const channelLogo = channelData.logo;
     const channelUrl = channelData.url;
 
-    // Use the retrieved programDetailsModal and its children
+    // IMPORTANT FIX: Get fresh references to buttons inside the modal
     const detailsTitle = programDetailsModal.querySelector('#details-title');
     const detailsTime = programDetailsModal.querySelector('#details-time');
     const detailsDesc = programDetailsModal.querySelector('#details-desc');
     const detailsPlayBtn = programDetailsModal.querySelector('#details-play-btn');
     const programDetailsNotifyBtn = programDetailsModal.querySelector('#program-details-notify-btn');
-    const programDetailsRecordBtn = programDetailsModal.querySelector('#program-details-record-btn');
+    const programDetailsRecordBtn = programDetailsModal.querySelector('#details-record-btn'); // Using UIElements for now as it's passed around, but direct query is safer for modals
     const detailsCloseBtn = programDetailsModal.querySelector('#details-close-btn');
 
     if (detailsTitle) detailsTitle.textContent = programData.title;
@@ -83,7 +82,6 @@ export function openProgramDetails(progItem) {
 
     const now = new Date();
     const programStopTime = new Date(programData.stop).getTime();
-    // Debugging logs for the record button visibility
     console.log('[DVR_DEBUG] Program Data:', programData);
     console.log('[DVR_DEBUG] Current Time (now):', now.toISOString());
     console.log('[DVR_DEBUG] Program Stop Time:', new Date(programStopTime).toISOString());
@@ -109,12 +107,11 @@ export function openProgramDetails(progItem) {
                     channelName: channelName,
                     channelLogo: channelLogo,
                     programTitle: programData.title,
-                    programStart: programData.programStart, // Corrected from programStart to programStart
-                    programStop: programData.programStop,   // Corrected from programStop to programStop
+                    programStart: programData.start,
+                    programStop: programData.stop,
                     programDesc: programData.desc,
                     programId: programData.programId
                 });
-                // Re-check status after the operation
                 const updatedNotification = findNotificationForProgram(programData, channelId);
                 programDetailsNotifyBtn.textContent = updatedNotification ? 'Notification Set' : 'Notify Me';
                 programDetailsNotifyBtn.classList.toggle('bg-yellow-600', !updatedNotification);
@@ -134,8 +131,8 @@ export function openProgramDetails(progItem) {
 
         if (isProgramRelevant) {
             programDetailsRecordBtn.classList.remove('hidden');
-            // TEMPORARY DEBUGGING LINE: Force display to block to override any CSS `display: none`
-            programDetailsRecordBtn.style.display = 'block';
+            // Ensure the record button becomes a flex item if its parent uses flex, or block otherwise
+            programDetailsRecordBtn.style.display = 'block'; // More aggressive override for debugging
             console.log('[DVR_DEBUG] Attempting to show record button. Current display style:', programDetailsRecordBtn.style.display);
 
 
@@ -169,21 +166,18 @@ export function openProgramDetails(progItem) {
             }
             
             programDetailsRecordBtn.textContent = buttonText;
-            // Ensure tailwind classes are reapplied after temporary style override
             programDetailsRecordBtn.className = `font-bold py-2 px-4 rounded-md transition-colors ${buttonClass} ${hoverClass} text-white`;
             programDetailsRecordBtn.disabled = isDisabled;
 
             programDetailsRecordBtn.onclick = async () => {
                 await addOrRemoveDvrJob(programData);
-                // The button state will be updated automatically when dvrState changes
-                // and the modal is re-opened, but we can optimistically update it here too.
-                closeModal(programDetailsModal); // Close modal after action
-                handleSearchAndFilter(false); // Redraw guide to show recording indicator
+                closeModal(programDetailsModal); 
+                handleSearchAndFilter(false); 
             };
 
         } else {
             programDetailsRecordBtn.classList.add('hidden');
-            programDetailsRecordBtn.style.display = 'none'; // Explicitly hide
+            programDetailsRecordBtn.style.display = 'none'; 
             console.log('[DVR_DEBUG] Hiding record button.');
         }
     }
@@ -412,7 +406,7 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
         rowContainer.style.gridTemplateColumns = 'var(--channel-col-width, 180px) 1fr';
 
         contentWrapper.appendChild(rowContainer);
-        guideGrid.appendChild(contentWrapper);
+        guideGrid.appendChild(rowContainer); // Append to guideGrid instead of contentWrapper
 
         const updateVisibleRows = () => {
             if (!guideContainer) return;
@@ -820,7 +814,6 @@ export function setupGuideEventListeners() {
     }
 
     UIElements.guideGrid.addEventListener('click', (e) => {
-        // DEBUG LOG to confirm if this event listener is being triggered
         console.log('[GUIDE_DEBUG] guideGrid click event fired. Target:', e.target);
         
         const favoriteStar = e.target.closest('.favorite-star');
@@ -850,7 +843,6 @@ export function setupGuideEventListeners() {
         }
 
         if (progItem) {
-            // REFACTORED: Call the new standalone function
             openProgramDetails(progItem);
         }
     });
