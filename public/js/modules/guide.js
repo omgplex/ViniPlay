@@ -6,12 +6,13 @@
  * REFACTORED to use UI Virtualization for high-performance rendering of large channel lists.
  */
 
-import { appState, guideState, UIElements } from './state.js';
+import { appState, guideState, UIElements, dvrState } from './state.js';
 import { saveUserSetting } from './api.js';
 import { parseM3U } from './utils.js';
 import { playChannel } from './player.js';
 import { showNotification, openModal, closeModal } from './ui.js';
 import { addOrRemoveNotification, findNotificationForProgram } from './notification.js';
+import { addOrRemoveDvrJob, findDvrJobForProgram } from './dvr.js'; // NEW: Import DVR functions
 
 // --- Virtualization Constants ---
 const ROW_HEIGHT = 96; // Height in pixels of a single channel row (.channel-info + .timeline-row)
@@ -36,6 +37,7 @@ export function openProgramDetails(progItem) {
         stop: progItem.dataset.progStop,
         channelId: channelId,
         programId: progItem.dataset.progId,
+        url: progItem.dataset.channelUrl, // NEW: Pass channel URL
     };
 
     const channelData = guideState.channels.find(c => c.id === channelId);
@@ -62,11 +64,11 @@ export function openProgramDetails(progItem) {
 
     const now = new Date();
     const programStopTime = new Date(programData.stop).getTime();
-    const isProgramRelevantForNotification = programStopTime > now.getTime();
+    const isProgramRelevant = programStopTime > now.getTime();
     
+    // --- Notification Button Logic ---
     const notification = findNotificationForProgram(programData, channelId);
-
-    if (isProgramRelevantForNotification) {
+    if (isProgramRelevant) {
         UIElements.programDetailsNotifyBtn.classList.remove('hidden');
         UIElements.programDetailsNotifyBtn.textContent = notification ? 'Notification Set' : 'Notify Me';
         UIElements.programDetailsNotifyBtn.disabled = !notification && Notification.permission === 'denied';
@@ -87,6 +89,7 @@ export function openProgramDetails(progItem) {
                 programDesc: programData.desc,
                 programId: programData.programId
             });
+            // Re-check status after the operation
             const updatedNotification = findNotificationForProgram(programData, channelId);
             UIElements.programDetailsNotifyBtn.textContent = updatedNotification ? 'Notification Set' : 'Notify Me';
             UIElements.programDetailsNotifyBtn.classList.toggle('bg-yellow-600', !updatedNotification);
@@ -97,6 +100,55 @@ export function openProgramDetails(progItem) {
         };
     } else {
         UIElements.programDetailsNotifyBtn.classList.add('hidden');
+    }
+
+    // --- NEW: DVR Record Button Logic ---
+    const dvrJob = findDvrJobForProgram(programData);
+
+    if (isProgramRelevant) {
+        UIElements.programDetailsRecordBtn.classList.remove('hidden');
+        let buttonText = 'Record';
+        let buttonClass = 'bg-red-600';
+        let hoverClass = 'hover:bg-red-700';
+        let isDisabled = false;
+
+        if (dvrJob) {
+            switch (dvrJob.status) {
+                case 'pending':
+                    buttonText = 'Cancel Recording';
+                    buttonClass = 'bg-gray-600';
+                    hoverClass = 'hover:bg-gray-500';
+                    break;
+                case 'recording':
+                    buttonText = 'Recording...';
+                    buttonClass = 'bg-red-800';
+                    hoverClass = 'hover:bg-red-800';
+                    isDisabled = true; // Can't cancel while recording from here
+                    break;
+                case 'completed':
+                case 'failed':
+                    buttonText = 'Recorded';
+                    buttonClass = 'bg-green-600';
+                    hoverClass = 'hover:bg-green-600';
+                    isDisabled = true;
+                    break;
+            }
+        }
+        
+        UIElements.programDetailsRecordBtn.textContent = buttonText;
+        UIElements.programDetailsRecordBtn.className = `font-bold py-2 px-4 rounded-md transition-colors ${buttonClass} ${hoverClass} text-white`;
+        UIElements.programDetailsRecordBtn.disabled = isDisabled;
+
+        UIElements.programDetailsRecordBtn.onclick = async () => {
+            await addOrRemoveDvrJob(programData);
+            // The button state will be updated automatically when dvrState changes
+            // and the modal is re-opened, but we can optimistically update it here too.
+            closeModal(UIElements.programDetailsModal); // Close modal after action
+            handleSearchAndFilter(false); // Redraw guide to show recording indicator
+        };
+
+    } else {
+        UIElements.programDetailsRecordBtn.classList.add('hidden');
     }
     
     console.log('[GUIDE_DEBUG] Opening program details modal via openProgramDetails function.');
@@ -378,16 +430,13 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
                     
                     const uniqueProgramId = `${channel.id}-${progStart.toISOString()}-${progStop.toISOString()}`;
 
-                    const currentChannelStableId = channel.id.includes('_') ? channel.id.substring(channel.id.lastIndexOf('_')) : channel.id;
-                    const hasNotification = guideState.userNotifications.some(n => {
-                        const notificationStableId = n.channelId.includes('_') ? n.channelId.substring(n.channelId.lastIndexOf('_')) : n.channelId;
-                        return notificationStableId === currentChannelStableId &&
-                               n.programStart === progStart.toISOString() &&
-                               n.programStop === progStop.toISOString();
-                    });
+                    const hasNotification = findNotificationForProgram({ programId: uniqueProgramId, ...prog }, channel.id);
                     const notificationClass = hasNotification ? 'has-notification' : '';
 
-                    programsHTML += `<div class="programme-item absolute top-1 bottom-1 bg-gray-800 rounded-md p-2 overflow-hidden flex flex-col justify-center z-5 ${isLive ? 'live' : ''} ${progStop < now ? 'past' : ''} ${notificationClass}" style="left:${left}px; width:${Math.max(0, width - 2)}px" data-channel-url="${channel.url}" data-channel-id="${channel.id}" data-channel-name="${channelName}" data-prog-title="${prog.title}" data-prog-desc="${prog.desc}" data-prog-start="${progStart.toISOString()}" data-prog-stop="${progStop.toISOString()}" data-prog-id="${uniqueProgramId}"><div class="programme-progress" style="width:${progressWidth}%"></div><p class="prog-title text-white font-semibold truncate relative z-10">${prog.title}</p><p class="prog-time text-gray-400 truncate relative z-10">${progStart.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p></div>`;
+                    const dvrJob = findDvrJobForProgram({ programId: uniqueProgramId, ...prog });
+                    const recordingClass = dvrJob ? `has-recording status-${dvrJob.status}` : '';
+
+                    programsHTML += `<div class="programme-item absolute top-1 bottom-1 bg-gray-800 rounded-md p-2 overflow-hidden flex flex-col justify-center z-5 ${isLive ? 'live' : ''} ${progStop < now ? 'past' : ''} ${notificationClass} ${recordingClass}" style="left:${left}px; width:${Math.max(0, width - 2)}px" data-channel-url="${channel.url}" data-channel-id="${channel.id}" data-channel-name="${channelName}" data-prog-title="${prog.title}" data-prog-desc="${prog.desc}" data-prog-start="${progStart.toISOString()}" data-prog-stop="${progStop.toISOString()}" data-prog-id="${uniqueProgramId}"><div class="programme-progress" style="width:${progressWidth}%"></div><p class="prog-title text-white font-semibold truncate relative z-10">${prog.title}</p><p class="prog-time text-gray-400 truncate relative z-10">${progStart.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p></div>`;
                 });
                 const timelineRowHTML = `<div class="timeline-row" style="width: ${timelineWidth}px;">${programsHTML}</div>`;
 
@@ -844,5 +893,3 @@ export function setupGuideEventListeners() {
         lastScrollTop = scrollTop <= 0 ? 0 : scrollTop;
     }, 100);
 
-    UIElements.guideContainer.addEventListener('scroll', handleScrollHeader);
-}
