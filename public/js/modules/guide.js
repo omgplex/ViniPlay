@@ -893,3 +893,9 @@ export function setupGuideEventListeners() {
         lastScrollTop = scrollTop <= 0 ? 0 : scrollTop;
     }, 100);
 
+    // Attach the scroll handler to the guide container
+    if (UIElements.guideContainer) {
+        UIElements.guideContainer.addEventListener('scroll', handleScrollHeader);
+    }
+}
+
