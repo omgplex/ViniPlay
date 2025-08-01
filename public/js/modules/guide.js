@@ -335,9 +335,32 @@ export function finalizeGuideLoad(isFirstLoad = false) {
         threshold: 0.4,
         includeScore: true,
     });
+    
+    // Call new function to set padding top for the guide container
+    updateGuidePaddingTop();
 
     handleSearchAndFilter(isFirstLoad);
 }
+
+/**
+ * Dynamically sets the padding-top of the guide page based on the combined height of the headers.
+ * This is crucial to prevent content from being hidden by sticky headers.
+ */
+function updateGuidePaddingTop() {
+    if (!UIElements.mainHeader || !UIElements.unifiedGuideHeader || !UIElements.pageGuide) {
+        console.warn('[GUIDE] Cannot update guide padding: Missing header or page elements.');
+        return;
+    }
+
+    const mainHeaderHeight = UIElements.mainHeader.offsetHeight;
+    const unifiedGuideHeaderHeight = UIElements.unifiedGuideHeader.offsetHeight;
+    const totalHeaderHeight = mainHeaderHeight + unifiedGuideHeaderHeight;
+
+    // Apply this height as padding-top to the page-guide
+    UIElements.pageGuide.style.paddingTop = `${totalHeaderHeight}px`;
+    console.log(`[GUIDE] Setting page-guide padding-top to ${totalHeaderHeight}px.`);
+}
+
 
 // --- UI Rendering (REFACTORED FOR VIRTUALIZATION) ---
 
@@ -385,28 +408,34 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
         const guideContainer = UIElements.guideContainer;
         const guideGrid = UIElements.guideGrid;
 
-        let contentWrapper = guideGrid.querySelector('#virtual-content-wrapper');
-        if (contentWrapper) {
-            guideGrid.removeChild(contentWrapper);
+        // Remove old virtual content wrapper if it exists (for re-renders)
+        let oldContentWrapper = guideGrid.querySelector('#virtual-content-wrapper');
+        if (oldContentWrapper) {
+            guideGrid.removeChild(oldContentWrapper);
         }
 
-        contentWrapper = document.createElement('div');
+        // Create the main content wrapper for virtualization
+        const contentWrapper = document.createElement('div');
         contentWrapper.id = 'virtual-content-wrapper';
+        // This is crucial: span both columns of the grid for the main scrollable area
         contentWrapper.style.gridColumn = '1 / -1';
         contentWrapper.style.position = 'relative';
-        contentWrapper.style.height = `${totalRows * ROW_HEIGHT}px`;
+        contentWrapper.style.height = `${totalRows * ROW_HEIGHT}px`; // This sets the total scrollable height
 
+        // Create the container for the visible rows (which will be absolutely positioned)
         const rowContainer = document.createElement('div');
         rowContainer.id = 'virtual-row-container';
         rowContainer.style.position = 'absolute';
-        rowContainer.style.width = '100%';
+        rowContainer.style.width = '100%'; // Spans across the entire virtual content wrapper
         rowContainer.style.top = '0';
         rowContainer.style.left = '0';
-        rowContainer.style.display = 'grid';
+        rowContainer.style.display = 'grid'; // This will define the 2-column grid for channels and programs
         rowContainer.style.gridTemplateColumns = 'var(--channel-col-width, 180px) 1fr';
 
+        // Append the row container to the content wrapper
         contentWrapper.appendChild(rowContainer);
-        guideGrid.appendChild(rowContainer); // Append to guideGrid instead of contentWrapper
+        // Append the content wrapper to the guide grid
+        guideGrid.appendChild(contentWrapper);
 
         const updateVisibleRows = () => {
             if (!guideContainer) return;
@@ -431,8 +460,9 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
                 const sourceBadgeHTML = guideState.channelSources.size > 1 ? `<span class="source-badge ${sourceBadgeColor} text-white">${channel.source}</span>` : '';
                 const chnoBadgeHTML = channel.chno ? `<span class="chno-badge">${channel.chno}</span>` : '';
 
+                // Channel Info HTML for the left sticky column
                 const channelInfoHTML = `
-                    <div class="channel-info p-2 flex items-center justify-between cursor-pointer" data-url="${channel.url}" data-name="${channelName}" data-id="${channel.id}" data-channel-index="${i}">
+                    <div class="channel-info p-2 flex items-center justify-between cursor-pointer" data-url="${channel.url}" data-name="${channelName}" data-id="${channel.id}" data-channel-index="${i}" style="top: ${i * ROW_HEIGHT}px;">
                         <div class="flex items-center overflow-hidden flex-grow min-w-0">
                             <img src="${channel.logo}" onerror="this.onerror=null; this.src='https://placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-3 flex-shrink-0 rounded-md bg-gray-700">
                             <div class="flex-grow min-w-0 channel-details">
@@ -473,13 +503,16 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
 
                     programsHTML += `<div class="programme-item absolute top-1 bottom-1 bg-gray-800 rounded-md p-2 overflow-hidden flex flex-col justify-center z-5 ${isLive ? 'live' : ''} ${progStop < now ? 'past' : ''} ${notificationClass} ${recordingClass}" style="left:${left}px; width:${Math.max(0, width - 2)}px" data-channel-url="${channel.url}" data-channel-id="${channel.id}" data-channel-name="${channelName}" data-prog-title="${prog.title}" data-prog-desc="${prog.desc}" data-prog-start="${progStart.toISOString()}" data-prog-stop="${progStop.toISOString()}" data-prog-id="${uniqueProgramId}"><div class="programme-progress" style="width:${progressWidth}%"></div><p class="prog-title text-white font-semibold truncate relative z-10">${prog.title}</p><p class="prog-time text-gray-400 truncate relative z-10">${progStart.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p></div>`;
                 });
-                const timelineRowHTML = `<div class="timeline-row" style="width: ${timelineWidth}px;">${programsHTML}</div>`;
+                // Timeline Row HTML for the right scrollable column
+                const timelineRowHTML = `<div class="timeline-row" style="width: ${timelineWidth}px; top: ${i * ROW_HEIGHT}px; position: absolute;">${programsHTML}</div>`;
 
+                // Append both channel info and timeline row directly to the rowContainer
                 rowsHTML += channelInfoHTML + timelineRowHTML;
             }
 
             rowContainer.innerHTML = rowsHTML;
-            rowContainer.style.transform = `translateY(${startIndex * ROW_HEIGHT}px)`;
+            // The transform on rowContainer is no longer needed as each row is absolutely positioned
+            // rowContainer.style.transform = `translateY(${startIndex * ROW_HEIGHT}px)`;
         };
 
         if (guideState.scrollHandler) {
@@ -490,6 +523,8 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
 
         if (resetScroll) {
             guideContainer.scrollTop = 0;
+            // Reset horizontal scroll too on full re-render
+            guideContainer.scrollLeft = 0;
         }
         updateVisibleRows();
         updateNowLine(guideStartUtc, resetScroll);
@@ -524,20 +559,28 @@ const updateNowLine = (guideStartUtc, shouldScroll = false) => {
     const now = new Date();
     const nowValue = now.getTime();
     const guideEnd = new Date(guideStartUtc.getTime() + guideState.guideDurationHours * 3600 * 1000);
-    const channelInfoColWidth = guideState.settings.channelColumnWidth;
+    const channelInfoColWidth = parseInt(getComputedStyle(UIElements.guideGrid).getPropertyValue('--channel-col-width'));
 
     if (nowValue >= guideStartUtc.getTime() && nowValue <= guideEnd.getTime()) {
         const leftOffsetInScrollableArea = ((nowValue - guideStartUtc.getTime()) / 3600000) * guideState.hourWidthPixels;
         nowLineEl.style.left = `${channelInfoColWidth + leftOffsetInScrollableArea}px`;
         nowLineEl.classList.remove('hidden');
+        // The height is now handled by CSS with `height: 100%;` on #now-line, spanning the parent grid.
+        // We no longer need to dynamically set its height in JS.
+        // nowLineEl.style.height = `${contentWrapper?.scrollHeight || UIElements.guideContainer.scrollHeight}px`;
+
+
         if (shouldScroll) {
             setTimeout(() => {
-                const isMobile = window.innerWidth < 768; 
+                const isMobile = window.innerWidth < 767; // Consistent mobile breakpoint
                 let scrollLeft;
 
+                // Adjust scroll based on whether mobile or desktop view
                 if (isMobile) {
+                    // On mobile, center the "now" line relative to the entire guide container width
                     scrollLeft = (channelInfoColWidth + leftOffsetInScrollableArea) - (UIElements.guideContainer.clientWidth / 2);
                 } else {
+                    // On desktop, position it more towards the left, allowing more upcoming programs to be seen
                     scrollLeft = leftOffsetInScrollableArea - (UIElements.guideContainer.clientWidth / 4);
                 }
                 
@@ -551,10 +594,9 @@ const updateNowLine = (guideStartUtc, shouldScroll = false) => {
         nowLineEl.classList.add('hidden');
     }
     
-    const contentWrapper = UIElements.guideGrid.querySelector('#virtual-content-wrapper');
-    nowLineEl.style.height = `${contentWrapper?.scrollHeight || UIElements.guideContainer.scrollHeight}px`;
+    // The height of now-line is now CSS-driven via `height: 100%` on guide-grid.
 
-
+    // Update program states (live, past) for currently rendered programs
     document.querySelectorAll('.programme-item').forEach(item => {
         const progStart = new Date(item.dataset.progStart);
         const progStop = new Date(item.dataset.progStop);
@@ -568,6 +610,8 @@ const updateNowLine = (guideStartUtc, shouldScroll = false) => {
         }
     });
 
+    // Schedule next update, but only for the positioning of the line and program states
+    // The scroll handling within updateNowLine only happens if `shouldScroll` is true.
     setTimeout(() => updateNowLine(guideStartUtc, false), 60000);
 };
 
@@ -912,16 +956,23 @@ export function setupGuideEventListeners() {
         const scrollTop = UIElements.guideContainer.scrollTop;
         const scrollDirection = scrollTop > lastScrollTop ? 'down' : 'up';
 
-        if (initialHeaderHeight === 0) {
+        // Calculate initial header height once or when elements might have changed size
+        if (initialHeaderHeight === 0 || UIElements.mainHeader.offsetHeight + UIElements.unifiedGuideHeader.offsetHeight !== initialHeaderHeight) {
             initialHeaderHeight = calculateInitialHeaderHeight();
+            // Also update page-guide padding immediately if header heights change
+            updateGuidePaddingTop();
         }
 
-        const collapseThreshold = initialHeaderHeight * 0.5;
+        const collapseThreshold = initialHeaderHeight * 0.5; // Start collapsing after 50% scroll
 
         if (scrollDirection === 'down' && scrollTop > collapseThreshold) {
             UIElements.appContainer.classList.add('header-collapsed');
-        } else if (scrollDirection === 'up' && scrollTop <= collapseThreshold / 2) {
+            // When collapsed, set page-guide padding-top to 0 or minimum needed for sticky corner
+            UIElements.pageGuide.style.paddingTop = `0px`; // Or whatever minimum margin needed
+        } else if (scrollDirection === 'up' && scrollTop <= collapseThreshold / 2) { // Show headers fully when scrolled near top
             UIElements.appContainer.classList.remove('header-collapsed');
+            // When uncollapsed, restore padding-top to full header height
+            updateGuidePaddingTop();
         }
         lastScrollTop = scrollTop <= 0 ? 0 : scrollTop;
     }, 100);
