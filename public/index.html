@@ -373,6 +373,25 @@
             color: #60a5fa; /* blue-400 */
         }
 
+        /* --- NEW: DVR Styles --- */
+        .dvr-table th { @apply px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider; }
+        .dvr-table td { @apply px-4 py-3 whitespace-nowrap text-sm text-gray-300; }
+        .dvr-table tbody tr { @apply border-b border-gray-700/50; }
+        .dvr-table tbody tr:last-child { @apply border-none; }
+        .dvr-table .action-btn { @apply text-gray-400 hover:text-white transition-colors; }
+        .status-badge {
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 9999px;
+            text-transform: capitalize;
+        }
+        .status-badge.recording { background-color: #ef4444; color: white; }
+        .status-badge.scheduled { background-color: #3b82f6; color: white; }
+        .status-badge.completed { background-color: #22c55e; color: white; }
+        .status-badge.error, .status-badge.cancelled { background-color: #f97316; color: white; }
+
+
     </style>
 </head>
 <body class="h-screen">
@@ -440,8 +459,9 @@
                 <!-- Desktop Tabs -->
                 <div class="hidden lg:flex gap-2">
                     <button id="tab-guide" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 active rounded-md transition-colors">TV Guide</button>
-                    <!-- NEW: Multi-View Tab -->
                     <button id="tab-multiview" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Multi-View</button>
+                    <!-- NEW: DVR Tab -->
+                    <button id="tab-dvr" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">DVR</button>
                     <button id="tab-notifications" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Notifications</button>
                     <button id="tab-settings" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Settings</button>
                 </div>
@@ -453,25 +473,20 @@
         <main class="flex-grow flex flex-col overflow-hidden">
             <!-- TV Guide Page -->
             <div id="page-guide" class="flex flex-grow flex-col overflow-hidden">
-                <!-- NEW: Unified Guide Header Bar -->
+                <!-- Unified Guide Header Bar -->
                 <div id="unified-guide-header" class="flex-shrink-0 bg-gray-800 p-2 sm:p-4 border-b border-gray-700 flex items-center justify-between z-30 transition-transform duration-300 ease-out">
-                    <!-- MODIFIED: Left side now contains date display and date picker -->
                     <div class="flex items-center gap-2 sm:gap-3 date-nav-controls">
                         <span id="guide-date-display" class="text-base sm:text-lg font-semibold text-white"></span>
-                        <!-- MODIFIED: Removed date input field, label acts as button -->
                         <label for="guide-date-picker" class="bg-gray-700 hover:bg-gray-600 border border-gray-600 rounded-md p-2 cursor-pointer transition-colors" title="Jump to date">
                             <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                         </label>
-                        <!-- ADDED: Hidden input to power the date picker button. It will be found by JS. -->
                         <input type="date" id="guide-date-picker" class="hidden">
                     </div>
                     
-                    <!-- Right: Filters and Search (moved from guide-controls-bar to here) -->
                     <div class="relative w-full sm:w-auto flex flex-wrap items-center justify-end gap-2 filter-search-controls">
                         <select id="group-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"></select>
                         <select id="source-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"></select>
                         <input type="search" id="search-input" placeholder="Search..." class="flex-grow sm:flex-grow-0 sm:w-48 bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500">
-                        <!-- Removed: Reset Filter Button -->
                         <div id="search-results-container" class="hidden absolute top-full right-0 w-full sm:w-96 max-h-80 overflow-y-auto bg-gray-800 border border-gray-600 rounded-md mt-1 z-50 custom-scrollbar shadow-lg"></div>
                     </div>
                 </div>
@@ -488,27 +503,20 @@
                             <p class="mt-1 text-sm">Go to the Settings tab to add and activate your M3U and EPG sources.</p>
                         </div>
                     </div>
-                    <!-- NEW: This is where the unified grid will be rendered by guide.js -->
                     <div id="guide-grid" class="h-full w-full">
-                        <!-- Sticky Corner (top-left) for channel column resize handle -->
                         <div class="sticky-corner flex items-center justify-center p-2 sm:p-4">
-                            <!-- MODIFIED: Removed Prev/Next Day buttons, kept Now button -->
                             <div class="flex items-center gap-2">
                                 <button id="now-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">Now</button>
                             </div>
-                            <!-- Resize handle for the channel column -->
                             <div id="channel-column-resize-handle" class="channel-resize-handle"></div>
                         </div>
-                        <!-- Time Bar Row (dynamically generated by JS) -->
                         <div class="time-bar-cell"></div>
-                        <!-- Now Line -->
                         <div id="now-line" class="absolute top-0 bg-red-500 w-0.5 z-30 pointer-events-none hidden"></div>
-                        <!-- Channel Info and Program Rows (dynamically generated by JS) -->
                     </div>
                 </div>
             </div>
 
-            <!-- NEW: Multi-View Page -->
+            <!-- Multi-View Page -->
             <div id="page-multiview" class="hidden flex-grow flex-col overflow-hidden">
                 <div id="multiview-header" class="flex-shrink-0 bg-gray-800 p-2 border-b border-gray-700 flex items-center justify-between flex-wrap gap-2 z-20">
                     <div class="flex items-center gap-2">
@@ -527,7 +535,6 @@
                         <button id="layout-btn-2x2" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">2x2 Grid</button>
                         <button id="layout-btn-1x3" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md text-sm transition-colors">1 Large + 3</button>
                     </div>
-                     <!-- ADDED: Saved Layout Controls -->
                     <div class="flex items-center gap-2">
                          <label for="saved-layouts-select" class="text-sm font-medium text-gray-400">Saved Layouts:</label>
                          <select id="saved-layouts-select" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500">
@@ -541,12 +548,62 @@
                     </div>
                 </div>
                 <div id="multiview-container" class="flex-grow bg-gray-900 overflow-auto relative custom-scrollbar p-2">
-                    <!-- CORRECTED: Added ID for gridstack initialization -->
                     <div id="multiview-grid" class="grid-stack"></div>
                 </div>
             </div>
 
-            <!-- NEW: Notifications Page -->
+            <!-- NEW: DVR Page -->
+            <div id="page-dvr" class="hidden flex-grow flex-col items-center p-4 overflow-y-auto custom-scrollbar">
+                <div class="w-full max-w-6xl mx-auto space-y-8 pb-16">
+                    <!-- Scheduled Recordings Section -->
+                    <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
+                        <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Scheduled Recordings</h2>
+                        <div id="no-dvr-jobs-message" class="hidden text-center text-gray-500 p-4">
+                            <p class="mt-1 text-sm">No upcoming recordings scheduled. Find a program in the TV Guide to record it.</p>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full dvr-table">
+                                <thead>
+                                    <tr>
+                                        <th>Program Title</th>
+                                        <th>Channel</th>
+                                        <th>Start Time</th>
+                                        <th>End Time</th>
+                                        <th>Status</th>
+                                        <th class="text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dvr-jobs-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Completed Recordings Section -->
+                    <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
+                        <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Completed Recordings</h2>
+                        <div id="no-dvr-recordings-message" class="hidden text-center text-gray-500 p-4">
+                            <p class="mt-1 text-sm">No recordings have been completed yet.</p>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full dvr-table">
+                                <thead>
+                                    <tr>
+                                        <th>Program Title</th>
+                                        <th>Channel</th>
+                                        <th>Recorded On</th>
+                                        <th>Duration</th>
+                                        <th>File Size</th>
+                                        <th class="text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dvr-recordings-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Notifications Page -->
             <div id="page-notifications" class="hidden flex-grow flex-col items-center p-4 overflow-y-auto custom-scrollbar">
                 <div class="w-full max-w-4xl mx-auto space-y-6 pb-16">
                     <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Upcoming Notifications</h2>
@@ -555,21 +612,15 @@
                         <h3 class="mt-2 text-sm font-medium">No Notifications Set</h3>
                         <p class="mt-1 text-sm">Browse the TV Guide and set notifications for your favorite upcoming programs.</p>
                     </div>
-                    <div id="notifications-list" class="space-y-4">
-                        <!-- Upcoming Notifications will be dynamically loaded here -->
-                    </div>
+                    <div id="notifications-list" class="space-y-4"></div>
 
-                    <!-- NEW: Section for Previous and Expired Notifications -->
                     <h2 class="text-xl font-bold text-white mt-8 mb-4 border-b border-gray-700 pb-2">Past & Expired Notifications</h2>
                     <div id="no-past-notifications-message" class="hidden text-center text-gray-500 p-4">
                         <svg class="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         <h3 class="mt-2 text-sm font-medium">No Past Notifications</h3>
                         <p class="mt-1 text-sm">Notifications that have already triggered or expired will appear here.</p>
                     </div>
-                    <div id="past-notifications-list" class="space-y-4 opacity-80">
-                        <!-- Past Notifications will be dynamically loaded here -->
-                    </div>
-
+                    <div id="past-notifications-list" class="space-y-4 opacity-80"></div>
                 </div>
             </div>
 
@@ -591,9 +642,7 @@
                                         <th class="px-4 py-2 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
                                     </tr>
                                 </thead>
-                                <tbody id="user-list" class="bg-gray-800 divide-y divide-gray-700">
-                                    <!-- User rows will be injected here -->
-                                </tbody>
+                                <tbody id="user-list" class="bg-gray-800 divide-y divide-gray-700"></tbody>
                             </table>
                         </div>
                     </div>
@@ -609,8 +658,6 @@
                                 </span>
                             </button>
                         </div>
-
-                        <!-- M3U Sources Table -->
                         <div class="mb-8">
                             <div class="flex justify-between items-center mb-3">
                                 <h3 class="text-lg font-semibold text-gray-300">M3U Accounts</h3>
@@ -621,24 +668,11 @@
                             </div>
                             <div class="overflow-x-auto bg-gray-900/50 rounded-lg">
                                 <table class="min-w-full sources-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Name</th>
-                                            <th>Type</th>
-                                            <th>URL / File Path</th>
-                                            <th>Status</th>
-                                            <th>Last Updated</th>
-                                            <th>Refresh</th>
-                                            <th>Active</th>
-                                            <th class="text-right">Actions</th>
-                                        </tr>
-                                    </thead>
+                                    <thead><tr><th>Name</th><th>Type</th><th>URL / File Path</th><th>Status</th><th>Last Updated</th><th>Refresh</th><th>Active</th><th class="text-right">Actions</th></tr></thead>
                                     <tbody id="m3u-sources-tbody"></tbody>
                                 </table>
                             </div>
                         </div>
-
-                        <!-- EPG Sources Table -->
                         <div>
                              <div class="flex justify-between items-center mb-3">
                                 <h3 class="text-lg font-semibold text-gray-300">EPG Accounts</h3>
@@ -649,18 +683,7 @@
                             </div>
                             <div class="overflow-x-auto bg-gray-900/50 rounded-lg">
                                 <table class="min-w-full sources-table">
-                                     <thead>
-                                        <tr>
-                                            <th>Name</th>
-                                            <th>Type</th>
-                                            <th>URL / File Path</th>
-                                            <th>Status</th>
-                                            <th>Last Updated</th>
-                                            <th>Refresh</th>
-                                            <th>Active</th>
-                                            <th class="text-right">Actions</th>
-                                        </tr>
-                                    </thead>
+                                     <thead><tr><th>Name</th><th>Type</th><th>URL / File Path</th><th>Status</th><th>Last Updated</th><th>Refresh</th><th>Active</th><th class="text-right">Actions</th></tr></thead>
                                     <tbody id="epg-sources-tbody"></tbody>
                                 </table>
                             </div>
@@ -671,7 +694,6 @@
                     <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
                         <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Player Settings</h2>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8">
-                            <!-- User Agents Section -->
                             <div>
                                 <label for="user-agent-select" class="block text-sm font-medium text-gray-400 mb-2">Active User Agent</label>
                                 <select id="user-agent-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500 mb-2"></select>
@@ -681,7 +703,6 @@
                                     <button id="delete-user-agent-btn" class="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-bold py-2 px-4 rounded-md">Delete</button>
                                 </div>
                             </div>
-                            <!-- Stream Profiles Section -->
                             <div>
                                 <label for="stream-profile-select" class="block text-sm font-medium text-gray-400 mb-2">Active Stream Profile</label>
                                 <select id="stream-profile-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500 mb-2"></select>
@@ -689,6 +710,32 @@
                                     <button id="add-stream-profile-btn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-md">New</button>
                                     <button id="edit-stream-profile-btn" class="flex-1 bg-gray-600 hover:bg-gray-500 text-white text-sm font-bold py-2 px-4 rounded-md">Edit</button>
                                     <button id="delete-stream-profile-btn" class="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-bold py-2 px-4 rounded-md">Delete</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- NEW: DVR Settings Section -->
+                    <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
+                        <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">DVR Settings</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8">
+                            <div>
+                                <label for="dvr-recording-profile-select" class="block text-sm font-medium text-gray-400 mb-2">Active Recording Profile</label>
+                                <select id="dvr-recording-profile-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500 mb-2"></select>
+                                <div class="flex gap-2">
+                                    <button id="add-dvr-profile-btn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-md">New</button>
+                                    <button id="edit-dvr-profile-btn" class="flex-1 bg-gray-600 hover:bg-gray-500 text-white text-sm font-bold py-2 px-4 rounded-md">Edit</button>
+                                    <button id="delete-dvr-profile-btn" class="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-bold py-2 px-4 rounded-md">Delete</button>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-x-4">
+                                <div>
+                                    <label for="dvr-pre-buffer-input" class="block text-sm font-medium text-gray-400 mb-2">Start Early (mins)</label>
+                                    <input type="number" id="dvr-pre-buffer-input" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white" min="0" value="1">
+                                </div>
+                                <div>
+                                    <label for="dvr-post-buffer-input" class="block text-sm font-medium text-gray-400 mb-2">End Late (mins)</label>
+                                    <input type="number" id="dvr-post-buffer-input" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white" min="0" value="2">
                                 </div>
                             </div>
                         </div>
@@ -702,19 +749,16 @@
                                 <label for="timezone-offset-select" class="block text-sm font-medium text-gray-400 mb-1">EPG Timezone Correction</label>
                                  <p class="text-xs text-gray-500 mb-2">Use this if EPG times are wrong. The server will re-parse the EPG data.</p>
                                 <select id="timezone-offset-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500"></select>
-                                <!-- ADDED: Placeholder for detected timezone -->
                                 <p id="detected-timezone-info" class="text-xs text-gray-500 mt-2 hidden"></p>
                             </div>
                             <div>
                                  <label for="search-scope-select" class="block text-sm font-medium text-gray-400 mb-1">Guide Search Scope</label>
                                   <p class="text-xs text-gray-500 mb-2">Control what the search bar in the TV Guide looks for.</p>
                                  <select id="search-scope-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500">
-                                     <!-- MODIFIED: Changed default -->
                                      <option value="channels_programs">Channels & Programs</option>
                                      <option value="channels_only" selected>Channels Only</option>
                                  </select>
                              </div>
-                            <!-- NEW: Notification Lead Time Setting -->
                             <div>
                                 <label for="notification-lead-time-input" class="block text-sm font-medium text-gray-400 mb-1">Notify Me Before (minutes)</label>
                                 <p class="text-xs text-gray-500 mb-2">Set how many minutes before a program starts you'd like to be notified.</p>
@@ -745,9 +789,12 @@
             <button id="mobile-nav-guide" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors active">
                 <span class="flex items-center gap-2"><svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg> TV Guide</span>
             </button>
-            <!-- NEW: Mobile Multi-View Nav -->
             <button id="mobile-nav-multiview" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors">
                 <span class="flex items-center gap-2"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12h16M12 4v16"></path></svg> Multi-View</span>
+            </button>
+            <!-- NEW: Mobile DVR Nav -->
+            <button id="mobile-nav-dvr" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors">
+                <span class="flex items-center gap-2"><svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M7 3.5A1.5 1.5 0 018.5 2h3A1.5 1.5 0 0113 3.5v1.259a.25.25 0 00.25.25h1.5a.25.25 0 00.25-.25V3.5A1.5 1.5 0 0116.5 2h3A1.5 1.5 0 0121 3.5v13A1.5 1.5 0 0119.5 18h-16A1.5 1.5 0 012 16.5v-13A1.5 1.5 0 013.5 2h3A1.5 1.5 0 018 3.5v1.259a.25.25 0 00.25.25h1.5a.25.25 0 00.25-.25V3.5zM8.5 4a.5.5 0 00-.5.5v1a.25.25 0 00.25.25h3.5a.25.25 0 00.25-.25v-1a.5.5 0 00-.5-.5h-3z"></path><path d="M12.5 13a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"></path></svg> DVR</span>
             </button>
             <button id="mobile-nav-notifications" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors">
                 <span class="flex items-center gap-2"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg> Notifications</span>
@@ -770,7 +817,6 @@
             <div class="flex justify-between items-center p-3 border-b border-gray-700 flex-shrink-0">
                 <h3 id="video-title" class="text-lg font-semibold text-white truncate"></h3>
                 <div class="flex items-center gap-2">
-                    <!-- FINAL FIX: Replaced google-cast-launcher with a custom button -->
                     <button id="cast-btn" class="text-gray-400 hover:text-white p-2 rounded-md hover:bg-gray-700" title="Cast to device">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11z"></path></svg>
                     </button>
@@ -778,10 +824,8 @@
                     <button id="close-modal" class="text-gray-400 hover:text-white text-2xl leading-none font-bold">&times;</button>
                 </div>
             </div>
-            <!-- MODIFIED: Added a container for the video element and a new one for the cast status message -->
             <div id="video-content" class="flex-grow p-1 bg-black relative">
                 <video id="videoElement" controls autoplay class="w-full h-full"></video>
-                <!-- NEW: This element will show when casting -->
                 <div id="cast-status" class="hidden absolute inset-0 flex-col items-center justify-center bg-black text-white p-4">
                     <svg class="w-16 h-16 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1"><path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
                     <p id="cast-status-text" class="text-lg font-semibold"></p>
@@ -801,6 +845,8 @@
             <p id="details-desc" class="text-base text-gray-300 flex-grow custom-scrollbar"></p>
             <div class="flex justify-between items-center gap-4 mt-6 flex-shrink-0">
                 <button id="details-play-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Play Channel</button>
+                <!-- NEW: Record Button -->
+                <button id="details-record-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md hidden">Record</button>
                 <button id="program-details-notify-btn" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-md hidden">Notify Me</button>
                 <button id="details-close-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Close</button>
             </div>
@@ -821,13 +867,12 @@
         </div>
     </div>
 
-    <!-- NEW: Multi-View Channel Selector Modal -->
+    <!-- Multi-View Channel Selector Modal -->
     <div id="multiview-channel-selector-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4">
         <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl flex flex-col" style="height: 70vh;">
             <div class="p-4 border-b border-gray-700 flex-shrink-0">
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="text-xl font-bold text-white">Select a Channel</h3>
-                     <!-- CORRECTED: Changed ID to match JS -->
                     <select id="multiview-channel-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500">
                         <option value="all">All Groups</option>
                         <option value="favorites">Favorites</option>
@@ -836,19 +881,16 @@
                 </div>
                 <input type="search" id="channel-selector-search" placeholder="Search channels..." class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500">
             </div>
-            <div id="channel-selector-list" class="flex-grow p-2 overflow-y-auto custom-scrollbar">
-                <!-- Channel list will be dynamically inserted here -->
-            </div>
+            <div id="channel-selector-list" class="flex-grow p-2 overflow-y-auto custom-scrollbar"></div>
             <div class="bg-gray-700/50 px-6 py-4 flex justify-end gap-4 rounded-b-lg flex-shrink-0">
                 <button type="button" id="channel-selector-cancel-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Cancel</button>
             </div>
         </div>
     </div>
 
-    <!-- ADDED: Save Layout Modal -->
+    <!-- Save Layout Modal -->
     <div id="save-layout-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-[70] p-4">
         <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-sm">
-            <!-- CORRECTED: Added form element -->
             <form id="save-layout-form">
                 <div class="p-6">
                     <h3 class="text-lg font-bold text-white mb-4">Save Layout</h3>
@@ -860,7 +902,6 @@
                 </div>
                 <div class="bg-gray-700/50 px-6 py-4 flex justify-end gap-4 rounded-b-lg">
                     <button type="button" id="save-layout-cancel-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Cancel</button>
-                    <!-- CORRECTED: Changed button type to submit -->
                     <button type="submit" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md">Save</button>
                 </div>
             </form>
@@ -900,7 +941,6 @@
                             <input type="file" id="source-editor-file" class="mt-1 block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-500 file:text-white hover:file:bg-blue-600 cursor-pointer">
                             <p id="source-editor-file-info" class="text-xs text-gray-500 mt-1"></p>
                         </div>
-                        <!-- NEW REFRESH DROPDOWN -->
                         <div id="source-editor-refresh-container">
                             <label for="source-editor-refresh-interval" class="block text-sm font-medium text-gray-400">Refresh Interval (URL only)</label>
                             <select id="source-editor-refresh-interval" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500">
@@ -971,6 +1011,20 @@
             </form>
         </div>
     </div>
+    
+    <!-- NEW: Recording Player Modal -->
+    <div id="recording-player-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+        <div class="bg-gray-900 rounded-lg shadow-xl max-h-[90vh] flex flex-col" style="width: 896px;">
+            <div class="flex justify-between items-center p-3 border-b border-gray-700 flex-shrink-0">
+                <h3 id="recording-title" class="text-lg font-semibold text-white truncate"></h3>
+                <button id="close-recording-player-btn" class="text-gray-400 hover:text-white text-2xl leading-none font-bold">&times;</button>
+            </div>
+            <div class="flex-grow p-1 bg-black relative">
+                <video id="recording-video-element" controls autoplay class="w-full h-full"></video>
+            </div>
+        </div>
+    </div>
+
 
     <!-- Main Application Script (Refactored) -->
     <script type="module" src="/js/main.js"></script>
