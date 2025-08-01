@@ -79,23 +79,17 @@ export const updateUIFromSettings = () => {
     const settings = guideState.settings;
 
     // FIX: One-time timezone auto-detection and setting.
-    // This addresses the issue where existing settings files have a default of 0 (UTC).
     const timezoneSetFlag = localStorage.getItem('vini_timezone_auto_set');
     if (!timezoneSetFlag) {
         const browserOffset = Math.round(-(new Date().getTimezoneOffset() / 60));
         settings.timezoneOffset = browserOffset;
         console.log(`[SETTINGS] First-run timezone detection. Setting to browser offset: ${browserOffset} and saving.`);
-        // Perform a one-time save to correct the server's setting file.
         saveGlobalSetting({ timezoneOffset: browserOffset });
-        // Set a flag in local storage so this auto-detection doesn't run again,
-        // allowing the user to manually change the setting later.
         localStorage.setItem('vini_timezone_auto_set', 'true');
     } else {
-        // For subsequent loads, use the setting from the server, but still have a fallback.
         settings.timezoneOffset = settings.timezoneOffset ?? Math.round(-(new Date().getTimezoneOffset() / 60));
     }
     
-    // NEW: Display detected IANA timezone
     try {
         const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
         if (userTimezone && UIElements.detectedTimezoneInfo) {
@@ -106,13 +100,19 @@ export const updateUIFromSettings = () => {
         console.warn("Could not detect user's IANA timezone.", e);
     }
     
-    settings.searchScope = settings.searchScope || 'channels_only'; // MODIFIED: Changed default
-    settings.notificationLeadTime = settings.notificationLeadTime ?? 10; 
+    settings.searchScope = settings.searchScope || 'channels_only';
+    settings.notificationLeadTime = settings.notificationLeadTime ?? 10;
+    // NEW: Set DVR defaults
+    settings.dvrPreRoll = settings.dvrPreRoll ?? 2;
+    settings.dvrPostRoll = settings.dvrPostRoll ?? 5;
 
     // Update dropdowns and inputs
     UIElements.timezoneOffsetSelect.value = settings.timezoneOffset;
     UIElements.searchScopeSelect.value = settings.searchScope;
     UIElements.notificationLeadTimeInput.value = settings.notificationLeadTime;
+    UIElements.dvrPreRollInput.value = settings.dvrPreRoll;
+    UIElements.dvrPostRollInput.value = settings.dvrPostRoll;
+
 
     // Render tables
     renderSourceTable('m3u');
@@ -134,6 +134,7 @@ export const updateUIFromSettings = () => {
 
     populateSelect('userAgentSelect', settings.userAgents || [], settings.activeUserAgentId);
     populateSelect('streamProfileSelect', settings.streamProfiles || [], settings.activeStreamProfileId);
+    populateSelect('recordingProfileSelect', settings.recordingProfiles || [], settings.activeRecordingProfileId);
 
     // Update button states based on selection
     const selectedProfile = (settings.streamProfiles || []).find(p => p.id === UIElements.streamProfileSelect.value);
@@ -143,6 +144,11 @@ export const updateUIFromSettings = () => {
     const selectedUA = (settings.userAgents || []).find(ua => ua.id === UIElements.userAgentSelect.value);
     UIElements.editUserAgentBtn.disabled = !selectedUA;
     UIElements.deleteUserAgentBtn.disabled = !selectedUA || selectedUA.isDefault;
+
+    const selectedRecordingProfile = (settings.recordingProfiles || []).find(p => p.id === UIElements.recordingProfileSelect.value);
+    UIElements.editRecordingProfileBtn.disabled = !selectedRecordingProfile;
+    UIElements.deleteRecordingProfileBtn.disabled = !selectedRecordingProfile || selectedRecordingProfile.isDefault;
+
 
     // Ensure user list is always populated for admins when this page is viewed.
     if (appState.currentUser?.isAdmin) {
@@ -232,30 +238,45 @@ const openSourceEditor = (sourceType, source = null) => {
 
 /**
  * Opens the generic editor modal for User Agents or Stream Profiles.
- * @param {('userAgent'|'streamProfile')} type - The type of item to edit.
+ * @param {('userAgent'|'streamProfile'|'recordingProfile')} type - The type of item to edit.
  * @param {object|null} item - The item to edit, or null for a new one.
  */
 const openEditorModal = (type, item = null) => {
     const isUserAgent = type === 'userAgent';
-    const title = item ? `Edit ${isUserAgent ? 'User Agent' : 'Stream Profile'}` : `Create New ${isUserAgent ? 'User Agent' : 'Stream Profile'}`;
-    const valueLabel = isUserAgent ? 'User Agent String' : 'Command';
+    let title, valueLabel, helpText;
+
+    if (type === 'userAgent') {
+        title = item ? 'Edit User Agent' : 'Create New User Agent';
+        valueLabel = 'User Agent String';
+        helpText = 'The User-Agent string to send with stream requests.';
+    } else if (type === 'streamProfile') {
+        title = item ? 'Edit Stream Profile' : 'Create New Stream Profile';
+        valueLabel = 'FFmpeg Command';
+        helpText = 'For ffmpeg commands, use {userAgent} and {streamUrl} as placeholders.';
+    } else { // recordingProfile
+        title = item ? 'Edit Recording Profile' : 'Create New Recording Profile';
+        valueLabel = 'FFmpeg Command';
+        helpText = 'Use {streamUrl} and {filePath} as placeholders. Example: -i "{streamUrl}" -c copy "{filePath}.ts"';
+    }
+
 
     UIElements.editorTitle.textContent = title;
     UIElements.editorType.value = type;
     UIElements.editorId.value = item ? item.id : `custom-${Date.now()}`;
     UIElements.editorName.value = item ? item.name : '';
     UIElements.editorValueLabel.textContent = valueLabel;
-    UIElements.editorValue.value = item ? (isUserAgent ? item.value : item.command) : '';
+    UIElements.editorValue.value = item ? item.command || item.value : '';
+    UIElements.editorValue.nextElementSibling.textContent = helpText;
 
     const isDefault = item && item.isDefault;
     UIElements.editorName.disabled = isDefault;
     UIElements.editorValue.disabled = isDefault;
 
-    if (isDefault && !isUserAgent) {
-        const helpText = item.command === 'redirect' ?
+    if (isDefault && !isUserAgent && type === 'streamProfile') {
+        const defaultHelp = item.command === 'redirect' ?
             'This built-in profile redirects the player to the stream URL directly. The command cannot be changed.' :
             'This built-in profile uses the server to proxy the stream. The command cannot be changed.';
-        UIElements.editorValue.value = helpText;
+        UIElements.editorValue.value = defaultHelp;
     }
 
     UIElements.editorSaveBtn.disabled = isDefault;
@@ -416,7 +437,6 @@ export function setupSettingsEventListeners() {
     // --- General Settings ---
     UIElements.timezoneOffsetSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { timezoneOffset: parseInt(e.target.value, 10) }));
     UIElements.searchScopeSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { searchScope: e.target.value }));
-    // NEW: Event listener for notification lead time
     UIElements.notificationLeadTimeInput.addEventListener('change', async (e) => {
         const value = parseInt(e.target.value, 10);
         if (isNaN(value) || value < 1) {
@@ -427,7 +447,12 @@ export function setupSettingsEventListeners() {
         await saveSettingAndNotify(saveGlobalSetting, { notificationLeadTime: value });
     });
 
-    // --- Player Settings ---
+    // --- NEW: DVR Settings ---
+    UIElements.dvrPreRollInput.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { dvrPreRoll: parseInt(e.target.value, 10) }));
+    UIElements.dvrPostRollInput.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { dvrPostRoll: parseInt(e.target.value, 10) }));
+    UIElements.recordingProfileSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { activeRecordingProfileId: e.target.value }));
+
+    // --- Player Settings (User Agents & Stream Profiles) ---
     UIElements.addUserAgentBtn.addEventListener('click', () => openEditorModal('userAgent'));
     UIElements.editUserAgentBtn.addEventListener('click', () => {
         const agent = guideState.settings.userAgents.find(ua => ua.id === UIElements.userAgentSelect.value);
@@ -440,7 +465,7 @@ export function setupSettingsEventListeners() {
             const newActiveId = (guideState.settings.activeUserAgentId === selectedId) ? (updatedList[0]?.id || null) : guideState.settings.activeUserAgentId;
             const settings = await saveGlobalSetting({ userAgents: updatedList, activeUserAgentId: newActiveId });
             if (settings) {
-                Object.assign(guideState.settings, settings); // Merge settings
+                Object.assign(guideState.settings, settings);
                 updateUIFromSettings();
                 showNotification('User Agent deleted.');
             }
@@ -458,7 +483,7 @@ export function setupSettingsEventListeners() {
             const newActiveId = (guideState.settings.activeStreamProfileId === selectedId) ? (updatedList[0]?.id || null) : guideState.settings.activeStreamProfileId;
             const settings = await saveGlobalSetting({ streamProfiles: updatedList, activeStreamProfileId: newActiveId });
             if (settings) {
-                Object.assign(guideState.settings, settings); // Merge settings
+                Object.assign(guideState.settings, settings);
                 updateUIFromSettings();
                 showNotification('Stream Profile saved.');
             }
@@ -466,6 +491,26 @@ export function setupSettingsEventListeners() {
     });
     UIElements.userAgentSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { activeUserAgentId: e.target.value }));
     UIElements.streamProfileSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { activeStreamProfileId: e.target.value }));
+
+    // --- NEW: Recording Profiles ---
+    UIElements.addRecordingProfileBtn.addEventListener('click', () => openEditorModal('recordingProfile'));
+    UIElements.editRecordingProfileBtn.addEventListener('click', () => {
+        const profile = guideState.settings.recordingProfiles.find(p => p.id === UIElements.recordingProfileSelect.value);
+        if (profile) openEditorModal('recordingProfile', profile);
+    });
+    UIElements.deleteRecordingProfileBtn.addEventListener('click', () => {
+        const selectedId = UIElements.recordingProfileSelect.value;
+        showConfirm('Delete Recording Profile?', 'Are you sure?', async () => {
+            const updatedList = guideState.settings.recordingProfiles.filter(p => p.id !== selectedId);
+            const newActiveId = (guideState.settings.activeRecordingProfileId === selectedId) ? (updatedList[0]?.id || null) : guideState.settings.activeRecordingProfileId;
+            const settings = await saveGlobalSetting({ recordingProfiles: updatedList, activeRecordingProfileId: newActiveId });
+            if (settings) {
+                Object.assign(guideState.settings, settings);
+                updateUIFromSettings();
+                showNotification('Recording Profile deleted.');
+            }
+        });
+    });
     
     // --- Editor Modal ---
     UIElements.editorCancelBtn.addEventListener('click', () => closeModal(UIElements.editorModal));
@@ -474,22 +519,36 @@ export function setupSettingsEventListeners() {
         const id = UIElements.editorId.value, type = UIElements.editorType.value, name = UIElements.editorName.value.trim(), value = UIElements.editorValue.value.trim();
         if (!name || !value) return showNotification('Name and value cannot be empty.', true);
         
-        const keyToSave = type === 'userAgent' ? 'userAgents' : 'streamProfiles';
+        const keyMap = {
+            'userAgent': 'userAgents',
+            'streamProfile': 'streamProfiles',
+            'recordingProfile': 'recordingProfiles'
+        };
+        const keyToSave = keyMap[type];
+        if (!keyToSave) return;
+
         const list = guideState.settings[keyToSave] || [];
         const existingIndex = list.findIndex(item => item.id === id);
+        const newItem = {
+            id,
+            name,
+            command: type !== 'userAgent' ? value : undefined,
+            value: type === 'userAgent' ? value : undefined,
+            isDefault: false
+        };
 
         if (existingIndex > -1) {
-            list[existingIndex] = { ...list[existingIndex], name, [type === 'userAgent' ? 'value' : 'command']: value };
+            list[existingIndex] = { ...list[existingIndex], ...newItem };
         } else {
-            list.push(type === 'userAgent' ? { id, name, value } : { id, name, command: value, isDefault: false });
+            list.push(newItem);
         }
 
         const settings = await saveGlobalSetting({ [keyToSave]: list });
         if (settings) {
-            Object.assign(guideState.settings, settings); // Merge settings
+            Object.assign(guideState.settings, settings);
             updateUIFromSettings();
             closeModal(UIElements.editorModal);
-            showNotification(type === 'userAgent' ? 'User Agent saved.' : 'Stream Profile saved.');
+            showNotification(`${type.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())} saved.`);
         }
     });
     
@@ -548,4 +607,3 @@ export function setupSettingsEventListeners() {
         });
     });
 }
-
