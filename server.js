@@ -23,7 +23,6 @@ const schedule = require('node-schedule'); // NEW: For DVR scheduling
 const app = express();
 const port = 8998;
 const saltRounds = 10;
-const sourceRefreshTimers = new Map();
 let notificationCheckInterval = null;
 
 // --- NEW: DVR State ---
@@ -131,8 +130,8 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
 });
 
 // --- Middleware ---
+// Basic static file and body parsing middleware should come first
 app.use(express.static(PUBLIC_DIR));
-app.use('/dvr', requireAuth, express.static(DVR_DIR)); // NEW: Serve recorded files statically
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -141,6 +140,7 @@ if (!sessionSecret || sessionSecret.includes('replace_this')) {
     console.warn('[SECURITY] Using a weak or default SESSION_SECRET.');
 }
 
+// Session middleware must be set up before any routes that rely on req.session
 app.use(
   session({
     store: new SQLiteStore({ db: 'viniplay.db', dir: DATA_DIR, table: 'sessions' }),
@@ -152,6 +152,7 @@ app.use(
 );
 
 // --- Authentication Middleware ---
+// MOVED: These definitions are now before their first usage in any routes.
 const requireAuth = (req, res, next) => {
     if (req.session && req.session.userId) return next();
     return res.status(401).json({ error: 'Authentication required.' });
@@ -160,6 +161,9 @@ const requireAdmin = (req, res, next) => {
     if (req.session && req.session.isAdmin) return next();
     return res.status(403).json({ error: 'Administrator privileges required.' });
 };
+
+// Now that requireAuth is defined, we can use it
+app.use('/dvr', requireAuth, express.static(DVR_DIR)); // NEW: Serve recorded files statically
 
 // --- Helper Functions ---
 function getSettings() {
