@@ -1501,31 +1501,53 @@ function startRecording(job) {
     db.run("UPDATE dvr_jobs SET status = 'recording', ffmpeg_pid = ?, filePath = ? WHERE id = ?", [ffmpeg.pid, fullFilePath, job.id]);
 
     ffmpeg.stderr.on('data', (data) => console.log(`[FFMPEG_DVR][${job.id}] ${data.toString().trim()}`));
-
+    
+    // --- SERVER CRASH FIX ---
+    // The following event handlers are corrected to not use `req` or `res` objects,
+    // which don't exist in this background context, thus preventing the server crash.
     ffmpeg.on('close', (code) => {
-        if (code !== 0) {
-            console.log(`[STREAM] ffmpeg process for ${streamUrl} exited with code ${code}`);
-        } else {
-            console.log(`[STREAM] ffmpeg process for ${streamUrl} exited gracefully.`);
-        }
-        if (!res.headersSent) {
-             res.status(500).send('FFmpeg stream ended unexpectedly or failed to start.');
-        } else {
-            res.end();
-        }
+        runningFFmpegProcesses.delete(job.id);
+        const logMessage = code === 0 ? 'finished gracefully' : `exited with error code ${code}`;
+        console.log(`[DVR] Recording process for job ${job.id} ("${job.programTitle}") ${logMessage}.`);
+
+        fs.stat(fullFilePath, (statErr, stats) => {
+            if (code === 0 && !statErr && stats && stats.size > 0) {
+                // On successful recording, create an entry in the completed recordings table.
+                const durationSeconds = (new Date(job.endTime) - new Date(job.startTime)) / 1000;
+                db.run(`INSERT INTO dvr_recordings (job_id, user_id, channelName, programTitle, startTime, durationSeconds, fileSizeBytes, filePath) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [job.id, job.user_id, job.channelName, job.programTitle, job.startTime, Math.round(durationSeconds), stats.size, fullFilePath],
+                    (insertErr) => {
+                        if (insertErr) {
+                            console.error(`[DVR] Failed to create dvr_recordings entry for job ${job.id}:`, insertErr.message);
+                        } else {
+                            console.log(`[DVR] Job ${job.id} logged to completed recordings.`);
+                        }
+                    }
+                );
+                // Mark the original job as completed.
+                db.run("UPDATE dvr_jobs SET status = 'completed', ffmpeg_pid = NULL WHERE id = ?", [job.id]);
+            } else {
+                // If the recording failed or produced an empty file, mark the job as 'error'.
+                console.error(`[DVR] Recording for job ${job.id} failed or produced an empty/invalid file. Stat error: ${statErr}`);
+                db.run("UPDATE dvr_jobs SET status = 'error', ffmpeg_pid = NULL WHERE id = ?", [job.id]);
+                // Clean up the empty/corrupt file if it exists.
+                if (!statErr) {
+                    fs.unlink(fullFilePath, (unlinkErr) => {
+                        if (unlinkErr) console.error(`[DVR] Could not delete failed recording file: ${fullFilePath}`, unlinkErr);
+                    });
+                }
+            }
+        });
     });
 
     ffmpeg.on('error', (err) => {
-        console.error(`[STREAM] Failed to start ffmpeg process for ${streamUrl}: ${err.message}`);
-        if (!res.headersSent) {
-            res.status(500).send('Failed to start streaming service. Check server logs.');
-        }
+        // This event fires if the ffmpeg process could not be spawned.
+        console.error(`[DVR] Failed to spawn ffmpeg process for job ${job.id}: ${err.message}`);
+        runningFFmpegProcesses.delete(job.id);
+        db.run("UPDATE dvr_jobs SET status = 'error', ffmpeg_pid = NULL WHERE id = ?", [job.id]);
     });
-
-    req.on('close', () => {
-        console.log(`[STREAM] Client closed connection for ${streamUrl}. Killing ffmpeg process (PID: ${ffmpeg.pid}).`);
-        ffmpeg.kill('SIGKILL');
-    });
+    // --- END FIX ---
 }
 
 /**
