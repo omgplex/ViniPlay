@@ -372,19 +372,23 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
     }
     console.log('[NOTIF_DEBUG] scrollToChannel confirmed channel row is rendered.');
 
-    // 4. Now that the row is rendered, find the program element directly.
-    const channelElement = UIElements.guideGrid.querySelector(`.channel-info[data-id$="${stableChannelIdSuffix}"]`);
-    if (!channelElement) {
-        console.error(`[NOTIF_DEBUG] CRITICAL: scrollToChannel resolved true, but channel element with suffix ${stableChannelIdSuffix} not found.`);
+    // 4. Now that the row is rendered, find the program element directly with a FRESH query.
+    // This is crucial to avoid stale DOM references after potential re-renders from virtualization.
+    const currentChannelElement = UIElements.guideGrid.querySelector(`.channel-info[data-id$="${stableChannelIdSuffix}"]`);
+    if (!currentChannelElement) {
+        console.error(`[NOTIF_DEBUG] CRITICAL: Channel element with suffix ${stableChannelIdSuffix} not found after scrollToChannel resolved true.`);
         showNotification("An unexpected error occurred while locating the channel.", true);
         return;
     }
-    
-    const currentDynamicChannelId = channelElement.dataset.id;
-    const programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programStart}"][data-channel-id="${currentDynamicChannelId}"]`);
+    const currentDynamicChannelId = currentChannelElement.dataset.id; // Get the full dynamic ID
+
+    // Use a more specific selector now that we have the actual rendered channel's ID
+    const programElement = UIElements.guideGrid.querySelector(
+        `.programme-item[data-prog-start="${programStart}"][data-channel-id="${currentDynamicChannelId}"]`
+    );
 
     if (!programElement) {
-        console.warn(`[NOTIF_DEBUG] Channel row found, but program element not found. It may be out of view horizontally or data is missing.`);
+        console.warn(`[NOTIF_DEBUG] Channel row found, but program element not found for start time ${programStart} and channel ${currentDynamicChannelId}. It may be out of view horizontally or data is missing.`);
         showNotification("Could not find the specific program in the guide's timeline.", false, 6000);
         return;
     }
@@ -411,6 +415,7 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
     // Wait for the smooth scroll to have an effect before opening details
     setTimeout(() => {
         console.log('[NOTIF_DEBUG] Calling openProgramDetails directly.');
+        // Pass the re-queried programElement to ensure it's a live DOM node
         openProgramDetails(programElement);
         
         programElement.classList.add('highlighted-search');
