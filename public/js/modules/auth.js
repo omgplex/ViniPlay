@@ -102,6 +102,8 @@ const initializeUIElements = () => {
     UIElements.addM3uBtn = document.getElementById('add-m3u-btn');
     UIElements.addEpgBtn = document.getElementById('add-epg-btn');
     UIElements.processSourcesBtnContent = document.getElementById('process-sources-btn-content');
+    // CRITICAL FIX: Explicitly get the process-sources-btn to ensure it's not null
+    UIElements.processSourcesBtn = document.getElementById('process-sources-btn');
 };
 
 
