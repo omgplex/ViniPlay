@@ -349,7 +349,7 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
 
     // 1. Navigate to the guide page
     navigate('/tvguide');
-    await new Promise(resolve => setTimeout(resolve, 50)); // Tiny delay for navigation to register
+    await new Promise(resolve => setTimeout(resolve, 50));
 
     // 2. Adjust date if necessary
     const targetProgramStart = new Date(programStart);
@@ -360,66 +360,60 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
         console.log(`[NOTIF_NAV] Program is on a different day. Adjusting guide date.`);
         guideState.currentDate = targetProgramStart;
         await handleSearchAndFilter(true);
-        await new Promise(resolve => setTimeout(resolve, 50)); // Wait for rerender
     }
 
-    // 3. Scroll vertically to the channel
-    const channelScrolled = await scrollToChannel(stableChannelIdSuffix);
-    if (!channelScrolled) {
+    // 3. Scroll vertically and wait for the channel row to be rendered
+    console.log('[NOTIF_DEBUG] Awaiting scrollToChannel to confirm vertical scroll and render.');
+    const channelScrolledAndRendered = await scrollToChannel(stableChannelIdSuffix);
+    
+    if (!channelScrolledAndRendered) {
         showNotification("Could not find the channel in the guide. It might be filtered out.", false, 6000);
         return;
     }
+    console.log('[NOTIF_DEBUG] scrollToChannel confirmed channel row is rendered.');
 
-    // 4. Use an observer loop to wait for the element to appear in the DOM
-    let programElement = null;
-    let attempts = 0;
-    const maxAttempts = 100; // 100 * 50ms = 5 seconds timeout
+    // 4. Now that the row is rendered, find the program element directly.
+    const channelElement = UIElements.guideGrid.querySelector(`.channel-info[data-id$="${stableChannelIdSuffix}"]`);
+    if (!channelElement) {
+        console.error(`[NOTIF_DEBUG] CRITICAL: scrollToChannel resolved true, but channel element with suffix ${stableChannelIdSuffix} not found.`);
+        showNotification("An unexpected error occurred while locating the channel.", true);
+        return;
+    }
+    
+    const currentDynamicChannelId = channelElement.dataset.id;
+    const programElement = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programStart}"][data-channel-id="${currentDynamicChannelId}"]`);
 
-    const findProgramInterval = setInterval(() => {
-        // Find the dynamic ID of the channel now it's in view
-        const channelElement = UIElements.guideGrid.querySelector(`.channel-info[data-id$="${stableChannelIdSuffix}"]`);
-        if (channelElement) {
-            const currentDynamicChannelId = channelElement.dataset.id;
-            const foundProgram = UIElements.guideGrid.querySelector(`.programme-item[data-prog-start="${programStart}"][data-channel-id="${currentDynamicChannelId}"]`);
-            
-            if (foundProgram) {
-                clearInterval(findProgramInterval);
-                programElement = foundProgram;
-                console.log(`[NOTIF_DEBUG] Program element found after ${attempts} attempts. Ready to proceed.`);
-                
-                const guideContainer = UIElements.guideContainer;
-                
-                // --- Centering Logic ---
-                const programRect = programElement.getBoundingClientRect();
-                const containerRect = guideContainer.getBoundingClientRect();
-                const desiredScrollTop = guideContainer.scrollTop + programRect.top - containerRect.top - (containerRect.height / 2) + (programRect.height / 2);
-                const desiredScrollLeft = guideContainer.scrollLeft + programRect.left - containerRect.left - (containerRect.width / 2) + (programRect.width / 2);
+    if (!programElement) {
+        console.warn(`[NOTIF_DEBUG] Channel row found, but program element not found. It may be out of view horizontally or data is missing.`);
+        showNotification("Could not find the specific program in the guide's timeline.", false, 6000);
+        return;
+    }
 
-                guideContainer.scrollTo({
-                    top: Math.max(0, desiredScrollTop),
-                    left: Math.max(0, desiredScrollLeft),
-                    behavior: 'smooth'
-                });
+    console.log('[NOTIF_DEBUG] Program element found. Proceeding with centering and opening details.');
 
-                // Use a short timeout to allow the smooth scroll to start
-                setTimeout(() => {
-                    console.log('[NOTIF_DEBUG] Calling openProgramDetails directly.');
-                    // THE FIX: Directly call the function instead of simulating a click
-                    openProgramDetails(programElement);
-                    
-                    // Highlight the element
-                    programElement.classList.add('highlighted-search');
-                    setTimeout(() => { programElement.classList.remove('highlighted-search'); }, 2500);
-                }, 300);
-                return;
-            }
-        }
+    // --- 5. Centering and Opening Logic ---
+    const guideContainer = UIElements.guideContainer;
+    
+    // Use getBoundingClientRect for accurate positioning relative to the viewport
+    const programRect = programElement.getBoundingClientRect();
+    const containerRect = guideContainer.getBoundingClientRect();
+    
+    // Calculate the desired scroll position to center the element
+    const desiredScrollTop = guideContainer.scrollTop + programRect.top - containerRect.top - (containerRect.height / 2) + (programRect.height / 2);
+    const desiredScrollLeft = guideContainer.scrollLeft + programRect.left - containerRect.left - (containerRect.width / 2) + (programRect.width / 2);
 
-        attempts++;
-        if (attempts >= maxAttempts) {
-            clearInterval(findProgramInterval);
-            console.warn(`[NOTIF_NAV] Max attempts reached. Could not find program element for channel suffix ${stableChannelIdSuffix} and start time ${programStart}.`);
-            showNotification("Could not find program in guide to open details.", false, 6000);
-        }
-    }, 50); // Check every 50ms
+    guideContainer.scrollTo({
+        top: Math.max(0, desiredScrollTop),
+        left: Math.max(0, desiredScrollLeft),
+        behavior: 'smooth'
+    });
+
+    // Wait for the smooth scroll to have an effect before opening details
+    setTimeout(() => {
+        console.log('[NOTIF_DEBUG] Calling openProgramDetails directly.');
+        openProgramDetails(programElement);
+        
+        programElement.classList.add('highlighted-search');
+        setTimeout(() => { programElement.classList.remove('highlighted-search'); }, 2500);
+    }, 300); // 300ms should be enough for the scroll animation to start
 };
