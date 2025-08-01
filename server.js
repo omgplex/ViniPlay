@@ -23,7 +23,9 @@ const schedule = require('node-schedule'); // NEW: For DVR scheduling
 const app = express();
 const port = 8998;
 const saltRounds = 10;
+// Initialize global variables at the top-level scope
 let notificationCheckInterval = null;
+const sourceRefreshTimers = new Map(); // FIXED: Initialize sourceRefreshTimers here
 
 // --- NEW: DVR State ---
 const activeDvrJobs = new Map(); // Stores active node-schedule jobs
@@ -1190,8 +1192,7 @@ app.delete('/api/notifications/:id', requireAuth, (req, res) => {
             }
             console.log(`[PUSH_API] Notification ${id} deleted successfully for user ${req.session.userId}.`);
             res.json({ success: true });
-        }
-    );
+    });
 });
 
 
@@ -1503,9 +1504,9 @@ function startRecording(job) {
 
     ffmpeg.on('close', (code) => {
         if (code !== 0) {
-            console.log(`[DVR] ffmpeg process for job ${job.id} exited with code ${code}`);
+            console.log(`[STREAM] ffmpeg process for ${streamUrl} exited with code ${code}`);
         } else {
-            console.log(`[DVR] ffmpeg process for ${job.id} exited gracefully.`);
+            console.log(`[STREAM] ffmpeg process for ${streamUrl} exited gracefully.`);
         }
         if (!res.headersSent) {
              res.status(500).send('FFmpeg stream ended unexpectedly or failed to start.');
@@ -1515,8 +1516,15 @@ function startRecording(job) {
     });
 
     ffmpeg.on('error', (err) => {
-        console.error(`[DVR] Failed to start ffmpeg for job ${job.id}: ${err.message}`);
-        db.run("UPDATE dvr_jobs SET status = 'error', ffmpeg_pid = NULL WHERE id = ?", [job.id]);
+        console.error(`[STREAM] Failed to start ffmpeg process for ${streamUrl}: ${err.message}`);
+        if (!res.headersSent) {
+            res.status(500).send('Failed to start streaming service. Check server logs.');
+        }
+    });
+
+    req.on('close', () => {
+        console.log(`[STREAM] Client closed connection for ${streamUrl}. Killing ffmpeg process (PID: ${ffmpeg.pid}).`);
+        ffmpeg.kill('SIGKILL');
     });
 }
 
