@@ -29,16 +29,13 @@ export function openProgramDetails(progItem) {
         return;
     }
 
-    // CRITICAL FIX: Ensure programDetailsModal is correctly referenced in UIElements
-    if (!UIElements.programDetailsModal) {
-        UIElements.programDetailsModal = document.getElementById('program-details-modal');
-        if (!UIElements.programDetailsModal) {
-            console.error('[GUIDE_DEBUG] programDetailsModal element not found in DOM.');
-            showNotification('Error: Program details modal is missing.', true);
-            return;
-        }
+    // CRITICAL FIX: Directly get the modal element from the DOM here
+    const programDetailsModal = document.getElementById('program-details-modal');
+    if (!programDetailsModal) {
+        console.error('[GUIDE_DEBUG] programDetailsModal element not found in DOM when opening details.');
+        showNotification('Error: Program details modal is missing. Please refresh the page.', true);
+        return;
     }
-
 
     const channelId = progItem.dataset.channelId;
     const programData = {
@@ -62,109 +59,128 @@ export function openProgramDetails(progItem) {
     const channelLogo = channelData.logo;
     const channelUrl = channelData.url;
 
-    UIElements.detailsTitle.textContent = programData.title;
+    // Use the retrieved programDetailsModal and its children
+    const detailsTitle = programDetailsModal.querySelector('#details-title');
+    const detailsTime = programDetailsModal.querySelector('#details-time');
+    const detailsDesc = programDetailsModal.querySelector('#details-desc');
+    const detailsPlayBtn = programDetailsModal.querySelector('#details-play-btn');
+    const programDetailsNotifyBtn = programDetailsModal.querySelector('#program-details-notify-btn');
+    const programDetailsRecordBtn = programDetailsModal.querySelector('#program-details-record-btn');
+    const detailsCloseBtn = programDetailsModal.querySelector('#details-close-btn');
+
+    if (detailsTitle) detailsTitle.textContent = programData.title;
     const progStart = new Date(programData.start);
     const progStop = new Date(programData.stop);
-    UIElements.detailsTime.textContent = `${progStart.toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})}`;
-    UIElements.detailsDesc.textContent = programData.desc || "No description available.";
+    if (detailsTime) detailsTime.textContent = `${progStart.toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})}`;
+    if (detailsDesc) detailsDesc.textContent = programData.desc || "No description available.";
     
-    UIElements.detailsPlayBtn.onclick = () => {
-        playChannel(channelUrl, channelName, channelId);
-        closeModal(UIElements.programDetailsModal);
-    };
+    if (detailsPlayBtn) {
+        detailsPlayBtn.onclick = () => {
+            playChannel(channelUrl, channelName, channelId);
+            closeModal(programDetailsModal);
+        };
+    }
 
     const now = new Date();
     const programStopTime = new Date(programData.stop).getTime();
     const isProgramRelevant = programStopTime > now.getTime();
     
     // --- Notification Button Logic ---
-    const notification = findNotificationForProgram(programData, channelId);
-    if (isProgramRelevant) {
-        UIElements.programDetailsNotifyBtn.classList.remove('hidden');
-        UIElements.programDetailsNotifyBtn.textContent = notification ? 'Notification Set' : 'Notify Me';
-        UIElements.programDetailsNotifyBtn.disabled = !notification && Notification.permission === 'denied';
-        UIElements.programDetailsNotifyBtn.classList.toggle('bg-yellow-600', !notification);
-        UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-yellow-700', !notification);
-        UIElements.programDetailsNotifyBtn.classList.toggle('bg-gray-600', !!notification);
-        UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-gray-500', !!notification);
+    if (programDetailsNotifyBtn) {
+        const notification = findNotificationForProgram(programData, channelId);
+        if (isProgramRelevant) {
+            programDetailsNotifyBtn.classList.remove('hidden');
+            programDetailsNotifyBtn.textContent = notification ? 'Notification Set' : 'Notify Me';
+            programDetailsNotifyBtn.disabled = !notification && Notification.permission === 'denied';
+            programDetailsNotifyBtn.classList.toggle('bg-yellow-600', !notification);
+            programDetailsNotifyBtn.classList.toggle('hover:bg-yellow-700', !notification);
+            programDetailsNotifyBtn.classList.toggle('bg-gray-600', !!notification);
+            programDetailsNotifyBtn.classList.toggle('hover:bg-gray-500', !!notification);
 
-        UIElements.programDetailsNotifyBtn.onclick = async () => {
-            await addOrRemoveNotification({
-                id: notification ? notification.id : null,
-                channelId: programData.channelId,
-                channelName: channelName,
-                channelLogo: channelLogo,
-                programTitle: programData.title,
-                programStart: programData.start,
-                programStop: programData.stop,
-                programDesc: programData.desc,
-                programId: programData.programId
-            });
-            // Re-check status after the operation
-            const updatedNotification = findNotificationForProgram(programData, channelId);
-            UIElements.programDetailsNotifyBtn.textContent = updatedNotification ? 'Notification Set' : 'Notify Me';
-            UIElements.programDetailsNotifyBtn.classList.toggle('bg-yellow-600', !updatedNotification);
-            UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-yellow-700', !updatedNotification);
-            UIElements.programDetailsNotifyBtn.classList.toggle('bg-gray-600', !!updatedNotification);
-            UIElements.programDetailsNotifyBtn.classList.toggle('hover:bg-gray-500', !!updatedNotification);
-            handleSearchAndFilter(false); 
-        };
-    } else {
-        UIElements.programDetailsNotifyBtn.classList.add('hidden');
+            programDetailsNotifyBtn.onclick = async () => {
+                await addOrRemoveNotification({
+                    id: notification ? notification.id : null,
+                    channelId: programData.channelId,
+                    channelName: channelName,
+                    channelLogo: channelLogo,
+                    programTitle: programData.title,
+                    programStart: programData.start,
+                    programStop: programData.stop,
+                    programDesc: programData.desc,
+                    programId: programData.programId
+                });
+                // Re-check status after the operation
+                const updatedNotification = findNotificationForProgram(programData, channelId);
+                programDetailsNotifyBtn.textContent = updatedNotification ? 'Notification Set' : 'Notify Me';
+                programDetailsNotifyBtn.classList.toggle('bg-yellow-600', !updatedNotification);
+                programDetailsNotifyBtn.classList.toggle('hover:bg-yellow-700', !updatedNotification);
+                programDetailsNotifyBtn.classList.toggle('bg-gray-600', !!updatedNotification);
+                programDetailsNotifyBtn.classList.toggle('hover:bg-gray-500', !!updatedNotification);
+                handleSearchAndFilter(false); 
+            };
+        } else {
+            programDetailsNotifyBtn.classList.add('hidden');
+        }
     }
 
     // --- NEW: DVR Record Button Logic ---
-    const dvrJob = findDvrJobForProgram(programData);
+    if (programDetailsRecordBtn) {
+        const dvrJob = findDvrJobForProgram(programData);
 
-    if (isProgramRelevant) {
-        UIElements.programDetailsRecordBtn.classList.remove('hidden');
-        let buttonText = 'Record';
-        let buttonClass = 'bg-red-600';
-        let hoverClass = 'hover:bg-red-700';
-        let isDisabled = false;
+        if (isProgramRelevant) {
+            programDetailsRecordBtn.classList.remove('hidden');
+            let buttonText = 'Record';
+            let buttonClass = 'bg-red-600';
+            let hoverClass = 'hover:bg-red-700';
+            let isDisabled = false;
 
-        if (dvrJob) {
-            switch (dvrJob.status) {
-                case 'pending':
-                case 'scheduled':
-                    buttonText = 'Cancel Recording';
-                    buttonClass = 'bg-gray-600';
-                    hoverClass = 'hover:bg-gray-500';
-                    break;
-                case 'recording':
-                    buttonText = 'Recording...';
-                    buttonClass = 'bg-red-800';
-                    hoverClass = 'hover:bg-red-800';
-                    isDisabled = true; // Can't cancel while recording from here
-                    break;
-                case 'completed':
-                case 'failed':
-                    buttonText = 'Recorded';
-                    buttonClass = 'bg-green-600';
-                    hoverClass = 'hover:bg-green-600';
-                    isDisabled = true;
-                    break;
+            if (dvrJob) {
+                switch (dvrJob.status) {
+                    case 'pending':
+                    case 'scheduled':
+                        buttonText = 'Cancel Recording';
+                        buttonClass = 'bg-gray-600';
+                        hoverClass = 'hover:bg-gray-500';
+                        break;
+                    case 'recording':
+                        buttonText = 'Recording...';
+                        buttonClass = 'bg-red-800';
+                        hoverClass = 'hover:bg-red-800';
+                        isDisabled = true; // Can't cancel while recording from here
+                        break;
+                    case 'completed':
+                    case 'failed':
+                        buttonText = 'Recorded';
+                        buttonClass = 'bg-green-600';
+                        hoverClass = 'hover:bg-green-600';
+                        isDisabled = true;
+                        break;
+                }
             }
+            
+            programDetailsRecordBtn.textContent = buttonText;
+            programDetailsRecordBtn.className = `font-bold py-2 px-4 rounded-md transition-colors ${buttonClass} ${hoverClass} text-white`;
+            programDetailsRecordBtn.disabled = isDisabled;
+
+            programDetailsRecordBtn.onclick = async () => {
+                await addOrRemoveDvrJob(programData);
+                // The button state will be updated automatically when dvrState changes
+                // and the modal is re-opened, but we can optimistically update it here too.
+                closeModal(programDetailsModal); // Close modal after action
+                handleSearchAndFilter(false); // Redraw guide to show recording indicator
+            };
+
+        } else {
+            programDetailsRecordBtn.classList.add('hidden');
         }
-        
-        UIElements.programDetailsRecordBtn.textContent = buttonText;
-        UIElements.programDetailsRecordBtn.className = `font-bold py-2 px-4 rounded-md transition-colors ${buttonClass} ${hoverClass} text-white`;
-        UIElements.programDetailsRecordBtn.disabled = isDisabled;
-
-        UIElements.programDetailsRecordBtn.onclick = async () => {
-            await addOrRemoveDvrJob(programData);
-            // The button state will be updated automatically when dvrState changes
-            // and the modal is re-opened, but we can optimistically update it here too.
-            closeModal(UIElements.programDetailsModal); // Close modal after action
-            handleSearchAndFilter(false); // Redraw guide to show recording indicator
-        };
-
-    } else {
-        UIElements.programDetailsRecordBtn.classList.add('hidden');
     }
     
+    if (detailsCloseBtn) {
+        detailsCloseBtn.onclick = () => closeModal(programDetailsModal);
+    }
+
     console.log('[GUIDE_DEBUG] Opening program details modal via openProgramDetails function.');
-    openModal(UIElements.programDetailsModal);
+    openModal(programDetailsModal);
 }
 
 
