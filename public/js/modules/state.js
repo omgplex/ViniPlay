@@ -37,6 +37,13 @@ export const guideState = {
     userNotifications: [], // NEW: Stores active program notifications for the current user
 };
 
+// NEW: State specific to the DVR
+export const dvrState = {
+    scheduledJobs: [],
+    completedRecordings: [],
+};
+
+
 // A cache for frequently accessed DOM elements
 // Initially empty, will be populated after the DOM is ready and visible
 export const UIElements = {};
@@ -65,8 +72,9 @@ export const initializeUIElements = () => {
     UIElements.stickyCorner = document.querySelector('.sticky-corner');
     UIElements.channelColumnResizeHandle = document.getElementById('channel-column-resize-handle');
 
-    // NEW: Program Details Modal Notification Button
+    // Program Details Modal Buttons
     UIElements.programDetailsNotifyBtn = document.getElementById('program-details-notify-btn');
+    UIElements.programDetailsRecordBtn = document.getElementById('program-details-record-btn');
 
     // Mobile menu elements
     UIElements.mobileMenuToggle = document.getElementById('mobile-menu-toggle');
@@ -77,18 +85,17 @@ export const initializeUIElements = () => {
     UIElements.mobileNavLogoutBtn = document.getElementById('mobile-nav-logout-btn');
     UIElements.mobileMenuOverlay = document.getElementById('mobile-menu-overlay');
 
-    // NEW: Notification Tab/Page Elements
+    // Notification Tab/Page Elements
     UIElements.tabNotifications = document.getElementById('tab-notifications'); // Desktop Nav
     UIElements.mobileNavNotifications = document.getElementById('mobile-nav-notifications'); // Mobile Nav
     UIElements.pageNotifications = document.getElementById('page-notifications');
     UIElements.notificationsList = document.getElementById('notifications-list');
     UIElements.noNotificationsMessage = document.getElementById('no-notifications-message');
     UIElements.notificationLeadTimeInput = document.getElementById('notification-lead-time-input');
-    // NEW: Past Notifications section elements
     UIElements.pastNotificationsList = document.getElementById('past-notifications-list');
     UIElements.noPastNotificationsMessage = document.getElementById('no-past-notifications-message');
 
-    // --- NEW: Multi-View Elements ---
+    // Multi-View Elements
     UIElements.pageMultiview = document.getElementById('page-multiview');
     UIElements.tabMultiview = document.getElementById('tab-multiview');
     UIElements.mobileNavMultiview = document.getElementById('mobile-nav-multiview');
@@ -103,7 +110,6 @@ export const initializeUIElements = () => {
     UIElements.channelSelectorList = document.getElementById('channel-selector-list');
     UIElements.channelSelectorSearch = document.getElementById('channel-selector-search');
     UIElements.channelSelectorCancelBtn = document.getElementById('channel-selector-cancel-btn');
-    // CORRECTED: Explicitly add all new Multi-View elements
     UIElements.multiviewSaveLayoutBtn = document.getElementById('multiview-save-layout-btn');
     UIElements.multiviewLoadLayoutBtn = document.getElementById('multiview-load-layout-btn');
     UIElements.multiviewDeleteLayoutBtn = document.getElementById('multiview-delete-layout-btn');
@@ -114,10 +120,27 @@ export const initializeUIElements = () => {
     UIElements.saveLayoutCancelBtn = document.getElementById('save-layout-cancel-btn');
     UIElements.multiviewChannelFilter = document.getElementById('multiview-channel-filter');
     
-    // **FIX**: Explicitly add settings buttons that were not being picked up
+    // NEW: DVR Elements
+    UIElements.pageDvr = document.getElementById('page-dvr');
+    UIElements.tabDvr = document.getElementById('tab-dvr');
+    UIElements.mobileNavDvr = document.getElementById('mobile-nav-dvr');
+    UIElements.dvrJobsTbody = document.getElementById('dvr-jobs-tbody');
+    UIElements.noDvrJobsMessage = document.getElementById('no-dvr-jobs-message');
+    UIElements.dvrRecordingsTbody = document.getElementById('dvr-recordings-tbody');
+    UIElements.noDvrRecordingsMessage = document.getElementById('no-dvr-recordings-message');
+    UIElements.recordingPlayerModal = document.getElementById('recording-player-modal');
+    UIElements.recordingVideoElement = document.getElementById('recording-video-element');
+    UIElements.recordingTitle = document.getElementById('recording-title');
+    UIElements.closeRecordingPlayerBtn = document.getElementById('close-recording-player-btn');
+    UIElements.dvrPreRollInput = document.getElementById('dvr-pre-roll-input');
+    UIElements.dvrPostRollInput = document.getElementById('dvr-post-roll-input');
+    UIElements.addRecordingProfileBtn = document.getElementById('add-recording-profile-btn');
+    UIElements.editRecordingProfileBtn = document.getElementById('edit-recording-profile-btn');
+    UIElements.deleteRecordingProfileBtn = document.getElementById('delete-recording-profile-btn');
+    UIElements.recordingProfileSelect = document.getElementById('recording-profile-select');
+
+    // Settings Buttons
     UIElements.addM3uBtn = document.getElementById('add-m3u-btn');
     UIElements.addEpgBtn = document.getElementById('add-epg-btn');
     UIElements.processSourcesBtnContent = document.getElementById('process-sources-btn-content');
-
-    // Removed: UIElements.autoRefreshSelect as it is no longer in the HTML
 };
