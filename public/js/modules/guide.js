@@ -115,6 +115,7 @@ export function openProgramDetails(progItem) {
         if (dvrJob) {
             switch (dvrJob.status) {
                 case 'pending':
+                case 'scheduled':
                     buttonText = 'Cancel Recording';
                     buttonClass = 'bg-gray-600';
                     hoverClass = 'hover:bg-gray-500';
