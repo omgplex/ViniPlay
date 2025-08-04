@@ -614,8 +614,15 @@
                         <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Manual Recording</h2>
                         <form id="manual-recording-form" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                             <div class="md:col-span-2">
-                                <label for="manual-rec-channel-select" class="block text-sm font-medium text-gray-400 mb-1">Channel</label>
-                                <select id="manual-rec-channel-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" required></select>
+                                <label class="block text-sm font-medium text-gray-400 mb-1">Channel</label>
+                                <!-- MODIFIED: Replaced select with a button and text display -->
+                                <div class="flex items-center gap-3">
+                                    <button type="button" id="manual-rec-channel-select-btn" class="flex-shrink-0 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md transition-colors">Select Channel</button>
+                                    <span id="manual-rec-selected-channel-name" class="text-gray-300 truncate">No channel selected</span>
+                                </div>
+                                <!-- MODIFIED: Added hidden inputs to store channel data -->
+                                <input type="hidden" id="manual-rec-channel-id" required>
+                                <input type="hidden" id="manual-rec-channel-name">
                             </div>
                             <div>
                                 <label for="manual-rec-start" class="block text-sm font-medium text-gray-400 mb-1">Start Time</label>
