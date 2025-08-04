@@ -216,16 +216,18 @@ export const addOrRemoveNotification = async (programDetails) => {
 };
 
 /**
- * Checks if a given program has an active notification scheduled.
+ * Checks if a given program has ANY notification scheduled (pending, sent, or expired).
+ * This makes the visual indicator in the guide persistent.
  * @param {object} program - The program object.
  * @param {string} channelId - The ID of the channel the program belongs to.
  * @returns {object|null} The notification object if found, otherwise null.
  */
 export const findNotificationForProgram = (program, channelId) => {
+    // MODIFIED: Removed the `n.status === 'pending'` check to make the indicator persistent
+    // for any notification associated with this program, regardless of its status.
     return guideState.userNotifications.find(n =>
         n.channelId === channelId &&
-        n.programId === program.programId &&
-        n.status === 'pending'
+        n.programId === program.programId
     );
 };
 
