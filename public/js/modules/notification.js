@@ -11,6 +11,17 @@ import { getVapidKey, subscribeToPush, addProgramNotification, getProgramNotific
 
 let isSubscribed = false;
 
+// NEW: Initialize BroadcastChannel for cross-page/SW communication
+const notificationChannel = new BroadcastChannel('viniplay-notifications');
+
+// NEW: Listener for messages from the Service Worker or other tabs
+notificationChannel.onmessage = (event) => {
+    if (event.data && event.data.type === 'refresh-notifications') {
+        console.log('[NOTIF_CHANNEL] Received refresh signal from Service Worker/another tab. Reloading notifications.');
+        loadAndScheduleNotifications();
+    }
+};
+
 /**
  * Converts a URL-safe base64 string to a Uint8Array.
  * This is needed for the VAPID public key.
@@ -116,6 +127,8 @@ export const addOrRemoveNotification = async (programDetails) => {
             async () => {
                 const success = await deleteProgramNotification(existingNotification.id);
                 if (success) {
+                    // Notify other tabs via BroadcastChannel after a successful local action
+                    notificationChannel.postMessage({ type: 'refresh-notifications' });
                     guideState.userNotifications = guideState.userNotifications.filter(n => n.id !== existingNotification.id);
                     renderNotifications();
                     renderPastNotifications();
@@ -189,6 +202,8 @@ export const addOrRemoveNotification = async (programDetails) => {
 
         const addedNotification = await addProgramNotification(newNotificationData);
         if (addedNotification) {
+            // Notify other tabs via BroadcastChannel after a successful local action
+            notificationChannel.postMessage({ type: 'refresh-notifications' });
             guideState.userNotifications.push({ ...addedNotification, status: 'pending' });
             renderNotifications();
             await handleSearchAndFilter(false);
@@ -324,6 +339,8 @@ const setupNotificationListEventListeners = () => {
                     async () => {
                         const success = await deleteProgramNotification(notificationId);
                         if (success) {
+                            // Notify other tabs via BroadcastChannel after a successful local action
+                            notificationChannel.postMessage({ type: 'refresh-notifications' });
                             guideState.userNotifications = guideState.userNotifications.filter(n => n.id != notificationId);
                             renderNotifications();
                             renderPastNotifications();
