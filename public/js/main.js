@@ -250,17 +250,35 @@ function setupCoreEventListeners() {
     }
 
     // NEW: Use ResizeObserver to update CSS variable for sticky header positioning
+    // This observer will monitor changes in the size of the main-header and unified-guide-header
+    // to dynamically adjust the --total-header-height CSS variable.
     if (UIElements.mainHeader && UIElements.unifiedGuideHeader) {
-        const mainHeaderObserver = new ResizeObserver(entries => {
+        const headerObserver = new ResizeObserver(entries => {
+            let mainHeaderHeight = 0;
+            let unifiedHeaderHeight = 0;
+
             for (let entry of entries) {
                 if (entry.target === UIElements.mainHeader) {
-                    document.documentElement.style.setProperty('--main-header-height', `${entry.contentRect.height}px`);
-                    console.log(`[MAIN] Main header height updated to: ${entry.contentRect.height}px`);
+                    mainHeaderHeight = entry.contentRect.height;
+                    document.documentElement.style.setProperty('--main-header-height', `${mainHeaderHeight}px`);
+                } else if (entry.target === UIElements.unifiedGuideHeader) {
+                    unifiedHeaderHeight = entry.contentRect.height;
                 }
             }
+
+            // Calculate current heights (might be 0 if collapsed)
+            mainHeaderHeight = UIElements.mainHeader.offsetHeight;
+            unifiedHeaderHeight = UIElements.unifiedGuideHeader.offsetHeight;
+            const totalHeaderHeight = mainHeaderHeight + unifiedHeaderHeight;
+            
+            // Set the CSS variable for the total header height
+            document.documentElement.style.setProperty('--total-header-height', `${totalHeaderHeight}px`);
+            console.log(`[MAIN] Total header height updated to: ${totalHeaderHeight}px (Main: ${mainHeaderHeight}, Unified: ${unifiedHeaderHeight})`);
         });
-        mainHeaderObserver.observe(UIElements.mainHeader);
-        console.log('[MAIN] ResizeObserver attached to main-header.');
+
+        headerObserver.observe(UIElements.mainHeader);
+        headerObserver.observe(UIElements.unifiedGuideHeader);
+        console.log('[MAIN] ResizeObserver attached to main-header and unified-guide-header.');
     }
 }
 
