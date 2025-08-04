@@ -32,7 +32,7 @@ const initializeUIElements = () => {
     UIElements.channelColumnResizeHandle = document.getElementById('channel-column-resize-handle');
     UIElements.userDisplay = document.getElementById('user-display');
     UIElements.userManagementSection = document.getElementById('user-management-section');
-    UIElements.dvrSettingsSection = document.getElementById('dvr-settings-section');
+    // NOTE: dvrSettingsSection is the entire settings div, not a separate element. Logic will handle visibility.
 
 
     // Program Details Modal and its Buttons
@@ -185,7 +185,7 @@ const showApp = (user) => {
     UIElements.userDisplay.textContent = user.username;
     UIElements.userDisplay.classList.remove('hidden');
     UIElements.userManagementSection.classList.toggle('hidden', !user.isAdmin);
-    UIElements.dvrSettingsSection.classList.toggle('hidden', !(user.isAdmin || user.canUseDvr));
+    // The entire DVR settings section visibility is handled in settings.js, so we don't need a specific element here.
     console.log(`[AUTH_UI] User display set to: ${user.username}. Admin section visibility: ${!user.isAdmin ? 'hidden' : 'visible'}.`);
 
     if (!appState.appInitialized) {
