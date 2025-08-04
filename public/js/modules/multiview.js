@@ -532,7 +532,7 @@ function stopAndCleanupPlayer(widgetId, resetUI = true) {
 /**
  * Populates the channel selector modal with available channels based on the selected filter.
  */
-function populateChannelSelector() {
+export function populateChannelSelector() {
     const listEl = UIElements.channelSelectorList;
     const filter = UIElements.multiviewChannelFilter.value;
     const searchTerm = UIElements.channelSelectorSearch.value.trim().toLowerCase();
