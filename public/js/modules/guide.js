@@ -772,23 +772,20 @@ export const scrollToChannel = (channelId) => {
 };
 
 
-/**
- * Calculates and applies the necessary padding-top to the #page-guide element.
- * This ensures that the content starts below the dynamically sized main and unified headers.
- */
-function updateGuidePaddingTop() {
-    if (!UIElements.mainHeader || !UIElements.unifiedGuideHeader || !UIElements.pageGuide) {
-        return;
-    }
+// REMOVED: The updateGuidePaddingTop function is no longer needed
+// function updateGuidePaddingTop() {
+//     if (!UIElements.mainHeader || !UIElements.unifiedGuideHeader || !UIElements.pageGuide) {
+//         return;
+//     }
 
-    const mainHeaderHeight = UIElements.mainHeader.offsetHeight;
-    const unifiedHeaderHeight = UIElements.unifiedGuideHeader.offsetHeight;
-    const totalHeaderHeight = mainHeaderHeight + unifiedHeaderHeight;
+//     const mainHeaderHeight = UIElements.mainHeader.offsetHeight;
+//     const unifiedHeaderHeight = UIElements.unifiedGuideHeader.offsetHeight;
+//     const totalHeaderHeight = mainHeaderHeight + unifiedHeaderHeight;
 
-    // Apply this total height as padding-top to #page-guide
-    UIElements.pageGuide.style.paddingTop = `${totalHeaderHeight}px`;
-    console.log(`[GUIDE_PADDING] Applied padding-top of ${totalHeaderHeight}px to #page-guide.`);
-}
+//     // Apply this total height as padding-top to #page-guide
+//     UIElements.pageGuide.style.paddingTop = `${totalHeaderHeight}px`;
+//     console.log(`[GUIDE_PADDING] Applied padding-top of ${totalHeaderHeight}px to #page-guide.`);
+// }
 
 
 // --- Event Listeners ---
@@ -915,14 +912,15 @@ export function setupGuideEventListeners() {
     });
 
     let lastScrollTop = 0;
-    let initialHeaderHeight = 0;
+    // REMOVED: initialHeaderHeight and calculateInitialHeaderHeight are no longer needed
+    // let initialHeaderHeight = 0;
 
-    const calculateInitialHeaderHeight = () => {
-        let height = 0;
-        if (UIElements.mainHeader) height += UIElements.mainHeader.offsetHeight;
-        if (UIElements.unifiedGuideHeader) height += UIElements.unifiedGuideHeader.offsetHeight;
-        return height;
-    };
+    // const calculateInitialHeaderHeight = () => {
+    //     let height = 0;
+    //     if (UIElements.mainHeader) height += UIElements.mainHeader.offsetHeight;
+    //     if (UIElements.unifiedGuideHeader) height += UIElements.unifiedGuideHeader.offsetHeight;
+    //     return height;
+    // };
 
     const handleScrollHeader = throttle(() => {
         if (!UIElements.guideContainer || !UIElements.appContainer || !UIElements.pageGuide) {
@@ -932,11 +930,14 @@ export function setupGuideEventListeners() {
         const scrollTop = UIElements.guideContainer.scrollTop;
         const scrollDirection = scrollTop > lastScrollTop ? 'down' : 'up';
 
-        if (initialHeaderHeight === 0) {
-            initialHeaderHeight = calculateInitialHeaderHeight();
-        }
+        // REMOVED: The logic tied to initialHeaderHeight is now irrelevant
+        // if (initialHeaderHeight === 0) {
+        //     initialHeaderHeight = calculateInitialHeaderHeight();
+        // }
 
-        const collapseThreshold = initialHeaderHeight * 0.5;
+        // Adjust collapse threshold to account for sticky headers not taking up space in the document flow
+        // A smaller threshold works better here as the visible header space is the actual sticky element heights.
+        const collapseThreshold = 50; // Arbitrary small value, adjust as needed
 
         if (scrollDirection === 'down' && scrollTop > collapseThreshold) {
             UIElements.appContainer.classList.add('header-collapsed');
@@ -945,8 +946,8 @@ export function setupGuideEventListeners() {
         }
         lastScrollTop = scrollTop <= 0 ? 0 : scrollTop;
 
-        // Call updateGuidePaddingTop on scroll to adjust padding dynamically
-        updateGuidePaddingTop();
+        // REMOVED: Call to updateGuidePaddingTop on scroll
+        // updateGuidePaddingTop();
     }, 100);
 
     // Attach the scroll handler to the guide container
@@ -954,6 +955,6 @@ export function setupGuideEventListeners() {
         UIElements.guideContainer.addEventListener('scroll', handleScrollHeader);
     }
 
-    // Call updateGuidePaddingTop once initially to set correct padding on load
-    updateGuidePaddingTop();
+    // REMOVED: Initial call to updateGuidePaddingTop
+    // updateGuidePaddingTop();
 }
