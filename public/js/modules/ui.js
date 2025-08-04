@@ -20,9 +20,21 @@ let currentPage = '/'; // ADDED: To track the current page for navigation logic
  * @param {number} duration - How long the notification should be visible in ms.
  */
 export const showNotification = (message, isError = false, duration = 3000) => {
+    // Ensure UIElements.notificationBox and UIElements.notificationMessage are available
+    if (!UIElements.notificationBox || !UIElements.notificationMessage || !UIElements.notificationModal) {
+        console.error('[UI_NOTIF] Notification elements not found in UIElements. Cannot display notification.');
+        console.log('[UI_NOTIF] Message attempted: ', message);
+        return;
+    }
+
     UIElements.notificationMessage.textContent = message;
-    UIElements.notificationModal.className = `fixed top-5 right-5 text-white py-2 px-4 rounded-lg shadow-lg z-[100] ${isError ? 'bg-red-500' : 'bg-green-500'}`;
+    
+    // Reset classes and apply new ones
+    UIElements.notificationBox.classList.remove('success-bg', 'error-bg');
+    UIElements.notificationBox.classList.add(isError ? 'error-bg' : 'success-bg');
+    
     UIElements.notificationModal.classList.remove('hidden');
+
     setTimeout(() => { UIElements.notificationModal.classList.add('hidden'); }, duration);
 };
 
@@ -293,12 +305,11 @@ function proceedWithRouteChange(path) {
     const appContainer = UIElements.appContainer; 
 
     // When navigating to guide, ensure headers are uncollapsed and set initial padding
+    // REMOVED: Dynamic padding-top for #page-guide. This is now handled by sticky headers in CSS.
     if (isGuide) {
         if (appContainer) {
             appContainer.classList.remove('header-collapsed');
         }
-        // Hardcode padding-top to 1px as requested
-        UIElements.pageGuide.style.paddingTop = `1px`;
 
         // Reset guide scroll to top when coming back to it
         if (UIElements.guideContainer) {
@@ -309,8 +320,6 @@ function proceedWithRouteChange(path) {
         if (appContainer) {
             appContainer.classList.remove('header-collapsed');
         }
-        // Ensure page-guide padding is reset when leaving guide page
-        UIElements.pageGuide.style.paddingTop = `0px`; 
 
         // If navigating to a specific page, refresh relevant data
         if (isSettings) {
