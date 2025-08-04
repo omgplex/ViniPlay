@@ -83,8 +83,16 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
     } else {
         console.log("[DB] Connected to the SQLite database.");
         db.serialize(() => {
-            // Existing tables...
-            db.run(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, isAdmin INTEGER DEFAULT 0)`);
+            // VINI-MOD: Added canUseDvr column to users table and added backward compatibility check.
+            db.run(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, isAdmin INTEGER DEFAULT 0, canUseDvr INTEGER DEFAULT 0)`, (err) => {
+                if (err) {
+                    console.error("[DB] Error creating 'users' table:", err.message);
+                } else {
+                    db.run("ALTER TABLE users ADD COLUMN canUseDvr INTEGER DEFAULT 0", () => {
+                        // This will fail silently if the column already exists, which is the desired behavior.
+                    });
+                }
+            });
             db.run(`CREATE TABLE IF NOT EXISTS user_settings (user_id INTEGER NOT NULL, key TEXT NOT NULL, value TEXT, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY (user_id, key))`);
             db.run(`CREATE TABLE IF NOT EXISTS multiview_layouts (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, name TEXT NOT NULL, layout_data TEXT NOT NULL, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)`);
             db.run(`CREATE TABLE IF NOT EXISTS notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, channelId TEXT NOT NULL, channelName TEXT NOT NULL, channelLogo TEXT, programTitle TEXT NOT NULL, programDesc TEXT, programStart TEXT NOT NULL, programStop TEXT NOT NULL, notificationTime TEXT NOT NULL, programId TEXT NOT NULL, status TEXT DEFAULT 'pending', triggeredAt TEXT, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)`);
@@ -164,7 +172,8 @@ app.use(
 );
 
 app.use((req, res, next) => {
-    const user_info = req.session.userId ? `User ID: ${req.session.userId}, Admin: ${req.session.isAdmin}` : 'No session';
+    // VINI-MOD: Added canUseDvr to session log trace
+    const user_info = req.session.userId ? `User ID: ${req.session.userId}, Admin: ${req.session.isAdmin}, DVR: ${req.session.canUseDvr}` : 'No session';
     console.log(`[HTTP_TRACE] ${req.method} ${req.originalUrl} - Session: [${user_info}]`);
     next();
 });
@@ -177,8 +186,15 @@ const requireAdmin = (req, res, next) => {
     if (req.session && req.session.isAdmin) return next();
     return res.status(403).json({ error: 'Administrator privileges required.' });
 };
+// VINI-MOD: New middleware to check for DVR access
+const requireDvrAccess = (req, res, next) => {
+    if (req.session && (req.session.canUseDvr || req.session.isAdmin)) return next();
+    return res.status(403).json({ error: 'DVR access required.' });
+};
 
-app.use('/dvr', requireAuth, express.static(DVR_DIR));
+
+// VINI-MOD: Added requireDvrAccess to protect the static DVR folder
+app.use('/dvr', requireAuth, requireDvrAccess, express.static(DVR_DIR));
 
 // --- Helper Functions ---
 function getSettings() {
@@ -548,7 +564,8 @@ app.post('/api/auth/setup-admin', (req, res) => {
                 console.error('[AUTH_API] Error hashing password during admin setup:', err);
                 return res.status(500).json({ error: 'Error hashing password.' });
             }
-            db.run("INSERT INTO users (username, password, isAdmin) VALUES (?, ?, 1)", [username, hash], function(err) {
+            // VINI-MOD: Set canUseDvr to true for the initial admin user.
+            db.run("INSERT INTO users (username, password, isAdmin, canUseDvr) VALUES (?, ?, 1, 1)", [username, hash], function(err) {
                 if (err) {
                     console.error('[AUTH_API] Error inserting admin user:', err.message);
                     return res.status(500).json({ error: err.message });
@@ -556,8 +573,9 @@ app.post('/api/auth/setup-admin', (req, res) => {
                 req.session.userId = this.lastID;
                 req.session.username = username;
                 req.session.isAdmin = true;
+                req.session.canUseDvr = true; // VINI-MOD: Set session variable
                 console.log(`[AUTH_API] Admin user "${username}" created successfully (ID: ${this.lastID}). Session set.`);
-                res.json({ success: true, user: { username: req.session.username, isAdmin: req.session.isAdmin } });
+                res.json({ success: true, user: { username: req.session.username, isAdmin: req.session.isAdmin, canUseDvr: req.session.canUseDvr } });
             });
         });
     });
@@ -582,13 +600,15 @@ app.post('/api/auth/login', (req, res) => {
                 return res.status(500).json({ error: 'Authentication error.' });
             }
             if (result) {
+                // VINI-MOD: Add canUseDvr to session and response
                 req.session.userId = user.id;
                 req.session.username = user.username;
                 req.session.isAdmin = user.isAdmin === 1;
+                req.session.canUseDvr = user.canUseDvr === 1;
                 console.log(`[AUTH_API] User "${username}" (ID: ${user.id}) logged in successfully. Session set.`);
                 res.json({
                     success: true,
-                    user: { username: user.username, isAdmin: user.isAdmin === 1 }
+                    user: { username: user.username, isAdmin: user.isAdmin === 1, canUseDvr: user.canUseDvr === 1 }
                 });
             } else {
                 console.warn(`[AUTH_API] Login failed for username "${username}": Incorrect password.`);
@@ -615,8 +635,9 @@ app.post('/api/auth/logout', (req, res) => {
 app.get('/api/auth/status', (req, res) => {
     console.log(`[AUTH_API] GET /api/auth/status - Checking session ID: ${req.sessionID}`);
     if (req.session && req.session.userId) {
+        // VINI-MOD: Return canUseDvr status
         console.log(`[AUTH_API_STATUS] Valid session found for user "${req.session.username}" (ID: ${req.session.userId}). Responding with isLoggedIn: true.`);
-        res.json({ isLoggedIn: true, user: { username: req.session.username, isAdmin: req.session.isAdmin } });
+        res.json({ isLoggedIn: true, user: { username: req.session.username, isAdmin: req.session.isAdmin, canUseDvr: req.session.canUseDvr } });
     } else {
         console.log('[AUTH_API_STATUS] No valid session found. Responding with isLoggedIn: false.');
         res.json({ isLoggedIn: false });
@@ -626,7 +647,8 @@ app.get('/api/auth/status', (req, res) => {
 // --- User Management API Endpoints (Admin only) ---
 app.get('/api/users', requireAdmin, (req, res) => {
     console.log('[USER_API] Fetching all users.');
-    db.all("SELECT id, username, isAdmin FROM users ORDER BY username", [], (err, rows) => {
+    // VINI-MOD: Select canUseDvr column
+    db.all("SELECT id, username, isAdmin, canUseDvr FROM users ORDER BY username", [], (err, rows) => {
         if (err) {
             console.error('[USER_API] Error fetching users:', err.message);
             return res.status(500).json({ error: err.message });
@@ -638,7 +660,8 @@ app.get('/api/users', requireAdmin, (req, res) => {
 
 app.post('/api/users', requireAdmin, (req, res) => {
     console.log('[USER_API] Adding new user.');
-    const { username, password, isAdmin } = req.body;
+    // VINI-MOD: Get canUseDvr from request body
+    const { username, password, isAdmin, canUseDvr } = req.body;
     if (!username || !password) {
         console.warn('[USER_API] Add user failed: Username and/or password missing.');
         return res.status(400).json({ error: "Username and password are required." });
@@ -649,7 +672,8 @@ app.post('/api/users', requireAdmin, (req, res) => {
             console.error('[USER_API] Error hashing password for new user:', err);
             return res.status(500).json({ error: 'Error hashing password' });
         }
-        db.run("INSERT INTO users (username, password, isAdmin) VALUES (?, ?, ?)", [username, hash, isAdmin ? 1 : 0], function (err) {
+        // VINI-MOD: Insert canUseDvr value
+        db.run("INSERT INTO users (username, password, isAdmin, canUseDvr) VALUES (?, ?, ?, ?)", [username, hash, isAdmin ? 1 : 0, canUseDvr ? 1 : 0], function (err) {
             if (err) {
                 console.error('[USER_API] Error inserting new user:', err.message);
                 return res.status(400).json({ error: "Username already exists." });
@@ -662,8 +686,9 @@ app.post('/api/users', requireAdmin, (req, res) => {
 
 app.put('/api/users/:id', requireAdmin, (req, res) => {
     const { id } = req.params;
-    const { username, password, isAdmin } = req.body;
-    console.log(`[USER_API] Updating user ID: ${id}. Username: ${username}, IsAdmin: ${isAdmin}`);
+    // VINI-MOD: Get canUseDvr from request body
+    const { username, password, isAdmin, canUseDvr } = req.body;
+    console.log(`[USER_API] Updating user ID: ${id}. Username: ${username}, IsAdmin: ${isAdmin}, CanUseDvr: ${canUseDvr}`);
 
     const updateUser = () => {
         if (password) {
@@ -672,7 +697,8 @@ app.put('/api/users/:id', requireAdmin, (req, res) => {
                     console.error('[USER_API] Error hashing password during user update:', err);
                     return res.status(500).json({ error: 'Error hashing password' });
                 }
-                db.run("UPDATE users SET username = ?, password = ?, isAdmin = ? WHERE id = ?", [username, hash, isAdmin ? 1 : 0, id], (err) => {
+                // VINI-MOD: Update canUseDvr column
+                db.run("UPDATE users SET username = ?, password = ?, isAdmin = ?, canUseDvr = ? WHERE id = ?", [username, hash, isAdmin ? 1 : 0, canUseDvr ? 1 : 0, id], (err) => {
                     if (err) {
                         console.error(`[USER_API] Error updating user ${id} with new password:`, err.message);
                         return res.status(500).json({ error: err.message });
@@ -680,6 +706,7 @@ app.put('/api/users/:id', requireAdmin, (req, res) => {
                     if (req.session.userId == id) {
                         req.session.username = username;
                         req.session.isAdmin = isAdmin;
+                        req.session.canUseDvr = canUseDvr; // VINI-MOD: Update session
                         console.log(`[USER_API] Current user's session (ID: ${id}) updated.`);
                     }
                     console.log(`[USER_API] User ${id} updated successfully (with password change).`);
@@ -687,7 +714,8 @@ app.put('/api/users/:id', requireAdmin, (req, res) => {
                 });
             });
         } else {
-            db.run("UPDATE users SET username = ?, isAdmin = ? WHERE id = ?", [username, isAdmin ? 1 : 0, id], (err) => {
+            // VINI-MOD: Update canUseDvr column
+            db.run("UPDATE users SET username = ?, isAdmin = ?, canUseDvr = ? WHERE id = ?", [username, isAdmin ? 1 : 0, canUseDvr ? 1 : 0, id], (err) => {
                 if (err) {
                     console.error(`[USER_API] Error updating user ${id} without password change:`, err.message);
                     return res.status(500).json({ error: err.message });
@@ -695,6 +723,7 @@ app.put('/api/users/:id', requireAdmin, (req, res) => {
                  if (req.session.userId == id) {
                     req.session.username = username;
                     req.session.isAdmin = isAdmin;
+                    req.session.canUseDvr = canUseDvr; // VINI-MOD: Update session
                     console.log(`[USER_API] Current user's session (ID: ${id}) updated.`);
                  }
                 console.log(`[USER_API] User ${id} updated successfully (without password change).`);
@@ -1716,7 +1745,8 @@ async function autoDeleteOldRecordings() {
 
 // --- DVR API Endpoints (MODIFIED & NEW) ---
 
-app.post('/api/dvr/schedule', requireAuth, async (req, res) => {
+// VINI-MOD: Added requireDvrAccess middleware to all DVR endpoints
+app.post('/api/dvr/schedule', requireAuth, requireDvrAccess, async (req, res) => {
     const { channelId, channelName, programTitle, programStart, programStop } = req.body;
     const settings = getSettings();
     const dvrSettings = settings.dvr || {};
@@ -1757,8 +1787,7 @@ app.post('/api/dvr/schedule', requireAuth, async (req, res) => {
     );
 });
 
-// NEW: Endpoint for manual recording
-app.post('/api/dvr/schedule/manual', requireAuth, async (req, res) => {
+app.post('/api/dvr/schedule/manual', requireAuth, requireDvrAccess, async (req, res) => {
     const { channelId, channelName, startTime, endTime } = req.body;
     const settings = getSettings();
     const dvrSettings = settings.dvr || {};
@@ -1794,14 +1823,14 @@ app.post('/api/dvr/schedule/manual', requireAuth, async (req, res) => {
     );
 });
 
-app.get('/api/dvr/jobs', requireAuth, (req, res) => {
+app.get('/api/dvr/jobs', requireAuth, requireDvrAccess, (req, res) => {
     db.all("SELECT * FROM dvr_jobs WHERE user_id = ? ORDER BY startTime DESC", [req.session.userId], (err, rows) => {
         if (err) return res.status(500).json({ error: 'Failed to retrieve recording jobs.' });
         res.json(rows);
     });
 });
 
-app.get('/api/dvr/recordings', requireAuth, (req, res) => {
+app.get('/api/dvr/recordings', requireAuth, requireDvrAccess, (req, res) => {
     db.all("SELECT * FROM dvr_recordings WHERE user_id = ? ORDER BY startTime DESC", [req.session.userId], (err, rows) => {
         if (err) return res.status(500).json({ error: 'Failed to retrieve recordings.' });
         const recordingsWithFilename = rows.map(r => ({...r, filename: path.basename(r.filePath)}));
@@ -1809,8 +1838,7 @@ app.get('/api/dvr/recordings', requireAuth, (req, res) => {
     });
 });
 
-// NEW: Endpoint for storage info
-app.get('/api/dvr/storage', requireAuth, (req, res) => {
+app.get('/api/dvr/storage', requireAuth, requireDvrAccess, (req, res) => {
     try {
         disk.check(DVR_DIR, (err, info) => {
             if (err) {
@@ -1832,7 +1860,7 @@ app.get('/api/dvr/storage', requireAuth, (req, res) => {
 });
 
 
-app.delete('/api/dvr/jobs/:id', requireAuth, (req, res) => {
+app.delete('/api/dvr/jobs/:id', requireAuth, requireDvrAccess, (req, res) => {
     const { id } = req.params;
     const jobId = parseInt(id, 10);
     if (activeDvrJobs.has(jobId)) {
@@ -1847,7 +1875,7 @@ app.delete('/api/dvr/jobs/:id', requireAuth, (req, res) => {
     });
 });
 
-app.delete('/api/dvr/recordings/:id', requireAuth, (req, res) => {
+app.delete('/api/dvr/recordings/:id', requireAuth, requireDvrAccess, (req, res) => {
     const { id } = req.params;
     db.get("SELECT filePath FROM dvr_recordings WHERE id = ? AND user_id = ?", [id, req.session.userId], (err, row) => {
         if (err || !row) return res.status(404).json({ error: 'Recording not found.' });
@@ -1864,7 +1892,7 @@ app.delete('/api/dvr/recordings/:id', requireAuth, (req, res) => {
     });
 });
 
-app.post('/api/dvr/jobs/:id/stop', requireAuth, (req, res) => {
+app.post('/api/dvr/jobs/:id/stop', requireAuth, requireDvrAccess, (req, res) => {
     const { id } = req.params;
     const jobId = parseInt(id, 10);
     console.log(`[DVR_API] Received request to stop recording for job ${jobId}.`);
@@ -1876,7 +1904,7 @@ app.post('/api/dvr/jobs/:id/stop', requireAuth, (req, res) => {
     });
 });
 
-app.put('/api/dvr/jobs/:id', requireAuth, (req, res) => {
+app.put('/api/dvr/jobs/:id', requireAuth, requireDvrAccess, (req, res) => {
     const { id } = req.params;
     const { startTime, endTime } = req.body;
     if (!startTime || !endTime) {
@@ -1900,7 +1928,7 @@ app.put('/api/dvr/jobs/:id', requireAuth, (req, res) => {
     });
 });
 
-app.delete('/api/dvr/jobs/:id/history', requireAuth, (req, res) => {
+app.delete('/api/dvr/jobs/:id/history', requireAuth, requireDvrAccess, (req, res) => {
     const { id } = req.params;
     db.get("SELECT status FROM dvr_jobs WHERE id = ? AND user_id = ?", [id, req.session.userId], (err, job) => {
         if (err || !job) {
