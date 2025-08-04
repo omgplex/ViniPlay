@@ -30,12 +30,15 @@ const initializeUIElements = () => {
     UIElements.guideDateDisplay = document.getElementById('guide-date-display');
     UIElements.stickyCorner = document.querySelector('.sticky-corner');
     UIElements.channelColumnResizeHandle = document.getElementById('channel-column-resize-handle');
+    UIElements.userDisplay = document.getElementById('user-display');
+    UIElements.userManagementSection = document.getElementById('user-management-section');
+    UIElements.dvrSettingsSection = document.getElementById('dvr-settings-section');
+
 
     // Program Details Modal and its Buttons
     UIElements.programDetailsModal = document.getElementById('program-details-modal');
     UIElements.programDetailsNotifyBtn = document.getElementById('program-details-notify-btn');
     UIElements.programDetailsRecordBtn = document.getElementById('program-details-record-btn');
-    UIElements.detailsFavoriteBtn = document.getElementById('details-favorite-btn');
 
     // Mobile menu elements
     UIElements.mobileMenuToggle = document.getElementById('mobile-menu-toggle');
@@ -55,9 +58,9 @@ const initializeUIElements = () => {
     UIElements.notificationLeadTimeInput = document.getElementById('notification-lead-time-input');
     UIElements.pastNotificationsList = document.getElementById('past-notifications-list');
     UIElements.noPastNotificationsMessage = document.getElementById('no-past-notifications-message');
-    UIElements.notificationModal = document.getElementById('notification-modal-wrapper'); // This is the outer wrapper
-    UIElements.notificationBox = document.getElementById('notification-box'); // This is the actual notification box
-    UIElements.notificationMessage = document.getElementById('notification-message'); // This is the paragraph for the message
+    UIElements.notificationModal = document.getElementById('notification-modal-wrapper');
+    UIElements.notificationBox = document.getElementById('notification-box');
+    UIElements.notificationMessage = document.getElementById('notification-message');
 
 
     // Multi-View Elements
@@ -103,9 +106,6 @@ const initializeUIElements = () => {
     UIElements.editRecordingProfileBtn = document.getElementById('edit-recording-profile-btn');
     UIElements.deleteRecordingProfileBtn = document.getElementById('delete-recording-profile-btn');
     UIElements.recordingProfileSelect = document.getElementById('recording-profile-select');
-    UIElements.dvrSettingsSection = document.getElementById('dvr-settings-section');
-    UIElements.userEditorCanUseDvr = document.getElementById('user-editor-canUseDvr');
-
 
     // Settings Buttons
     UIElements.addM3uBtn = document.getElementById('add-m3u-btn');
@@ -114,48 +114,6 @@ const initializeUIElements = () => {
     UIElements.processSourcesBtn = document.getElementById('process-sources-btn');
 };
 
-
-/**
- * Shows the main application container and hides the auth screen.
- * @param {object} user - The user object { username, isAdmin, canUseDvr }.
- */
-const showApp = (user) => {
-    appState.currentUser = user;
-    
-    const authContainer = document.getElementById('auth-container');
-    const appContainer = document.getElementById('app-container');
-
-    authContainer.classList.add('hidden');
-    appContainer.classList.remove('hidden');
-    appContainer.classList.add('flex'); // Ensure flex display for app layout
-
-    initializeUIElements();
-    console.log('[AUTH_UI] UI Elements initialized.');
-
-    console.log(`[AUTH_UI] Displaying main app for user: ${user.username} (Admin: ${user.isAdmin}, DVR: ${user.canUseDvr})`);
-
-    UIElements.userDisplay.textContent = user.username;
-    UIElements.userDisplay.classList.remove('hidden');
-    UIElements.userManagementSection.classList.toggle('hidden', !user.isAdmin);
-    
-    // Show/hide DVR tabs based on permissions
-    const hasDvrAccess = user.isAdmin || user.canUseDvr;
-    UIElements.tabDvr.classList.toggle('hidden', !hasDvrAccess);
-    UIElements.mobileNavDvr.classList.toggle('hidden', !hasDvrAccess);
-    UIElements.dvrSettingsSection.classList.toggle('hidden', !hasDvrAccess);
-
-    console.log(`[AUTH_UI] User display set to: ${user.username}. Admin section visibility: ${!user.isAdmin ? 'hidden' : 'visible'}. DVR visibility: ${!hasDvrAccess ? 'hidden' : 'visible'}`);
-
-
-    // Initialize the main app logic only once
-    if (!appState.appInitialized) {
-        console.log('[AUTH_UI] Main app not initialized yet, calling initMainApp().');
-        initMainApp();
-        appState.appInitialized = true;
-    } else {
-        console.log('[AUTH_UI] Main app already initialized.');
-    }
-};
 
 /**
  * Shows the login form.
@@ -203,6 +161,40 @@ const showSetupScreen = () => {
     setupForm.classList.remove('hidden');
     authLoader.classList.add('hidden'); // Hide loader
     setupError.classList.add('hidden'); // Clear previous setup errors
+};
+
+/**
+ * Shows the main application container and hides the auth screen.
+ * @param {object} user - The user object { username, isAdmin, canUseDvr }.
+ */
+const showApp = (user) => {
+    appState.currentUser = user;
+    
+    const authContainer = document.getElementById('auth-container');
+    const appContainer = document.getElementById('app-container');
+
+    authContainer.classList.add('hidden');
+    appContainer.classList.remove('hidden');
+    appContainer.classList.add('flex'); // Ensure flex display for app layout
+
+    initializeUIElements();
+    console.log('[AUTH_UI] UI Elements initialized.');
+
+    console.log(`[AUTH_UI] Displaying main app for user: ${user.username} (Admin: ${user.isAdmin}, DVR: ${user.canUseDvr})`);
+
+    UIElements.userDisplay.textContent = user.username;
+    UIElements.userDisplay.classList.remove('hidden');
+    UIElements.userManagementSection.classList.toggle('hidden', !user.isAdmin);
+    UIElements.dvrSettingsSection.classList.toggle('hidden', !(user.isAdmin || user.canUseDvr));
+    console.log(`[AUTH_UI] User display set to: ${user.username}. Admin section visibility: ${!user.isAdmin ? 'hidden' : 'visible'}.`);
+
+    if (!appState.appInitialized) {
+        console.log('[AUTH_UI] Main app not initialized yet, calling initMainApp().');
+        initMainApp();
+        appState.appInitialized = true;
+    } else {
+        console.log('[AUTH_UI] Main app already initialized.');
+    }
 };
 
 /**
@@ -347,3 +339,4 @@ export function setupAuthEventListeners() {
         }
     });
 }
+
