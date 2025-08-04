@@ -191,8 +191,10 @@ export function setupDvrEventListeners() {
             UIElements.dvrEditStart.value = fromISOStringToLocalDateTime(job.startTime);
             UIElements.dvrEditEnd.value = fromISOStringToLocalDateTime(job.endTime);
             openModal(UIElements.dvrEditModal);
-        } else if (button.classList.contains('go-to-guide-btn') && job) {
-             navigateToProgramInGuide(job.channelId, job.startTime);
+        } else if (button.classList.contains('go-to-guide-btn')) {
+            const channelId = button.dataset.channelId;
+            const programStartIso = button.dataset.programStart;
+            navigateToProgramInGuide(channelId, programStartIso);
         } else if (button.classList.contains('delete-history-btn')) {
              showConfirm('Remove From History?', 'This will permanently remove this job record. It will not delete the recorded file if one exists.', async () => {
                 const res = await apiFetch(`/api/dvr/jobs/${jobId}/history`, { method: 'DELETE' });
