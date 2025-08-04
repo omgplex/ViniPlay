@@ -112,123 +112,115 @@
             background-color: #111827; /* Match body background */
             overflow: auto; /* Handles both vertical and horizontal scrolling */
             position: relative; /* For the now-line's absolute positioning relative to scrolled content */
-            /* padding-top: 0; This will be set by JS */
         }
         #guide-grid {
             display: grid;
-            /* Use CSS custom property for resizable channel column width */
             grid-template-columns: var(--channel-col-width, 180px) 1fr; /* Sticky channel info, then scrollable timeline */
             grid-auto-rows: min-content; /* Rows size to content, important for first row sticky */
             position: relative; /* For now-line absolute positioning */
             min-width: fit-content; /* Ensure grid stretches to contain wide timeline */
             height: fit-content; /* Allow content to dictate height */
-            /* No overflow here, parent #guide-container handles it */
         }
 
         .sticky-corner {
             position: sticky;
             top: 0;
             left: 0;
-            z-index: 30; /* Highest z-index for the corner */
+            z-index: 45; /* FIX: Increased z-index to be above all other headers */
             background-color: #1a2233; /* Match channel-info background */
             height: 64px; /* Explicit height, matches time-bar-cell */
-            width: var(--channel-col-width, 180px); /* Default or dynamic width - this needs to be calculated by JS if responsive */
+            width: var(--channel-col-width, 180px); 
             border-bottom: 1px solid #374151;
             border-right: 1px solid #374151;
             box-sizing: border-box;
-            display: flex; /* Make it a flex container */
-            flex-direction: column; /* Stack children vertically */
-            align-items: flex-start; /* Align to start for content within */
-            justify-content: center; /* Center content vertically */
-            padding: 8px; /* Add some padding */
+            display: flex; 
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 8px; 
         }
 
-        /* New CSS for the column resize handle */
         .channel-resize-handle {
             position: absolute;
             top: 0;
-            right: 0; /* Align to the right edge of its parent (.sticky-corner) */
+            right: 0;
             bottom: 0;
-            width: 8px; /* Make it a narrow vertical bar */
-            cursor: ew-resize; /* East-West resize cursor */
-            z-index: 35; /* Higher than sticky corner and time bar */
+            width: 8px;
+            cursor: ew-resize;
+            z-index: 35; 
         }
         .channel-resize-handle::after {
             content: '';
             position: absolute;
             display: block;
-            width: 2px; /* Vertical line */
+            width: 2px;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            height: 60%; /* Make it span most of the height */
+            height: 60%;
             background-color: #9ca3af;
             opacity: 0.6;
             border-radius: 1px;
         }
         .channel-resize-handle:hover::after {
             opacity: 1;
-            background-color: #ffffff; /* Brighter on hover */
+            background-color: #ffffff;
         }
         
         .time-bar-cell {
             position: sticky;
             top: 0;
-            z-index: 25; /* Above programs, below corner */
-            background-color: #111827; /* Match body/guide background */
-            height: 64px; /* Explicit height */
+            z-index: 25; 
+            background-color: #111827;
+            height: 64px;
             display: flex;
             align-items: center;
             border-bottom: 1px solid #374151;
             box-sizing: border-box;
-            overflow: hidden; /* Ensure absolute children don't overflow */
+            overflow: hidden; 
         }
         
         .channel-info {
             position: sticky;
             left: 0;
-            z-index: 30; /* Above programs, below corner */
-            background-color: #1a2233; /* Darker than gray-800 */
+            z-index: 30; 
+            background-color: #1a2233;
             border-right: 1px solid #374151;
             box-sizing: border-box;
-            height: 96px; /* Channel row height */
-            width: var(--channel-col-width, 180px); /* Ensure channel info takes the correct width */
+            height: 96px; 
+            width: var(--channel-col-width, 180px); 
         }
 
         .timeline-row {
             position: relative;
-            height: 96px; /* Match channel-info height */
+            height: 96px; 
         }
         
-        /* The now-line should be absolute within #guide-grid, covering the full height */
         #now-line {
             position: absolute;
             top: 0;
-            background-color: #ef4444; /* red-500 */
-            width: 2px; /* w-0.5 */
-            z-index: 28; /* Should be above programs but below sticky headers for a cleaner look */
-            pointer-events: none; /* Corrected: Use Tailwind class for pointer-events */
-            transition: left 0.5s ease; /* Smooth movement when scrolling to now */
-            height: 100%; /* Ensure it always spans full height */
+            background-color: #ef4444; 
+            width: 2px; 
+            z-index: 28;
+            pointer-events: none;
+            transition: left 0.5s ease;
+            height: 100%; 
         }
 
-        /* Mobile responsive for sticky channel info */
         @media (max-width: 767px) {
             #guide-grid {
-                grid-template-columns: 64px 1fr; /* Fixed width for logo on mobile */
+                grid-template-columns: 64px 1fr; 
             }
             .channel-info {
-                width: 64px; /* Fixed width for logo on mobile */
+                width: 64px; 
             }
-            .channel-details { display: none; } /* Hide channel name, chno, source on mobile */
-            .favorite-star { display: none; } /* Hide favorite icon on mobile */
-            .sticky-corner { width: 64px; } /* Adjust corner width for mobile */
-            /* Hide the resize handle on mobile */
+            .channel-details { display: none; }
+            .favorite-star { display: none; }
+            .sticky-corner { width: 64px; }
             .channel-resize-handle { display: none; }
         }
 
-        /* --- Scroll-driven header animations --- */
-        /* Default state of top headers */
+        /* --- Scroll-driven header animations (FIXED) --- */
         #main-header, #unified-guide-header {
             transition: transform 0.3s ease-out, opacity 0.3s ease-out, height 0.3s ease-out, padding 0.3s ease-out;
             transform: translateY(0);
@@ -239,18 +231,13 @@
             box-shadow: none;
             padding-top: initial;
             padding-bottom: initial;
-            /* Added for sticky behavior */
-            position: sticky;
-            left: 0;
-            width: 100%;
-            box-sizing: border-box;
+            /* FIX: Removed 'position: sticky' to revert to JS-controlled animation behavior */
+            z-index: 35; /* Keep z-index to stay above guide content before collapsing */
         }
         
-        /* Specific padding for main-header and unified-guide-header to control collapse */
-        #main-header { padding: 1rem; top: 0; z-index: 40; } /* Higher z-index for main header */
-        #unified-guide-header { padding: 0.5rem 1rem; top: var(--main-header-height, 0px); z-index: 35; } /* Stick below main header */
+        #main-header { padding: 1rem; z-index: 40; } /* Higher z-index for main header */
+        #unified-guide-header { padding: 0.5rem 1rem; }
 
-        /* Collapsed state for top headers (applied to app-container by JS) */
         #app-container.header-collapsed #main-header,
         #app-container.header-collapsed #unified-guide-header {
             transform: translateY(-100%);
@@ -264,12 +251,11 @@
             pointer-events: none;
         }
         
-        /* Adjust page-guide padding based on header state */
         #page-guide {
             transition: padding-top 0.3s ease-out;
-            /* Remove explicit padding-top here as sticky headers will manage layout */
-            padding-top: 0 !important; /* Ensure no static padding */
+            /* FIX: Removed explicit padding-top. The headers will now occupy space in the document flow, pushing content down naturally. */
         }
+
         /* Visual indicator for programs with notifications */
         .programme-item.has-notification {
             border-bottom: 3px solid #facc15;
@@ -277,9 +263,8 @@
 
         /* --- Multi-View Styles --- */
         #page-multiview { background-color: #111827; }
-        /* REMOVED: background-color: rgba(31, 41, 55, 0.5); from .grid-stack */
         .grid-stack {
-            background-color: #1f2937; /* Revert to solid gray-800 */
+            background-color: #1f2937;
             background-image:
                 linear-gradient(rgba(107, 114, 128, 0.1) 1px, transparent 1px),
                 linear-gradient(90deg, rgba(107, 114, 128, 0.1) 1px, transparent 1px);
@@ -287,8 +272,8 @@
         .grid-stack-item-content {
             display: flex;
             flex-direction: column;
-            background-color: #1f2937; /* gray-800 */
-            color: #d1d5db; /* gray-300 */
+            background-color: #1f2937;
+            color: #d1d5db; 
             border-radius: 0.5rem;
             overflow: hidden;
             box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
@@ -302,7 +287,7 @@
             align-items: center;
             justify-content: space-between;
             padding: 0.25rem 0.5rem;
-            background-color: #374151; /* gray-700 */
+            background-color: #374151; 
             cursor: move;
             flex-shrink: 0;
         }
@@ -317,7 +302,7 @@
         .player-controls button {
             background: none;
             border: none;
-            color: #9ca3af; /* gray-400 */
+            color: #9ca3af;
             padding: 0.25rem;
             border-radius: 9999px;
             transition: all 0.2s;
@@ -325,7 +310,6 @@
         .player-controls button:hover { color: white; background-color: #4b5563; }
         .player-controls .volume-slider { width: 60px; height: 4px; accent-color: #3b82f6; }
 
-        /* MODIFIED: Force player-body to fill vertical space */
         .player-body {
             flex-grow: 1;
             flex-shrink: 0;
@@ -338,14 +322,13 @@
             align-items: center;
             justify-content: center;
         }
-        /* MODIFIED: Force player-placeholder to fill vertical space within player-body */
         .player-placeholder {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             text-align: center;
-            color: #6b7280; /* gray-500 */
+            color: #6b7280;
             cursor: pointer;
             width: 100%;
             height: auto;
@@ -357,27 +340,24 @@
             transition: background-color 0.2s;
         }
         .player-placeholder:hover {
-            background-color: #374151; /* gray-700 */
+            background-color: #374151;
         }
         .player-placeholder svg { width: 2rem; height: 2rem; margin-bottom: 0.5rem; }
         .channel-selector-list { max-height: 400px; }
 
-        /* --- Date Picker Custom Style --- */
         #guide-date-picker::-webkit-calendar-picker-indicator {
             display: none;
             -webkit-appearance: none;
         }
 
-        /* --- CSS for our custom cast button --- */
         #cast-btn svg path {
             transition: all 0.2s ease-in-out;
         }
-        /* Style to indicate connected state - will be applied via JS */
         #cast-btn.cast-connected {
-            color: #3b82f6; /* blue-500 */
+            color: #3b82f6;
         }
         #cast-btn.cast-connected:hover {
-            color: #60a5fa; /* blue-400 */
+            color: #60a5fa;
         }
 
         /* --- DVR Styles --- */
@@ -398,33 +378,30 @@
         .status-badge.completed { background-color: #22c55e; color: white; }
         .status-badge.error, .status-badge.cancelled { background-color: #f97316; color: white; }
 
-        /* Notification Modal Fix (Reverted to a V38-like approach, but more robust) */
         #notification-modal-wrapper {
             position: fixed;
-            top: 1.25rem; /* ~p-5 Tailwind equivalent */
-            right: 1.25rem; /* ~p-5 Tailwind equivalent */
+            top: 1.25rem; 
+            right: 1.25rem;
             z-index: 100;
-            pointer-events: none; /* Clicks pass through the wrapper */
-            /* Ensure it is hidden by default using class, not display:none */
+            pointer-events: none;
         }
 
         #notification-modal-wrapper.hidden {
-            display: none; /* Hide the entire wrapper when no notification is active */
+            display: none;
         }
         
-        /* The actual visible notification box */
         #notification-box {
             color: white;
-            padding: 0.5rem 1rem; /* py-2 px-4 */
-            border-radius: 0.5rem; /* rounded-lg */
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* shadow-lg */
-            pointer-events: all; /* This specific div is clickable */
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            pointer-events: all; 
             opacity: 0;
-            transform: translateY(-20px); /* Slide in from top */
+            transform: translateY(-20px);
             transition: opacity 0.3s ease-out, transform 0.3s ease-out, background-color 0.2s ease-in-out;
-            min-width: 250px; /* Ensure it's not a dot */
+            min-width: 250px; 
             text-align: center;
-            background-color: #ef4444; /* Default error color */
+            background-color: #ef4444; 
         }
 
         #notification-modal-wrapper:not(.hidden) #notification-box {
@@ -432,9 +409,8 @@
             transform: translateY(0);
         }
 
-        /* Classes to change background color via JS on notification-box */
-        #notification-box.success-bg { background-color: #22c55e; /* green-500 */ }
-        #notification-box.error-bg { background-color: #ef4444; /* red-500 */ }
+        #notification-box.success-bg { background-color: #22c55e; }
+        #notification-box.error-bg { background-color: #ef4444; }
 
 
     </style>
@@ -487,7 +463,7 @@
     <!-- Main App Container -->
     <div id="app-container" class="hidden flex flex-col h-screen">
         <!-- Header -->
-        <header id="main-header" class="bg-gray-800 text-white p-4 shadow-md z-30 flex-shrink-0 flex items-center justify-between transition-transform duration-300 ease-out">
+        <header id="main-header" class="bg-gray-800 text-white p-4 shadow-md flex-shrink-0 flex items-center justify-between">
             <div class="flex items-center gap-3">
                 <!-- Hamburger menu icon for mobile -->
                 <button id="mobile-menu-toggle" class="lg:hidden text-gray-300 hover:text-white p-2 rounded-md transition-colors">
@@ -504,9 +480,7 @@
                 <!-- Desktop Tabs -->
                 <div class="hidden lg:flex gap-2">
                     <button id="tab-guide" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 active rounded-md transition-colors">TV Guide</button>
-                    <!-- NEW: Multi-View Tab -->
                     <button id="tab-multiview" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Multi-View</button>
-                    <!-- NEW: DVR Tab -->
                     <button id="tab-dvr" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">DVR</button>
                     <button id="tab-notifications" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Notifications</button>
                     <button id="tab-settings" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Settings</button>
@@ -520,7 +494,7 @@
             <!-- TV Guide Page -->
             <div id="page-guide" class="flex flex-grow flex-col overflow-hidden">
                 <!-- Unified Guide Header Bar -->
-                <div id="unified-guide-header" class="flex-shrink-0 bg-gray-800 p-2 sm:p-4 border-b border-gray-700 flex items-center justify-between z-30 transition-transform duration-300 ease-out">
+                <div id="unified-guide-header" class="flex-shrink-0 bg-gray-800 p-2 sm:p-4 border-b border-gray-700 flex items-center justify-between">
                     <div class="flex items-center gap-2 sm:gap-3 date-nav-controls">
                         <span id="guide-date-display" class="text-base sm:text-lg font-semibold text-white"></span>
                         <label for="guide-date-picker" class="bg-gray-700 hover:bg-gray-600 border border-gray-600 rounded-md p-2 cursor-pointer transition-colors" title="Jump to date">
@@ -835,11 +809,9 @@
             <button id="mobile-nav-guide" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors active">
                 <span class="flex items-center gap-2"><svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg> TV Guide</span>
             </button>
-            <!-- NEW: Mobile Multi-View Nav -->
             <button id="mobile-nav-multiview" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors">
                 <span class="flex items-center gap-2"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12h16M12 4v16"></path></svg> Multi-View</span>
             </button>
-            <!-- NEW: Mobile DVR Nav -->
             <button id="mobile-nav-dvr" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors">
                 <span class="flex items-center gap-2"><svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M7 3.5A1.5 1.5 0 018.5 2h3A1.5 1.5 0 0113 3.5v1.259a.25.25 0 00.25.25h1.5a.25.25 0 00.25-.25V3.5A1.5 1.5 0 0116.5 2h3A1.5 1.5 0 0121 3.5v13A1.5 1.5 0 0119.5 18h-16A1.5 1.5 0 012 16.5v-13A1.5 1.5 0 013.5 2h3A1.5 1.5 0 018 3.5v1.259a.25.25 0 00.25.25h1.5a.25.25 0 00.25-.25V3.5zM8.5 4a.5.5 0 00-.5.5v1a.25.25 0 00.25.25h3.5a.25.25 0 00.25-.25v-1a.5.5 0 00-.5-.5h-3z"></path><path d="M12.5 13a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"></path></svg> DVR</span>
             </button>
@@ -892,7 +864,6 @@
             <p id="details-desc" class="text-base text-gray-300 flex-grow custom-scrollbar"></p>
             <div class="flex justify-between items-center gap-4 mt-6 flex-shrink-0">
                 <button id="details-play-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Play Channel</button>
-                <!-- NEW: Record Button -->
                 <button id="details-record-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md hidden">Record</button>
                 <button id="program-details-notify-btn" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-md hidden">Notify Me</button>
                 <button id="details-close-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Close</button>
@@ -901,7 +872,6 @@
         </div>
     </div>
     
-    <!-- NEW: Notification Modal Wrapper (to hold the actual notification box) -->
     <div id="notification-modal-wrapper" class="hidden">
         <div id="notification-box"><p id="notification-message"></p></div>
     </div>
@@ -1062,7 +1032,6 @@
         </div>
     </div>
     
-    <!-- NEW: Recording Player Modal -->
     <div id="recording-player-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
         <div class="bg-gray-900 rounded-lg shadow-xl max-h-[90vh] flex flex-col" style="width: 896px;">
             <div class="flex justify-between items-center p-3 border-b border-gray-700 flex-shrink-0">
