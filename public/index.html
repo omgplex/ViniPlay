@@ -258,6 +258,24 @@
         .programme-item.has-notification {
             border-bottom: 3px solid #facc15;
         }
+        
+        /* NEW: Visual indicators for programs with recordings */
+        .programme-item.has-recording.status-scheduled {
+            border-bottom: 3px solid #3b82f6; /* Blue for scheduled */
+        }
+        .programme-item.has-recording.status-recording {
+            border-bottom: 3px solid #ef4444; /* Red for recording */
+        }
+        .programme-item.has-recording.status-completed {
+            border-bottom: 3px solid #22c55e; /* Green for completed */
+        }
+        .programme-item.has-recording.status-error {
+            border-bottom: 3px solid #f97316; /* Orange for error */
+        }
+        .programme-item.has-recording.status-cancelled {
+            border-bottom: 3px solid #6b7280; /* Gray for cancelled */
+        }
+
 
         /* --- Multi-View Styles --- */
         #page-multiview { background-color: #111827; }
