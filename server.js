@@ -1531,11 +1531,13 @@ function startRecording(job) {
 
     ffmpeg.on('close', (code) => {
         runningFFmpegProcesses.delete(job.id);
-        const logMessage = code === 0 ? 'finished gracefully' : `exited with error code ${code}`;
+        const wasStoppedIntentionally = ffmpegErrorOutput.includes('Exiting normally, received signal 2');
+        const logMessage = (code === 0 || wasStoppedIntentionally) ? 'finished gracefully' : `exited with error code ${code}`;
         console.log(`[DVR] Recording process for job ${job.id} ("${job.programTitle}") ${logMessage}.`);
 
         fs.stat(fullFilePath, (statErr, stats) => {
-            if (code === 0 && !statErr && stats && stats.size > 1024) { // Check for a reasonable file size
+            // FIX: Check if code is 0 OR if it was stopped by our SIGINT signal.
+            if ((code === 0 || wasStoppedIntentionally) && !statErr && stats && stats.size > 1024) { // Check for a reasonable file size
                 const durationSeconds = (new Date(job.endTime) - new Date(job.startTime)) / 1000;
                 db.run(`INSERT INTO dvr_recordings (job_id, user_id, channelName, programTitle, startTime, durationSeconds, fileSizeBytes, filePath) 
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
