@@ -18,7 +18,8 @@ const sqlite3 = require('sqlite3').verbose();
 const SQLiteStore = require('connect-sqlite3')(session);
 const xmlJS = require('xml-js');
 const webpush = require('web-push');
-const schedule = require('node-schedule'); // NEW: For DVR scheduling
+const schedule = require('node-schedule');
+const disk = require('diskusage'); // NEW: For storage management
 
 const app = express();
 const port = 8998;
@@ -105,21 +106,17 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 userAgentId TEXT,
                 preBufferMinutes INTEGER,
                 postBufferMinutes INTEGER,
-                errorMessage TEXT, -- NEW: To store detailed error messages
+                errorMessage TEXT,
+                isConflicting INTEGER DEFAULT 0, -- NEW: For conflict management
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )`, (err) => {
                 if(err) {
                     console.error("[DB] Error creating/altering 'dvr_jobs' table:", err.message);
                 } else {
                     console.log("[DB] 'dvr_jobs' table checked/created.");
-                    // Add errorMessage column if it doesn't exist (for backward compatibility)
-                    db.run("ALTER TABLE dvr_jobs ADD COLUMN errorMessage TEXT", (alterErr) => {
-                        if (alterErr && !alterErr.message.includes('duplicate column name')) {
-                           console.error("[DB] Error adding 'errorMessage' column to 'dvr_jobs':", alterErr.message);
-                        } else {
-                           console.log("[DB] 'errorMessage' column in 'dvr_jobs' checked/added.");
-                        }
-                    });
+                    // Add columns if they don't exist for backward compatibility
+                    db.run("ALTER TABLE dvr_jobs ADD COLUMN errorMessage TEXT", () => {});
+                    db.run("ALTER TABLE dvr_jobs ADD COLUMN isConflicting INTEGER DEFAULT 0", () => {});
                 }
             });
 
@@ -198,6 +195,8 @@ function getSettings() {
             dvr: {
                 preBufferMinutes: 1,
                 postBufferMinutes: 2,
+                maxConcurrentRecordings: 1,
+                autoDeleteDays: 0, // 0 means disabled
                 activeRecordingProfileId: 'dvr-mp4-default',
                 recordingProfiles: [{
                     id: 'dvr-mp4-default',
@@ -220,6 +219,8 @@ function getSettings() {
             settings.dvr = {
                 preBufferMinutes: 1,
                 postBufferMinutes: 2,
+                maxConcurrentRecordings: 1,
+                autoDeleteDays: 0,
                 activeRecordingProfileId: 'dvr-mp4-default',
                 recordingProfiles: [{ id: 'dvr-mp4-default', name: 'Default MP4 (H.264/AAC)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: true }]
             };
@@ -1449,7 +1450,7 @@ async function checkAndSendNotifications() {
 }
 
 
-// --- DVR Engine (MODIFIED) ---
+// --- DVR Engine (MODIFIED & NEW) ---
 
 /**
  * NEW: Gracefully stops an FFmpeg recording process.
@@ -1536,8 +1537,7 @@ function startRecording(job) {
         console.log(`[DVR] Recording process for job ${job.id} ("${job.programTitle}") ${logMessage}.`);
 
         fs.stat(fullFilePath, (statErr, stats) => {
-            // FIX: Check if code is 0 OR if it was stopped by our SIGINT signal.
-            if ((code === 0 || wasStoppedIntentionally) && !statErr && stats && stats.size > 1024) { // Check for a reasonable file size
+            if ((code === 0 || wasStoppedIntentionally) && !statErr && stats && stats.size > 1024) { 
                 const durationSeconds = (new Date(job.endTime) - new Date(job.startTime)) / 1000;
                 db.run(`INSERT INTO dvr_recordings (job_id, user_id, channelName, programTitle, startTime, durationSeconds, fileSizeBytes, filePath) 
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1555,7 +1555,7 @@ function startRecording(job) {
                 const finalErrorMessage = `Recording failed. FFmpeg exit code: ${code}. ${statErr ? 'File stat error: ' + statErr.message : ''}. FFmpeg output: ${ffmpegErrorOutput.slice(-1000)}`;
                 console.error(`[DVR] Recording for job ${job.id} failed. ${finalErrorMessage}`);
                 db.run("UPDATE dvr_jobs SET status = 'error', ffmpeg_pid = NULL, errorMessage = ? WHERE id = ?", [finalErrorMessage, job.id]);
-                if (!statErr && stats.size <= 1024) { // Only delete if file exists but is tiny
+                if (!statErr && stats.size <= 1024) { 
                     fs.unlink(fullFilePath, (unlinkErr) => {
                         if (unlinkErr) console.error(`[DVR] Could not delete failed recording file: ${fullFilePath}`, unlinkErr);
                     });
@@ -1630,33 +1630,117 @@ function loadAndScheduleAllDvrJobs() {
     });
 }
 
+// --- NEW: DVR Conflict & Storage Management Functions ---
+
+/**
+ * Checks if a new recording job conflicts with existing scheduled jobs.
+ * @param {object} newJob - The potential new job to schedule.
+ * @param {number} userId - The ID of the user scheduling the job.
+ * @returns {Promise<Array<object>>} - A promise that resolves to an array of conflicting jobs. Empty if no conflict.
+ */
+async function checkForConflicts(newJob, userId) {
+    return new Promise((resolve, reject) => {
+        const settings = getSettings();
+        const maxConcurrent = settings.dvr?.maxConcurrentRecordings || 1;
+        
+        db.all("SELECT * FROM dvr_jobs WHERE user_id = ? AND status = 'scheduled'", [userId], (err, scheduledJobs) => {
+            if (err) return reject(err);
+
+            const newStart = new Date(newJob.startTime).getTime();
+            const newEnd = new Date(newJob.endTime).getTime();
+            
+            const conflictingJobs = scheduledJobs.filter(existingJob => {
+                const existingStart = new Date(existingJob.startTime).getTime();
+                const existingEnd = new Date(existingJob.endTime).getTime();
+                // Check for overlap
+                return newStart < existingEnd && newEnd > existingStart;
+            });
+
+            if (conflictingJobs.length >= maxConcurrent) {
+                resolve(conflictingJobs);
+            } else {
+                resolve([]);
+            }
+        });
+    });
+}
+
+/**
+ * Periodically runs to delete old recordings based on user settings.
+ */
+async function autoDeleteOldRecordings() {
+    console.log('[DVR_STORAGE] Running daily check for old recordings to delete.');
+    db.all("SELECT id FROM users", [], (err, users) => {
+        if(err) return console.error('[DVR_STORAGE] Could not fetch users for auto-delete check:', err);
+
+        users.forEach(user => {
+            db.get("SELECT value FROM user_settings WHERE user_id = ? AND key = 'dvr'", [user.id], (err, row) => {
+                const settings = getSettings();
+                const userDvrSettings = row ? { ...settings.dvr, ...JSON.parse(row.value) } : settings.dvr;
+                
+                const deleteDays = userDvrSettings.autoDeleteDays;
+                if (!deleteDays || deleteDays <= 0) {
+                    return; // Skip if disabled for this user
+                }
+
+                const cutoffDate = new Date();
+                cutoffDate.setDate(cutoffDate.getDate() - deleteDays);
+                
+                db.all("SELECT id, filePath FROM dvr_recordings WHERE user_id = ? AND startTime < ?", [user.id, cutoffDate.toISOString()], (err, recordingsToDelete) => {
+                    if(err) return console.error(`[DVR_STORAGE] Error fetching old recordings for user ${user.id}:`, err);
+                    if(recordingsToDelete.length > 0) {
+                        console.log(`[DVR_STORAGE] Found ${recordingsToDelete.length} old recording(s) to delete for user ${user.id}.`);
+                    }
+                    
+                    recordingsToDelete.forEach(rec => {
+                        if (fs.existsSync(rec.filePath)) {
+                            fs.unlink(rec.filePath, (unlinkErr) => {
+                                if (unlinkErr) {
+                                    console.error(`[DVR_STORAGE] Failed to delete file ${rec.filePath}:`, unlinkErr);
+                                } else {
+                                    db.run("DELETE FROM dvr_recordings WHERE id = ?", [rec.id]);
+                                    console.log(`[DVR_STORAGE] Deleted old recording file and DB record: ${rec.filePath}`);
+                                }
+                            });
+                        } else {
+                            // File doesn't exist, just clean up the DB record
+                            db.run("DELETE FROM dvr_recordings WHERE id = ?", [rec.id]);
+                        }
+                    });
+                });
+            });
+        });
+    });
+}
+
 
 // --- DVR API Endpoints (MODIFIED & NEW) ---
 
-app.post('/api/dvr/schedule', requireAuth, (req, res) => {
+app.post('/api/dvr/schedule', requireAuth, async (req, res) => {
     const { channelId, channelName, programTitle, programStart, programStop } = req.body;
     const settings = getSettings();
     const dvrSettings = settings.dvr || {};
-    // FIX: Ensure DVR settings are respected from the correct object
     const preBuffer = (dvrSettings.preBufferMinutes || 0) * 60 * 1000;
     const postBuffer = (dvrSettings.postBufferMinutes || 0) * 60 * 1000;
-
-    const startTime = new Date(new Date(programStart).getTime() - preBuffer).toISOString();
-    const endTime = new Date(new Date(programStop).getTime() + postBuffer).toISOString();
 
     const newJob = {
         user_id: req.session.userId,
         channelId,
         channelName,
         programTitle,
-        startTime,
-        endTime,
+        startTime: new Date(new Date(programStart).getTime() - preBuffer).toISOString(),
+        endTime: new Date(new Date(programStop).getTime() + postBuffer).toISOString(),
         status: 'scheduled',
         profileId: dvrSettings.activeRecordingProfileId,
         userAgentId: settings.activeUserAgentId,
         preBufferMinutes: dvrSettings.preBufferMinutes || 0,
         postBufferMinutes: dvrSettings.postBufferMinutes || 0
     };
+    
+    const conflictingJobs = await checkForConflicts(newJob, req.session.userId);
+    if (conflictingJobs.length > 0) {
+        return res.status(409).json({ error: 'Recording conflict detected.', newJob, conflictingJobs });
+    }
 
     db.run(`INSERT INTO dvr_jobs (user_id, channelId, channelName, programTitle, startTime, endTime, status, profileId, userAgentId, preBufferMinutes, postBufferMinutes)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1666,6 +1750,43 @@ app.post('/api/dvr/schedule', requireAuth, (req, res) => {
                 console.error('[DVR_API] Error scheduling new recording:', err);
                 return res.status(500).json({ error: 'Could not schedule recording.' });
             }
+            const jobWithId = { ...newJob, id: this.lastID };
+            scheduleDvrJob(jobWithId);
+            res.status(201).json({ success: true, job: jobWithId });
+        }
+    );
+});
+
+// NEW: Endpoint for manual recording
+app.post('/api/dvr/schedule/manual', requireAuth, async (req, res) => {
+    const { channelId, channelName, startTime, endTime } = req.body;
+    const settings = getSettings();
+    const dvrSettings = settings.dvr || {};
+
+    const newJob = {
+        user_id: req.session.userId,
+        channelId,
+        channelName,
+        programTitle: `Manual Recording: ${channelName}`,
+        startTime,
+        endTime,
+        status: 'scheduled',
+        profileId: dvrSettings.activeRecordingProfileId,
+        userAgentId: settings.activeUserAgentId,
+        preBufferMinutes: 0, // No buffer for manual
+        postBufferMinutes: 0
+    };
+    
+    const conflictingJobs = await checkForConflicts(newJob, req.session.userId);
+    if (conflictingJobs.length > 0) {
+        return res.status(409).json({ error: 'Recording conflict detected.', newJob, conflictingJobs });
+    }
+
+    db.run(`INSERT INTO dvr_jobs (user_id, channelId, channelName, programTitle, startTime, endTime, status, profileId, userAgentId, preBufferMinutes, postBufferMinutes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [newJob.user_id, newJob.channelId, newJob.channelName, newJob.programTitle, newJob.startTime, newJob.endTime, newJob.status, newJob.profileId, newJob.userAgentId, newJob.preBufferMinutes, newJob.postBufferMinutes],
+        function(err) {
+            if (err) return res.status(500).json({ error: 'Could not schedule recording.' });
             const jobWithId = { ...newJob, id: this.lastID };
             scheduleDvrJob(jobWithId);
             res.status(201).json({ success: true, job: jobWithId });
@@ -1687,6 +1808,29 @@ app.get('/api/dvr/recordings', requireAuth, (req, res) => {
         res.json(recordingsWithFilename);
     });
 });
+
+// NEW: Endpoint for storage info
+app.get('/api/dvr/storage', requireAuth, (req, res) => {
+    try {
+        disk.check(DVR_DIR, (err, info) => {
+            if (err) {
+                console.error('[DVR_STORAGE] Error checking disk usage:', err);
+                return res.status(500).json({ error: 'Could not get storage information.' });
+            }
+            const used = info.total - info.free;
+            const percentage = Math.round((used / info.total) * 100);
+            res.json({
+                total: info.total,
+                used: used,
+                percentage: percentage
+            });
+        });
+    } catch (e) {
+        console.error('[DVR_STORAGE] Unhandled error in diskusage:', e);
+        res.status(500).json({ error: 'Server error checking storage.' });
+    }
+});
+
 
 app.delete('/api/dvr/jobs/:id', requireAuth, (req, res) => {
     const { id } = req.params;
@@ -1720,7 +1864,6 @@ app.delete('/api/dvr/recordings/:id', requireAuth, (req, res) => {
     });
 });
 
-// NEW: Endpoint to stop a recording in progress
 app.post('/api/dvr/jobs/:id/stop', requireAuth, (req, res) => {
     const { id } = req.params;
     const jobId = parseInt(id, 10);
@@ -1733,7 +1876,6 @@ app.post('/api/dvr/jobs/:id/stop', requireAuth, (req, res) => {
     });
 });
 
-// NEW: Endpoint to update a scheduled recording's time
 app.put('/api/dvr/jobs/:id', requireAuth, (req, res) => {
     const { id } = req.params;
     const { startTime, endTime } = req.body;
@@ -1758,7 +1900,6 @@ app.put('/api/dvr/jobs/:id', requireAuth, (req, res) => {
     });
 });
 
-// NEW: Endpoint to delete a job from history
 app.delete('/api/dvr/jobs/:id/history', requireAuth, (req, res) => {
     const { id } = req.params;
     db.get("SELECT status FROM dvr_jobs WHERE id = ? AND user_id = ?", [id, req.session.userId], (err, job) => {
@@ -1802,6 +1943,10 @@ app.listen(port, () => {
     if (notificationCheckInterval) clearInterval(notificationCheckInterval);
     notificationCheckInterval = setInterval(checkAndSendNotifications, 60000);
     console.log('[Push] Notification checker started.');
+
+    // NEW: Schedule daily storage cleanup
+    schedule.scheduleJob('0 2 * * *', autoDeleteOldRecordings); // Run at 2:00 AM every day
+    console.log('[DVR_STORAGE] Scheduled daily cleanup of old recordings.');
 });
 
 // --- Helper Functions (Full Implementation) ---
