@@ -436,7 +436,6 @@
         #notification-box.success-bg { background-color: #22c55e; }
         #notification-box.error-bg { background-color: #ef4444; }
 
-
     </style>
 </head>
 <body class="h-screen">
@@ -596,9 +595,40 @@
                 </div>
             </div>
 
-            <!-- NEW: DVR Page -->
+            <!-- DVR Page -->
             <div id="page-dvr" class="hidden flex-grow flex-col items-center p-4 overflow-y-auto custom-scrollbar">
                 <div class="w-full max-w-6xl mx-auto space-y-8 pb-16">
+                    <!-- Storage Usage Indicator -->
+                    <div id="dvr-storage-bar-container" class="bg-gray-800 p-4 rounded-xl shadow-lg">
+                        <div class="flex justify-between items-center mb-1 text-sm">
+                            <span class="font-medium text-white">Storage Usage</span>
+                            <span id="dvr-storage-text" class="text-gray-400">Loading...</span>
+                        </div>
+                        <div class="w-full bg-gray-700 rounded-full h-2.5">
+                            <div id="dvr-storage-bar" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Manual Recording Section -->
+                    <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
+                        <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Manual Recording</h2>
+                        <form id="manual-recording-form" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                            <div class="md:col-span-2">
+                                <label for="manual-rec-channel-select" class="block text-sm font-medium text-gray-400 mb-1">Channel</label>
+                                <select id="manual-rec-channel-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" required></select>
+                            </div>
+                            <div>
+                                <label for="manual-rec-start" class="block text-sm font-medium text-gray-400 mb-1">Start Time</label>
+                                <input type="datetime-local" id="manual-rec-start" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" required>
+                            </div>
+                             <div>
+                                <label for="manual-rec-end" class="block text-sm font-medium text-gray-400 mb-1">End Time</label>
+                                <input type="datetime-local" id="manual-rec-end" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" required>
+                            </div>
+                            <button type="submit" class="w-full md:col-start-4 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition-colors">Schedule</button>
+                        </form>
+                    </div>
+
                     <!-- Scheduled Recordings Section -->
                     <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
                         <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Scheduled Recordings</h2>
@@ -614,6 +644,8 @@
                                         <th>Start Time</th>
                                         <th>End Time</th>
                                         <th>Status</th>
+                                        <!-- NEW: Conflict Column -->
+                                        <th>Conflict</th>
                                         <th class="text-right">Actions</th>
                                     </tr>
                                 </thead>
@@ -759,7 +791,7 @@
                         </div>
                     </div>
 
-                    <!-- NEW: DVR Settings Section -->
+                    <!-- DVR Settings Section -->
                     <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
                         <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">DVR Settings</h2>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8">
@@ -782,6 +814,25 @@
                                     <input type="number" id="dvr-post-buffer-input" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white" min="0" value="2">
                                 </div>
                             </div>
+                            <!-- NEW: Max Concurrent Recordings -->
+                            <div class="md:col-span-2">
+                                <label for="dvr-max-streams-input" class="block text-sm font-medium text-gray-400 mb-2">Maximum Simultaneous Recordings</label>
+                                <input type="number" id="dvr-max-streams-input" class="w-full md:w-1/2 bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white" min="1" value="1">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- NEW: Storage Management Section -->
+                    <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
+                        <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Storage Management</h2>
+                        <div class="space-y-4">
+                             <div>
+                                <label for="dvr-storage-delete-days" class="block text-sm font-medium text-gray-400 mb-1">Auto-Delete Recordings Older Than</label>
+                                <div class="flex items-center gap-2">
+                                    <input type="number" id="dvr-storage-delete-days" class="w-24 bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white" min="0" value="0">
+                                    <span class="text-gray-400">days (0 to disable)</span>
+                                </div>
+                             </div>
                         </div>
                     </div>
 
@@ -837,7 +888,7 @@
                 <span class="flex items-center gap-2"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12h16M12 4v16"></path></svg> Multi-View</span>
             </button>
             <button id="mobile-nav-dvr" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors">
-                <span class="flex items-center gap-2"><svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M7 3.5A1.5 1.5 0 018.5 2h3A1.5 1.5 0 0113 3.5v1.259a.25.25 0 00.25.25h1.5a.25.25 0 00.25-.25V3.5A1.5 1.5 0 0116.5 2h3A1.5 1.5 0 0121 3.5v13A1.5 1.5 0 0119.5 18h-16A1.5 1.5 0 012 16.5v-13A1.5 1.5 0 013.5 2h3A1.5 1.5 0 018 3.5v1.259a.25.25 0 00.25.25h1.5a.25.25 0 00.25-.25V3.5zM8.5 4a.5.5 0 00-.5.5v1a.25.25 0 00.25.25h3.5a.25.25 0 00.25-.25v-1a.5.5 0 00-.5-.5h-3z"></path><path d="M12.5 13a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"></path></svg> DVR</span>
+                <span class="flex items-center gap-2"><svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M7 3.5A1.5 1.5 0 018.5 2h3A1.5 1.5 0 0113 3.5v1.259a.25.25 0 00.25.25h1.5a.25.25 0 00.25-.25V3.5A1.5 1.5 0 0116.5 2h3A1.5 1.5 0 0121 3.5v13A1.5 1.5 0 0119.5 18h-16A1.5 1.5 0 012 16.5v-13A1.5 1.5 0 013.5 2h3A1.5 1.5 0 018 3.5v1.259a.25.25 0 00.25.25h1.5a.25.25 0 00.25-.25V3.5zM8.5 4a.5.5 0 00-.5.5v1a.25.25 0 00.25.25h3.5a.25.25 0 00.25-.25v-1a.5.5 0 00-.5.5h-3z"></path><path d="M12.5 13a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"></path></svg> DVR</span>
             </button>
             <button id="mobile-nav-notifications" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors">
                 <span class="flex items-center gap-2"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg> Notifications</span>
