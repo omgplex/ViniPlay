@@ -54,6 +54,11 @@ const initializeUIElements = () => {
     UIElements.notificationLeadTimeInput = document.getElementById('notification-lead-time-input');
     UIElements.pastNotificationsList = document.getElementById('past-notifications-list');
     UIElements.noPastNotificationsMessage = document.getElementById('no-past-notifications-message');
+    // NEW: Corrected notification modal element references
+    UIElements.notificationModal = document.getElementById('notification-modal-wrapper'); // This is the outer wrapper
+    UIElements.notificationBox = document.getElementById('notification-box'); // This is the actual notification box
+    UIElements.notificationMessage = document.getElementById('notification-message'); // This is the paragraph for the message
+
 
     // Multi-View Elements
     UIElements.pageMultiview = document.getElementById('page-multiview');
