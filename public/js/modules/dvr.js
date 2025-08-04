@@ -6,7 +6,7 @@
 import { UIElements, dvrState, guideState } from './state.js';
 import { apiFetch } from './api.js';
 import { showNotification, showConfirm, openModal, closeModal, navigate } from './ui.js';
-import { scrollToChannel, handleSearchAndFilter } from './guide.js';
+import { scrollToChannel, handleSearchAndFilter, openProgramDetails } from './guide.js';
 
 /**
  * Initializes the DVR page by fetching all required data from the backend.
@@ -60,7 +60,6 @@ function renderScheduledJobs() {
         const startTime = new Date(job.startTime).toLocaleString();
         const endTime = new Date(job.endTime).toLocaleString();
         
-        // Make the error status a clickable button if there's an error message
         const statusHTML = job.status === 'error' && job.errorMessage
             ? `<button class="status-badge ${job.status} view-error-btn" data-job-id="${job.id}">${job.status}</button>`
             : `<span class="status-badge ${job.status}">${job.status}</span>`;
@@ -133,30 +132,13 @@ function renderCompletedRecordings() {
     });
 }
 
-/**
- * Converts a datetime-local input string to an ISO string.
- * @param {string} localDateTimeString - e.g., "2023-10-27T14:30"
- * @returns {string} ISO formatted string
- */
-const toISOStringLocal = (localDateTimeString) => {
-    return new Date(localDateTimeString).toISOString();
-};
-
-/**
- * Converts an ISO string to a format suitable for datetime-local input.
- * @param {string} isoString - ISO formatted string
- * @returns {string} e.g., "2023-10-27T14:30"
- */
+const toISOStringLocal = (localDateTimeString) => new Date(localDateTimeString).toISOString();
 const fromISOStringToLocalDateTime = (isoString) => {
     const date = new Date(isoString);
     date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
     return date.toISOString().slice(0, 16);
 };
 
-
-/**
- * Sets up event listeners for the DVR page.
- */
 export function setupDvrEventListeners() {
     UIElements.dvrJobsTbody.addEventListener('click', async (e) => {
         const button = e.target.closest('button');
@@ -165,25 +147,27 @@ export function setupDvrEventListeners() {
         const jobId = button.dataset.jobId;
         const job = dvrState.scheduledJobs.find(j => j.id == jobId);
 
-        if (button.classList.contains('cancel-job-btn')) {
-            showConfirm('Cancel Recording?', 'Are you sure you want to cancel this scheduled recording?', async () => {
-                const res = await apiFetch(`/api/dvr/jobs/${jobId}`, { method: 'DELETE' });
-                if (res && res.ok) {
+        if (button.classList.contains('go-to-guide-btn')) {
+            const channelId = button.dataset.channelId;
+            const programStartIso = button.dataset.programStart;
+            navigateToProgramInGuide(channelId, programStartIso);
+        } else if (button.classList.contains('cancel-job-btn')) {
+            showConfirm('Cancel Recording?', 'Are you sure?', async () => {
+                if (await apiFetch(`/api/dvr/jobs/${jobId}`, { method: 'DELETE' })) {
                     showNotification('Recording cancelled.');
                     await loadScheduledJobs();
                 }
             });
         } else if (button.classList.contains('stop-recording-btn')) {
-             showConfirm('Stop Recording?', 'Are you sure you want to stop this recording? The file will be saved.', async () => {
-                const res = await apiFetch(`/api/dvr/jobs/${jobId}/stop`, { method: 'POST' });
-                if (res && res.ok) {
+             showConfirm('Stop Recording?', 'Are you sure?', async () => {
+                if (await apiFetch(`/api/dvr/jobs/${jobId}/stop`, { method: 'POST' })) {
                     showNotification('Recording stopped.');
                     await Promise.all([loadScheduledJobs(), loadCompletedRecordings()]);
                 }
             });
         } else if (button.classList.contains('view-error-btn') && job) {
             UIElements.dvrErrorModalTitle.textContent = `Error for: ${job.programTitle}`;
-            UIElements.dvrErrorModalContent.textContent = job.errorMessage || 'No detailed error message was recorded.';
+            UIElements.dvrErrorModalContent.textContent = job.errorMessage || 'No details.';
             openModal(UIElements.dvrErrorModal);
         } else if (button.classList.contains('edit-job-btn') && job) {
             UIElements.dvrEditModalTitle.textContent = `Edit: ${job.programTitle}`;
@@ -191,14 +175,9 @@ export function setupDvrEventListeners() {
             UIElements.dvrEditStart.value = fromISOStringToLocalDateTime(job.startTime);
             UIElements.dvrEditEnd.value = fromISOStringToLocalDateTime(job.endTime);
             openModal(UIElements.dvrEditModal);
-        } else if (button.classList.contains('go-to-guide-btn')) {
-            const channelId = button.dataset.channelId;
-            const programStartIso = button.dataset.programStart;
-            navigateToProgramInGuide(channelId, programStartIso);
         } else if (button.classList.contains('delete-history-btn')) {
-             showConfirm('Remove From History?', 'This will permanently remove this job record. It will not delete the recorded file if one exists.', async () => {
-                const res = await apiFetch(`/api/dvr/jobs/${jobId}/history`, { method: 'DELETE' });
-                if (res && res.ok) {
+             showConfirm('Remove From History?', 'This will not delete the file.', async () => {
+                if (await apiFetch(`/api/dvr/jobs/${jobId}/history`, { method: 'DELETE' })) {
                     showNotification('Job removed from history.');
                     await loadScheduledJobs();
                 }
@@ -209,7 +188,6 @@ export function setupDvrEventListeners() {
     UIElements.dvrRecordingsTbody.addEventListener('click', async (e) => {
         const row = e.target.closest('tr');
         if (!row) return;
-
         const recordingId = row.dataset.recordingId;
         const recording = dvrState.completedRecordings.find(r => r.id == recordingId);
         if (!recording) return;
@@ -219,9 +197,8 @@ export function setupDvrEventListeners() {
             UIElements.recordingVideoElement.src = `/dvr/${recording.filename}`;
             openModal(UIElements.recordingPlayerModal);
         } else if (e.target.closest('.delete-recording-btn')) {
-            showConfirm('Delete Recording?', `This will permanently delete the recording of "${recording.programTitle}". This cannot be undone.`, async () => {
-                const res = await apiFetch(`/api/dvr/recordings/${recordingId}`, { method: 'DELETE' });
-                if (res && res.ok) {
+            showConfirm('Delete Recording?', `This will permanently delete the file.`, async () => {
+                if (await apiFetch(`/api/dvr/recordings/${recordingId}`, { method: 'DELETE' })) {
                     showNotification('Recording deleted.');
                     loadCompletedRecordings();
                 }
@@ -235,78 +212,65 @@ export function setupDvrEventListeners() {
         closeModal(UIElements.recordingPlayerModal);
     });
 
-    // Modal Listeners
     UIElements.dvrErrorModalCloseBtn.addEventListener('click', () => closeModal(UIElements.dvrErrorModal));
     UIElements.dvrEditCancelBtn.addEventListener('click', () => closeModal(UIElements.dvrEditModal));
     
     UIElements.dvrEditForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const jobId = UIElements.dvrEditId.value;
-        const startTime = toISOStringLocal(UIElements.dvrEditStart.value);
-        const endTime = toISOStringLocal(UIElements.dvrEditEnd.value);
-
+        const body = {
+            startTime: toISOStringLocal(UIElements.dvrEditStart.value),
+            endTime: toISOStringLocal(UIElements.dvrEditEnd.value)
+        };
         const res = await apiFetch(`/api/dvr/jobs/${jobId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ startTime, endTime })
+            body: JSON.stringify(body)
         });
         if(res && res.ok) {
-            showNotification('Recording schedule updated.');
+            showNotification('Schedule updated.');
             closeModal(UIElements.dvrEditModal);
             await loadScheduledJobs();
         }
     });
 }
 
-/**
- * Finds a scheduled DVR job for a specific program.
- * @param {object} program - The program object from the guide.
- * @returns {object|undefined} The DVR job if found, otherwise undefined.
- */
 export function findDvrJobForProgram(program) {
     const programStart = new Date(program.start).getTime();
     const programStop = new Date(program.stop).getTime();
-    
     return dvrState.scheduledJobs.find(job => {
         const jobProgramStart = new Date(job.startTime).getTime() + (job.preBufferMinutes * 60000);
         const jobProgramStop = new Date(job.endTime).getTime() - (job.postBufferMinutes * 60000);
-        
         return job.channelId === program.channelId &&
-               Math.abs(jobProgramStart - programStart) < 60000 && // Allow 1 min tolerance
+               Math.abs(jobProgramStart - programStart) < 60000 &&
                Math.abs(jobProgramStop - programStop) < 60000;
     });
 }
 
-
-/**
- * Schedules a new DVR job or cancels an existing one.
- * @param {object} programData - Details of the program to record/cancel.
- */
 export async function addOrRemoveDvrJob(programData) {
     const existingJob = findDvrJobForProgram(programData);
 
     if (existingJob && existingJob.status === 'scheduled') {
-        showConfirm('Cancel Recording?', 'Are you sure you want to cancel this recording?', async () => {
-            const res = await apiFetch(`/api/dvr/jobs/${existingJob.id}`, { method: 'DELETE' });
-            if (res && res.ok) {
+        showConfirm('Cancel Recording?', 'Are you sure?', async () => {
+            if (await apiFetch(`/api/dvr/jobs/${existingJob.id}`, { method: 'DELETE' })) {
                 showNotification('Recording cancelled.');
                 await loadScheduledJobs();
                 handleSearchAndFilter(false);
             }
         });
     } else if (!existingJob) {
-        const res = await apiFetch('/api/dvr/schedule', {
+        const body = {
+            channelId: programData.channelId,
+            channelName: guideState.channels.find(c => c.id === programData.channelId)?.name || 'Unknown',
+            programTitle: programData.title,
+            programStart: programData.start,
+            programStop: programData.stop
+        };
+        if (await apiFetch('/api/dvr/schedule', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                channelId: programData.channelId,
-                channelName: guideState.channels.find(c => c.id === programData.channelId)?.name || 'Unknown Channel',
-                programTitle: programData.title,
-                programStart: programData.start,
-                programStop: programData.stop
-            })
-        });
-        if (res && res.ok) {
+            body: JSON.stringify(body)
+        })) {
             showNotification(`"${programData.title}" scheduled to record.`);
             await loadScheduledJobs();
             handleSearchAndFilter(false);
@@ -314,15 +278,12 @@ export async function addOrRemoveDvrJob(programData) {
     }
 }
 
-/**
- * Navigates to the TV Guide and highlights a specific program.
- * @param {string} channelId - The ID of the channel.
- * @param {string} programStartIso - The ISO string of the program's start time.
- */
 async function navigateToProgramInGuide(channelId, programStartIso) {
+    const stableChannelIdSuffix = channelId.includes('_') ? '_' + channelId.split('_').pop() : channelId;
+    
     navigate('/tvguide');
     await new Promise(resolve => setTimeout(resolve, 50));
-    
+
     const targetProgramStart = new Date(programStartIso);
     const currentGuideDate = new Date(guideState.currentDate);
     currentGuideDate.setHours(0, 0, 0, 0);
@@ -332,15 +293,21 @@ async function navigateToProgramInGuide(channelId, programStartIso) {
         await handleSearchAndFilter(true);
     }
 
-    const channelScrolled = await scrollToChannel(channelId);
+    const channelScrolled = await scrollToChannel(stableChannelIdSuffix);
     if (!channelScrolled) {
         showNotification("Could not find the channel in the guide.", false);
         return;
     }
-
-    // Wait a moment for the smooth scroll and rendering to catch up
+    
     setTimeout(() => {
-        const programElement = UIElements.guideGrid.querySelector(`.programme-item[data-channel-id="${channelId}"][data-prog-start="${targetProgramStart.toISOString()}"]`);
+        const currentChannelElement = UIElements.guideGrid.querySelector(`.channel-info[data-id$="${stableChannelIdSuffix}"]`);
+        if (!currentChannelElement) return;
+        
+        const currentDynamicChannelId = currentChannelElement.dataset.id;
+        const programElement = UIElements.guideGrid.querySelector(
+            `.programme-item[data-prog-start="${targetProgramStart.toISOString()}"][data-channel-id="${currentDynamicChannelId}"]`
+        );
+        
         if (programElement) {
             const container = UIElements.guideContainer;
             const programRect = programElement.getBoundingClientRect();
@@ -350,21 +317,16 @@ async function navigateToProgramInGuide(channelId, programStartIso) {
             container.scrollTo({ left: Math.max(0, desiredScrollLeft), behavior: 'smooth' });
             
             programElement.classList.add('highlighted-search');
-            setTimeout(() => programElement.classList.remove('highlighted-search'), 3000);
+            setTimeout(() => {
+                programElement.classList.remove('highlighted-search');
+                openProgramDetails(programElement);
+            }, 3000);
         } else {
             showNotification("Could not find the specific program in the timeline.", false);
         }
     }, 500);
 }
 
-
-// --- Helper Functions ---
-
-/**
- * Formats a number of bytes into a human-readable string (KB, MB, GB).
- * @param {number} bytes - The number of bytes.
- * @returns {string} The formatted string.
- */
 function formatBytes(bytes) {
     if (!bytes || bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -373,11 +335,6 @@ function formatBytes(bytes) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-/**
- * Formats a duration in seconds into a human-readable string (e.g., 1h 30m).
- * @param {number} totalSeconds - The total duration in seconds.
- * @returns {string} The formatted string.
- */
 function formatDuration(totalSeconds) {
     if (!totalSeconds) return '0m';
     const hours = Math.floor(totalSeconds / 3600);
