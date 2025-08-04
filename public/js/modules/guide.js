@@ -12,7 +12,7 @@ import { parseM3U } from './utils.js';
 import { playChannel } from './player.js';
 import { showNotification, openModal, closeModal } from './ui.js';
 import { addOrRemoveNotification, findNotificationForProgram } from './notification.js';
-import { addOrRemoveDvrJob, findDvrJobForProgram } from './dvr.js'; // NEW: Import DVR functions
+import { addOrRemoveDvrJob, findDvrJobForProgram } from './dvr.js';
 
 // --- Virtualization Constants ---
 const ROW_HEIGHT = 96; // Height in pixels of a single channel row (.channel-info + .timeline-row)
@@ -44,7 +44,7 @@ export function openProgramDetails(progItem) {
         stop: progItem.dataset.progStop,
         channelId: channelId,
         programId: progItem.dataset.progId,
-        url: progItem.dataset.channelUrl, 
+        url: progItem.dataset.channelUrl,
     };
 
     const channelData = guideState.channels.find(c => c.id === channelId);
@@ -53,12 +53,12 @@ export function openProgramDetails(progItem) {
         showNotification("Error: Could not find channel data for this program.", true);
         return;
     }
-    
+
     const channelName = channelData.displayName || channelData.name;
     const channelLogo = channelData.logo;
     const channelUrl = channelData.url;
 
-    // IMPORTANT FIX: Get fresh references to buttons inside the modal
+    // Get fresh references to buttons inside the modal
     const detailsTitle = programDetailsModal.querySelector('#details-title');
     const detailsTime = programDetailsModal.querySelector('#details-time');
     const detailsDesc = programDetailsModal.querySelector('#details-desc');
@@ -66,13 +66,14 @@ export function openProgramDetails(progItem) {
     const programDetailsNotifyBtn = programDetailsModal.querySelector('#program-details-notify-btn');
     const programDetailsRecordBtn = programDetailsModal.querySelector('#details-record-btn');
     const detailsCloseBtn = programDetailsModal.querySelector('#details-close-btn');
+    const detailsFavoriteBtn = programDetailsModal.querySelector('#details-favorite-btn');
 
     if (detailsTitle) detailsTitle.textContent = programData.title;
     const progStart = new Date(programData.start);
     const progStop = new Date(programData.stop);
     if (detailsTime) detailsTime.textContent = `${progStart.toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit', minute:'2-digit'})}`;
     if (detailsDesc) detailsDesc.textContent = programData.desc || "No description available.";
-    
+
     if (detailsPlayBtn) {
         detailsPlayBtn.onclick = () => {
             playChannel(channelUrl, channelName, channelId);
@@ -80,10 +81,33 @@ export function openProgramDetails(progItem) {
         };
     }
 
+    // Favorite button logic
+    if (detailsFavoriteBtn) {
+        detailsFavoriteBtn.classList.toggle('favorited', channelData.isFavorite);
+        detailsFavoriteBtn.onclick = (e) => {
+            e.stopPropagation();
+            channelData.isFavorite = !channelData.isFavorite;
+            detailsFavoriteBtn.classList.toggle('favorited', channelData.isFavorite);
+
+            // Also update the star in the main guide view if it exists
+            const guideStar = document.querySelector(`.favorite-star[data-channel-id="${channelId}"]`);
+            if (guideStar) {
+                guideStar.classList.toggle('favorited', channelData.isFavorite);
+            }
+
+            guideState.settings.favorites = guideState.channels.filter(c => c.isFavorite).map(c => c.id);
+            saveUserSetting('favorites', guideState.settings.favorites);
+
+            if (UIElements.groupFilter.value === 'favorites') {
+                handleSearchAndFilter();
+            }
+        };
+    }
+
     const now = new Date();
     const programStopTime = new Date(programData.stop).getTime();
     const isProgramRelevant = programStopTime > now.getTime();
-    
+
     // --- Notification Button Logic ---
     if (programDetailsNotifyBtn) {
         const notification = findNotificationForProgram(programData, channelId);
@@ -114,20 +138,20 @@ export function openProgramDetails(progItem) {
                 programDetailsNotifyBtn.classList.toggle('hover:bg-yellow-700', !updatedNotification);
                 programDetailsNotifyBtn.classList.toggle('bg-gray-600', !!updatedNotification);
                 programDetailsNotifyBtn.classList.toggle('hover:bg-gray-500', !!updatedNotification);
-                handleSearchAndFilter(false); 
+                handleSearchAndFilter(false);
             };
         } else {
             programDetailsNotifyBtn.classList.add('hidden');
         }
     }
 
-    // --- NEW: DVR Record Button Logic ---
-    if (programDetailsRecordBtn) {
+    // --- DVR Record Button Logic (with permission check) ---
+    const hasDvrAccess = appState.currentUser?.isAdmin || appState.currentUser?.canUseDvr;
+    if (programDetailsRecordBtn && hasDvrAccess) {
         const dvrJob = findDvrJobForProgram(programData);
 
         if (isProgramRelevant) {
             programDetailsRecordBtn.classList.remove('hidden');
-            programDetailsRecordBtn.style.display = 'block';
 
             let buttonText = 'Record';
             let buttonClass = 'bg-red-600';
@@ -156,23 +180,24 @@ export function openProgramDetails(progItem) {
                         break;
                 }
             }
-            
+
             programDetailsRecordBtn.textContent = buttonText;
             programDetailsRecordBtn.className = `font-bold py-2 px-4 rounded-md transition-colors ${buttonClass} ${hoverClass} text-white`;
             programDetailsRecordBtn.disabled = isDisabled;
 
             programDetailsRecordBtn.onclick = async () => {
                 await addOrRemoveDvrJob(programData);
-                closeModal(programDetailsModal); 
-                handleSearchAndFilter(false); 
+                closeModal(programDetailsModal);
+                handleSearchAndFilter(false);
             };
 
         } else {
             programDetailsRecordBtn.classList.add('hidden');
-            programDetailsRecordBtn.style.display = 'none'; 
         }
+    } else if (programDetailsRecordBtn) {
+        programDetailsRecordBtn.classList.add('hidden');
     }
-    
+
     if (detailsCloseBtn) {
         detailsCloseBtn.onclick = () => closeModal(programDetailsModal);
     }
