@@ -7,6 +7,9 @@
  * web page is not open.
  */
 
+// NEW: Initialize BroadcastChannel for cross-page communication
+const notificationChannel = new BroadcastChannel('viniplay-notifications');
+
 // Listener for when a push message is received
 self.addEventListener('push', event => {
     console.log('[Service Worker] Push Received.');
@@ -42,6 +45,14 @@ self.addEventListener('push', event => {
     // before the notification is displayed.
     event.waitUntil(
         self.registration.showNotification(payload.title, options)
+            .then(() => {
+                // NEW: After displaying the notification, send a message to all active clients
+                // to refresh their notification lists, ensuring consistency.
+                notificationChannel.postMessage({ type: 'refresh-notifications' });
+            })
+            .catch(error => {
+                console.error('[Service Worker] Error showing notification:', error);
+            })
     );
 });
 
@@ -66,12 +77,20 @@ self.addEventListener('notificationclick', event => {
                 const client = clientList[i];
                 // NEW: If a client is found that matches our origin, navigate it to the specific URL
                 if (client.url.startsWith(self.location.origin) && 'navigate' in client) {
-                    return client.navigate(urlToOpen).then(navigatedClient => navigatedClient.focus());
+                    return client.navigate(urlToOpen).then(navigatedClient => {
+                        // NEW: After navigating and focusing, also send a refresh signal
+                        notificationChannel.postMessage({ type: 'refresh-notifications' });
+                        return navigatedClient.focus();
+                    });
                 }
             }
             // If no client is found or no suitable client to navigate, open a new tab/window.
             if (clients.openWindow) {
-                return clients.openWindow(urlToOpen);
+                return clients.openWindow(urlToOpen).then(newWindow => {
+                    // NEW: If a new window is opened, also send a refresh signal once it loads
+                    notificationChannel.postMessage({ type: 'refresh-notifications' });
+                    return newWindow;
+                });
             }
         })
     );
