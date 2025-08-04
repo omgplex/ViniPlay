@@ -106,7 +106,7 @@ function renderCompletedRecordings() {
     const tbody = UIElements.dvrRecordingsTbody;
     const recordings = dvrState.completedRecordings || [];
 
-    UIElements.noDvrRecordingsMessage.classList.toggle('hidden', recordings.length > 0);
+    UIElements.noDvrRecordingsMessage.classList.toggle('hidden', recordings.length === 0);
     tbody.innerHTML = '';
 
     recordings.forEach(rec => {
@@ -146,18 +146,37 @@ export function setupDvrEventListeners() {
         const button = e.target.closest('button');
         if (!button) return;
 
-        const jobId = button.dataset.jobId;
-        const job = dvrState.scheduledJobs.find(j => j.id == jobId);
-
         if (button.classList.contains('go-to-guide-btn')) {
             const channelId = button.dataset.channelId;
-            const programStartIso = button.dataset.programStart;
+            const bufferedStartIso = button.dataset.programStart;
+
+            // Find the full job object from the state to get the pre-buffer minutes
+            const jobId = button.closest('tr')?.dataset.jobId;
+            const job = dvrState.scheduledJobs.find(j => j.id == jobId);
+
+            if (!job) {
+                console.error(`[DVR_DEBUG] Could not find job with ID ${jobId} in state.`);
+                showNotification('An error occurred trying to find the program.', true);
+                return;
+            }
+
+            // Calculate the original program start time by adding the pre-buffer back
+            const preBufferMs = (job.preBufferMinutes || 0) * 60 * 1000;
+            const originalProgramStart = new Date(new Date(bufferedStartIso).getTime() + preBufferMs);
+            const originalProgramStartIso = originalProgramStart.toISOString();
+
             // ADDED: Detailed logging as requested
             console.log(`[DVR_DEBUG] 'Go to Guide' button clicked.`);
-            console.log(`[DVR_DEBUG] Calling navigateToProgramInGuide with Channel ID: ${channelId}, Program Start: ${programStartIso}`);
-            // MODIFIED: Call the imported, correct function
-            navigateToProgramInGuide(channelId, programStartIso);
+            console.log(`[DVR_DEBUG] Buffered Start (from job): ${bufferedStartIso}`);
+            console.log(`[DVR_DEBUG] Pre-buffer (minutes): ${job.preBufferMinutes}`);
+            console.log(`[DVR_DEBUG] Calculated Original Start: ${originalProgramStartIso}`);
+            console.log(`[DVR_DEBUG] Calling navigateToProgramInGuide with Channel ID: ${channelId}, Original Program Start: ${originalProgramStartIso}`);
+
+            // MODIFIED: Call with the corrected, original start time
+            navigateToProgramInGuide(channelId, originalProgramStartIso);
+
         } else if (button.classList.contains('cancel-job-btn')) {
+            const jobId = button.dataset.jobId;
             showConfirm('Cancel Recording?', 'Are you sure?', async () => {
                 if (await apiFetch(`/api/dvr/jobs/${jobId}`, { method: 'DELETE' })) {
                     showNotification('Recording cancelled.');
@@ -165,23 +184,33 @@ export function setupDvrEventListeners() {
                 }
             });
         } else if (button.classList.contains('stop-recording-btn')) {
+             const jobId = button.dataset.jobId;
              showConfirm('Stop Recording?', 'Are you sure?', async () => {
                 if (await apiFetch(`/api/dvr/jobs/${jobId}/stop`, { method: 'POST' })) {
                     showNotification('Recording stopped.');
                     await Promise.all([loadScheduledJobs(), loadCompletedRecordings()]);
                 }
             });
-        } else if (button.classList.contains('view-error-btn') && job) {
-            UIElements.dvrErrorModalTitle.textContent = `Error for: ${job.programTitle}`;
-            UIElements.dvrErrorModalContent.textContent = job.errorMessage || 'No details.';
-            openModal(UIElements.dvrErrorModal);
-        } else if (button.classList.contains('edit-job-btn') && job) {
-            UIElements.dvrEditModalTitle.textContent = `Edit: ${job.programTitle}`;
-            UIElements.dvrEditId.value = job.id;
-            UIElements.dvrEditStart.value = fromISOStringToLocalDateTime(job.startTime);
-            UIElements.dvrEditEnd.value = fromISOStringToLocalDateTime(job.endTime);
-            openModal(UIElements.dvrEditModal);
+        } else if (button.classList.contains('view-error-btn')) {
+            const jobId = button.dataset.jobId;
+            const job = dvrState.scheduledJobs.find(j => j.id == jobId);
+            if (job) {
+                UIElements.dvrErrorModalTitle.textContent = `Error for: ${job.programTitle}`;
+                UIElements.dvrErrorModalContent.textContent = job.errorMessage || 'No details.';
+                openModal(UIElements.dvrErrorModal);
+            }
+        } else if (button.classList.contains('edit-job-btn')) {
+            const jobId = button.dataset.jobId;
+            const job = dvrState.scheduledJobs.find(j => j.id == jobId);
+            if (job) {
+                UIElements.dvrEditModalTitle.textContent = `Edit: ${job.programTitle}`;
+                UIElements.dvrEditId.value = job.id;
+                UIElements.dvrEditStart.value = fromISOStringToLocalDateTime(job.startTime);
+                UIElements.dvrEditEnd.value = fromISOStringToLocalDateTime(job.endTime);
+                openModal(UIElements.dvrEditModal);
+            }
         } else if (button.classList.contains('delete-history-btn')) {
+             const jobId = button.dataset.jobId;
              showConfirm('Remove From History?', 'This will not delete the file.', async () => {
                 if (await apiFetch(`/api/dvr/jobs/${jobId}/history`, { method: 'DELETE' })) {
                     showNotification('Job removed from history.');
@@ -304,3 +333,4 @@ function formatDuration(totalSeconds) {
     if (minutes > 0) result += `${minutes}m`;
     return result.trim() || '0m';
 }
+
