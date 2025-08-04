@@ -43,9 +43,9 @@
         .resize-handle { position: absolute; bottom: 0; right: 0; width: 20px; height: 20px; cursor: se-resize; z-index: 10; }
         .resize-handle::after { content: ''; position: absolute; display: block; width: 12px; height: 12px; bottom: 2px; right: 2px; background-image: linear-gradient(45deg, #9ca3af 25%, transparent 25%, transparent 75%, #9ca3af 75%), linear-gradient(45deg, #9ca3af 25%, transparent 25%, transparent 75%, #9ca3af 75%); background-size: 6px 6px; background-position: 0 0, 3px 3px; opacity: 0.6; }
         .resize-handle:hover::after { opacity: 1; }
-        #video-modal-container, #program-details-container { overflow: hidden; }
+        #video-modal-container { overflow: hidden; }
         #video-modal-container { min-width: 400px; min-height: 300px; position: relative; }
-        #program-details-container { min-width: 320px; min-height: 250px; position: relative; }
+        #program-details-container { min-width: 320px; max-height: 90vh; position: relative; }
         #details-desc { overflow-y: auto; }
         .programme-item.highlighted-search {
             outline: 3px solid #facc15;
@@ -919,7 +919,7 @@
                 <h3 id="video-title" class="text-lg font-semibold text-white truncate"></h3>
                 <div class="flex items-center gap-2">
                     <button id="cast-btn" class="text-gray-400 hover:text-white p-2 rounded-md hover:bg-gray-700" title="Cast to device">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11z"></path></svg>
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2zM1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11z"></path></svg>
                     </button>
                     <button id="pip-btn" class="text-gray-400 hover:text-white p-2 rounded-md hover:bg-gray-700" title="Picture-in-Picture"><svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M12.5 5.5h-5a1 1 0 00-1 1v2.5a.5.5 0 001 0v-2a.5.5 0 01.5-.5h4a.5.5 0 01.5.5v4a.5.5 0 01-.5.5h-2a.5.5 0 000 1h2.5a1 1 0 001-1v-5a1 1 0 00-1-1z"></path><path d="M3.5 3A1.5 1.5 0 002 4.5v11A1.5 1.5 0 003.5 17h13a1.5 1.5 0 001.5-1.5v-11A1.5 1.5 0 0016.5 3h-13zm0 1h13a.5.5 0 01.5.5v11a.5.5 0 01-.5.5h-13a.5.5 0 01-.5-.5v-11a.5.5 0 01.5-.5z"></path></svg></button>
                     <button id="close-modal" class="text-gray-400 hover:text-white text-2xl leading-none font-bold">&times;</button>
@@ -938,17 +938,22 @@
     </div>
     
     <div id="program-details-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-        <div id="program-details-container" class="bg-gray-800 rounded-lg shadow-xl p-6 flex flex-col" style="width: 512px; height: auto;">
-            <div class="flex-shrink-0">
-                <h3 id="details-title" class="text-xl font-bold text-white mb-2"></h3>
-                <p id="details-time" class="text-sm text-gray-400 mb-4"></p>
+        <div id="program-details-container" class="bg-gray-800 rounded-lg shadow-xl p-4 flex flex-col w-full max-w-lg">
+            <div id="program-details-header" class="flex justify-between items-start pb-3 border-b border-gray-700 mb-3 flex-shrink-0">
+                <div class="flex-grow">
+                    <h3 id="details-title" class="text-xl font-bold text-white"></h3>
+                    <p id="details-time" class="text-sm text-gray-400"></p>
+                </div>
+                <button id="details-favorite-btn" class="ml-4 p-2 text-gray-500 hover:text-yellow-400 flex-shrink-0">
+                    <svg class="w-6 h-6 favorite-star" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10.868 2.884c.321-.772 1.415-.772 1.736 0l1.884 4.545a1.5 1.5 0 001.292.934l4.892.38c.787.061 1.1.99.444 1.527l-3.623 2.805a1.5 1.5 0 00-.48 1.644l1.449 4.493c.25.777-.606 1.378-1.292.934l-4.148-2.564a1.5 1.5 0 00-1.543 0l-4.148 2.564c-.686.444-1.542-.157-1.292-.934l1.449-4.493a1.5 1.5 0 00-.48-1.644L2.008 10.26c-.656-.537-.345-1.466.444-1.527l4.892-.38a1.5 1.5 0 001.292-.934l1.884-4.545z" clip-rule="evenodd" /></svg>
+                </button>
             </div>
-            <p id="details-desc" class="text-base text-gray-300 flex-grow custom-scrollbar"></p>
-            <div class="flex justify-between items-center gap-4 mt-6 flex-shrink-0">
+            <p id="details-desc" class="text-base text-gray-300 flex-grow custom-scrollbar mb-4"></p>
+            <div id="program-details-footer" class="flex justify-start items-center gap-2 pt-3 border-t border-gray-700 flex-shrink-0 flex-wrap">
                 <button id="details-play-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Play Channel</button>
                 <button id="details-record-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md hidden">Record</button>
                 <button id="program-details-notify-btn" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-md hidden">Notify Me</button>
-                <button id="details-close-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Close</button>
+                <button id="details-close-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md ml-auto">Close</button>
             </div>
             <div id="details-resize-handle" class="resize-handle"></div>
         </div>
@@ -1102,9 +1107,15 @@
                     <label for="user-editor-password" class="block text-sm font-medium text-gray-400">New Password (optional)</label>
                     <input type="password" id="user-editor-password" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white">
                 </div>
-                <div class="flex items-center">
-                    <input id="user-editor-isAdmin" type="checkbox" class="h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500">
-                    <label for="user-editor-isAdmin" class="ml-2 block text-sm text-gray-300">Is Administrator</label>
+                <div class="flex items-center gap-6">
+                    <div class="flex items-center">
+                        <input id="user-editor-isAdmin" type="checkbox" class="h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500">
+                        <label for="user-editor-isAdmin" class="ml-2 block text-sm text-gray-300">Is Administrator</label>
+                    </div>
+                    <div class="flex items-center">
+                        <input id="user-editor-canUseDvr" type="checkbox" class="h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500">
+                        <label for="user-editor-canUseDvr" class="ml-2 block text-sm text-gray-300">Can use DVR</label>
+                    </div>
                 </div>
                 <div class="flex justify-end gap-4 pt-4">
                     <button type="button" id="user-editor-cancel-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Cancel</button>
