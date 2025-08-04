@@ -112,6 +112,7 @@
             background-color: #111827; /* Match body background */
             overflow: auto; /* Handles both vertical and horizontal scrolling */
             position: relative; /* For the now-line's absolute positioning relative to scrolled content */
+            /* padding-top: 0; This will be set by JS */
         }
         #guide-grid {
             display: grid;
@@ -126,10 +127,9 @@
 
         .sticky-corner {
             position: sticky;
-            /* Set top relative to viewport, now accounting for global headers */
-            top: var(--total-header-height, 0px);
+            top: 0;
             left: 0;
-            z-index: 30; /* Higher than programs, lower than unified-guide-header */
+            z-index: 30; /* Highest z-index for the corner */
             background-color: #1a2233; /* Match channel-info background */
             height: 64px; /* Explicit height, matches time-bar-cell */
             width: var(--channel-col-width, 180px); /* Default or dynamic width - this needs to be calculated by JS if responsive */
@@ -173,8 +173,7 @@
         
         .time-bar-cell {
             position: sticky;
-            /* Set top relative to viewport, now accounting for global headers */
-            top: var(--total-header-height, 0px); 
+            top: 0;
             z-index: 25; /* Above programs, below corner */
             background-color: #111827; /* Match body/guide background */
             height: 64px; /* Explicit height */
@@ -268,8 +267,8 @@
         /* Adjust page-guide padding based on header state */
         #page-guide {
             transition: padding-top 0.3s ease-out;
-            /* Dynamically set padding based on combined header height */
-            padding-top: var(--total-header-height, 0px); 
+            /* Remove explicit padding-top here as sticky headers will manage layout */
+            padding-top: 0 !important; /* Ensure no static padding */
         }
         /* Visual indicator for programs with notifications */
         .programme-item.has-notification {
@@ -436,6 +435,8 @@
         /* Classes to change background color via JS on notification-box */
         #notification-box.success-bg { background-color: #22c55e; /* green-500 */ }
         #notification-box.error-bg { background-color: #ef4444; /* red-500 */ }
+
+
     </style>
 </head>
 <body class="h-screen">
@@ -846,7 +847,7 @@
                 <span class="flex items-center gap-2"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg> Notifications</span>
             </button>
             <button id="mobile-nav-settings" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors">
-                <span class="flex items-center gap-2"><svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.756 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924-1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066 2.573c-.94-1.543.826 3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> Settings</span>
+                <span class="flex items-center gap-2"><svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924-1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066 2.573c-.94-1.543.826 3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> Settings</span>
             </button>
         </nav>
         <div class="mt-auto">
