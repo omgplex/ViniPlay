@@ -67,7 +67,7 @@ export const closeModal = (modal) => {
  */
 export const showConfirm = (title, message, callback) => {
     UIElements.confirmTitle.textContent = title;
-    UIElements.confirmMessage.textContent = message;
+    UIElements.confirmMessage.innerHTML = message; // Use innerHTML to allow for line breaks
     confirmCallback = callback;
     openModal(UIElements.confirmModal);
 };
@@ -268,24 +268,32 @@ export const handleRouteChange = () => {
 function proceedWithRouteChange(path) {
     const isGuide = path.startsWith('/tvguide') || path === '/';
     const isMultiView = path.startsWith('/multiview');
-    const isDvr = path.startsWith('/dvr'); // NEW: DVR check
+    const isDvr = path.startsWith('/dvr');
     const isNotifications = path.startsWith('/notifications');
     const isSettings = path.startsWith('/settings');
 
     // Close mobile menu if it's open when navigating
     closeMobileMenu();
 
+    const hasDvrAccess = appState.currentUser?.isAdmin || appState.currentUser?.canUseDvr;
+
     // Toggle active state for desktop navigation buttons
     UIElements.tabGuide?.classList.toggle('active', isGuide);
     UIElements.tabMultiview?.classList.toggle('active', isMultiView);
-    UIElements.tabDvr?.classList.toggle('active', isDvr); // NEW: DVR Tab
+    if (UIElements.tabDvr) {
+        UIElements.tabDvr.classList.toggle('active', isDvr && hasDvrAccess);
+        UIElements.tabDvr.classList.toggle('hidden', !hasDvrAccess);
+    }
     UIElements.tabNotifications?.classList.toggle('active', isNotifications);
     UIElements.tabSettings?.classList.toggle('active', isSettings);
     
     // Toggle active state for mobile navigation buttons
     UIElements.mobileNavGuide?.classList.toggle('active', isGuide);
     UIElements.mobileNavMultiview?.classList.toggle('active', isMultiView);
-    UIElements.mobileNavDvr?.classList.toggle('active', isDvr); // NEW: Mobile DVR Nav
+    if (UIElements.mobileNavDvr) {
+        UIElements.mobileNavDvr.classList.toggle('active', isDvr && hasDvrAccess);
+        UIElements.mobileNavDvr.classList.toggle('hidden', !hasDvrAccess);
+    }
     UIElements.mobileNavNotifications?.classList.toggle('active', isNotifications);
     UIElements.mobileNavSettings?.classList.toggle('active', isSettings);
 
@@ -294,8 +302,8 @@ function proceedWithRouteChange(path) {
     UIElements.pageGuide.classList.toggle('flex', isGuide);
     UIElements.pageMultiview.classList.toggle('hidden', !isMultiView);
     UIElements.pageMultiview.classList.toggle('flex', isMultiView);
-    UIElements.pageDvr.classList.toggle('hidden', !isDvr); // NEW: DVR Page
-    UIElements.pageDvr.classList.toggle('flex', isDvr); // NEW: DVR Page
+    UIElements.pageDvr.classList.toggle('hidden', !isDvr || !hasDvrAccess); 
+    UIElements.pageDvr.classList.toggle('flex', isDvr && hasDvrAccess);
     UIElements.pageNotifications.classList.toggle('hidden', !isNotifications);
     UIElements.pageNotifications.classList.toggle('flex', isNotifications);
     UIElements.pageSettings.classList.toggle('hidden', !isSettings);
@@ -304,24 +312,19 @@ function proceedWithRouteChange(path) {
     // Manage header visibility based on the active tab
     const appContainer = UIElements.appContainer; 
 
-    // When navigating to guide, ensure headers are uncollapsed and set initial padding
-    // REMOVED: Dynamic padding-top for #page-guide. This is now handled by sticky headers in CSS.
     if (isGuide) {
         if (appContainer) {
             appContainer.classList.remove('header-collapsed');
         }
 
-        // Reset guide scroll to top when coming back to it
         if (UIElements.guideContainer) {
             UIElements.guideContainer.scrollTop = 0;
         }
     } else {
-        // If navigating to other pages, ensure main header is fully visible (by removing collapsed class)
         if (appContainer) {
             appContainer.classList.remove('header-collapsed');
         }
 
-        // If navigating to a specific page, refresh relevant data
         if (isSettings) {
             updateUIFromSettings();
             if (appState.currentUser?.isAdmin) {
@@ -331,11 +334,10 @@ function proceedWithRouteChange(path) {
             renderNotifications();
         } else if (isMultiView) {
             initMultiView();
-        } else if (isDvr) { // NEW: Init DVR page
+        } else if (isDvr && hasDvrAccess) {
             initDvrPage();
         }
     }
-    // Update the current page tracker
     currentPage = path;
 }
 
@@ -362,7 +364,7 @@ export const switchTab = (activeTab) => {
         newPath = '/tvguide';
     } else if (activeTab === 'multiview') {
         newPath = '/multiview';
-    } else if (activeTab === 'dvr') { // NEW: DVR case
+    } else if (activeTab === 'dvr') { 
         newPath = '/dvr';
     } else if (activeTab === 'notifications') {
         newPath = '/notifications';
