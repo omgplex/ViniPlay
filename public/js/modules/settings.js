@@ -310,7 +310,6 @@ const saveSettingAndNotify = async (saveFunction, ...args) => {
 export function setupSettingsEventListeners() {
 
     // --- Source Management ---
-    // Ensure processSourcesBtn exists before adding event listener
     if (UIElements.processSourcesBtn) {
         UIElements.processSourcesBtn.addEventListener('click', async () => {
             const originalContent = UIElements.processSourcesBtnContent.innerHTML;
@@ -454,15 +453,23 @@ export function setupSettingsEventListeners() {
         await saveSettingAndNotify(saveGlobalSetting, { notificationLeadTime: value });
     });
 
-    // --- NEW: DVR Settings ---
-    // FIX: Use the correct UIElements names for DVR inputs
+    // --- DVR Settings (FIXED) ---
     if (UIElements.dvrPreBufferInput) {
-        UIElements.dvrPreBufferInput.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { dvr: { ...guideState.settings.dvr, preBufferMinutes: parseInt(e.target.value, 10) } }));
+        UIElements.dvrPreBufferInput.addEventListener('change', (e) => {
+            const newDvrSettings = { ...guideState.settings.dvr, preBufferMinutes: parseInt(e.target.value, 10) };
+            saveSettingAndNotify(saveGlobalSetting, { dvr: newDvrSettings });
+        });
     }
     if (UIElements.dvrPostBufferInput) {
-        UIElements.dvrPostBufferInput.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { dvr: { ...guideState.settings.dvr, postBufferMinutes: parseInt(e.target.value, 10) } }));
+        UIElements.dvrPostBufferInput.addEventListener('change', (e) => {
+            const newDvrSettings = { ...guideState.settings.dvr, postBufferMinutes: parseInt(e.target.value, 10) };
+            saveSettingAndNotify(saveGlobalSetting, { dvr: newDvrSettings });
+        });
     }
-    UIElements.dvrRecordingProfileSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { dvr: { ...guideState.settings.dvr, activeRecordingProfileId: e.target.value } }));
+    UIElements.dvrRecordingProfileSelect.addEventListener('change', (e) => {
+        const newDvrSettings = { ...guideState.settings.dvr, activeRecordingProfileId: e.target.value };
+        saveSettingAndNotify(saveGlobalSetting, { dvr: newDvrSettings });
+    });
 
 
     // --- Player Settings (User Agents & Stream Profiles) ---
@@ -505,7 +512,7 @@ export function setupSettingsEventListeners() {
     UIElements.userAgentSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { activeUserAgentId: e.target.value }));
     UIElements.streamProfileSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { activeStreamProfileId: e.target.value }));
 
-    // --- NEW & CORRECTED: Recording Profiles ---
+    // --- Recording Profiles (FIXED) ---
     UIElements.addDvrProfileBtn.addEventListener('click', () => openEditorModal('recordingProfile'));
     UIElements.editDvrProfileBtn.addEventListener('click', () => {
         const profile = (guideState.settings.dvr?.recordingProfiles || []).find(p => p.id === UIElements.dvrRecordingProfileSelect.value);
@@ -515,7 +522,6 @@ export function setupSettingsEventListeners() {
         const selectedId = UIElements.dvrRecordingProfileSelect.value;
         showConfirm('Delete Recording Profile?', 'Are you sure?', async () => {
             const updatedList = (guideState.settings.dvr?.recordingProfiles || []).filter(p => p.id !== selectedId);
-            // FIX: Corrected logical typo here
             const newActiveId = (guideState.settings.dvr?.activeRecordingProfileId === selectedId) ? (updatedList[0]?.id || null) : guideState.settings.dvr?.activeRecordingProfileId;
             const settingsToSave = {
                 dvr: {
