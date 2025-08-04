@@ -64,7 +64,7 @@ export function openProgramDetails(progItem) {
     const detailsDesc = programDetailsModal.querySelector('#details-desc');
     const detailsPlayBtn = programDetailsModal.querySelector('#details-play-btn');
     const programDetailsNotifyBtn = programDetailsModal.querySelector('#program-details-notify-btn');
-    const programDetailsRecordBtn = programDetailsModal.querySelector('#details-record-btn'); // Using UIElements for now as it's passed around, but direct query is safer for modals
+    const programDetailsRecordBtn = programDetailsModal.querySelector('#details-record-btn');
     const detailsCloseBtn = programDetailsModal.querySelector('#details-close-btn');
 
     if (detailsTitle) detailsTitle.textContent = programData.title;
@@ -82,11 +82,7 @@ export function openProgramDetails(progItem) {
 
     const now = new Date();
     const programStopTime = new Date(programData.stop).getTime();
-    console.log('[DVR_DEBUG] Program Data:', programData);
-    console.log('[DVR_DEBUG] Current Time (now):', now.toISOString());
-    console.log('[DVR_DEBUG] Program Stop Time:', new Date(programStopTime).toISOString());
     const isProgramRelevant = programStopTime > now.getTime();
-    console.log('[DVR_DEBUG] Is Program Relevant (programStopTime > now.getTime()):', isProgramRelevant);
     
     // --- Notification Button Logic ---
     if (programDetailsNotifyBtn) {
@@ -131,10 +127,7 @@ export function openProgramDetails(progItem) {
 
         if (isProgramRelevant) {
             programDetailsRecordBtn.classList.remove('hidden');
-            // Ensure the record button becomes a flex item if its parent uses flex, or block otherwise
-            programDetailsRecordBtn.style.display = 'block'; // More aggressive override for debugging
-            console.log('[DVR_DEBUG] Attempting to show record button. Current display style:', programDetailsRecordBtn.style.display);
-
+            programDetailsRecordBtn.style.display = 'block';
 
             let buttonText = 'Record';
             let buttonClass = 'bg-red-600';
@@ -143,7 +136,6 @@ export function openProgramDetails(progItem) {
 
             if (dvrJob) {
                 switch (dvrJob.status) {
-                    case 'pending':
                     case 'scheduled':
                         buttonText = 'Cancel Recording';
                         buttonClass = 'bg-gray-600';
@@ -153,13 +145,13 @@ export function openProgramDetails(progItem) {
                         buttonText = 'Recording...';
                         buttonClass = 'bg-red-800';
                         hoverClass = 'hover:bg-red-800';
-                        isDisabled = true; // Can't cancel while recording from here
+                        isDisabled = true;
                         break;
                     case 'completed':
-                    case 'failed':
-                        buttonText = 'Recorded';
-                        buttonClass = 'bg-green-600';
-                        hoverClass = 'hover:bg-green-600';
+                    case 'error':
+                        buttonText = dvrJob.status === 'completed' ? 'Recorded' : 'Error';
+                        buttonClass = dvrJob.status === 'completed' ? 'bg-green-600' : 'bg-orange-600';
+                        hoverClass = dvrJob.status === 'completed' ? 'hover:bg-green-600' : 'hover:bg-orange-600';
                         isDisabled = true;
                         break;
                 }
@@ -178,7 +170,6 @@ export function openProgramDetails(progItem) {
         } else {
             programDetailsRecordBtn.classList.add('hidden');
             programDetailsRecordBtn.style.display = 'none'; 
-            console.log('[DVR_DEBUG] Hiding record button.');
         }
     }
     
@@ -186,7 +177,6 @@ export function openProgramDetails(progItem) {
         detailsCloseBtn.onclick = () => closeModal(programDetailsModal);
     }
 
-    console.log('[GUIDE_DEBUG] Opening program details modal via openProgramDetails function.');
     openModal(programDetailsModal);
 }
 
@@ -207,8 +197,6 @@ export function handleGuideLoad(m3uContent, epgContent) {
         guideState.programs = epgContent || {};
     }
 
-    // Cache the loaded data in IndexedDB
-    // This is a "fire and forget" operation for performance
     if (appState.db) {
         appState.db.transaction(['guideData'], 'readwrite').objectStore('guideData').put(guideState.channels, 'channels');
         appState.db.transaction(['guideData'], 'readwrite').objectStore('guideData').put(guideState.programs, 'programs');
@@ -264,13 +252,11 @@ const getEpgDateRange = () => {
  * @param {boolean} isFirstLoad - Indicates if this is the initial load of the guide.
  */
 export function finalizeGuideLoad(isFirstLoad = false) {
-    // Add favorite status to channels from user settings
     const favoriteIds = new Set(guideState.settings.favorites || []);
     guideState.channels.forEach(channel => {
         channel.isFavorite = favoriteIds.has(channel.id);
     });
 
-    // Populate unique channel groups and sources for the filter dropdowns
     guideState.channelGroups.clear();
     guideState.channelSources.clear();
     guideState.channels.forEach(ch => {
@@ -280,14 +266,12 @@ export function finalizeGuideLoad(isFirstLoad = false) {
     populateGroupFilter();
     populateSourceFilter();
 
-    // Initialize Fuse.js for fuzzy searching channels
     appState.fuseChannels = new Fuse(guideState.channels, {
         keys: ['name', 'displayName', 'source', 'chno'],
         threshold: 0.4,
         includeScore: true,
     });
 
-    // --- NEW: Date Picker Initialization ---
     const epgRange = getEpgDateRange();
     if (epgRange && UIElements.guideDatePicker) {
         UIElements.guideDatePicker.min = formatDateForInput(epgRange.minDate);
@@ -295,11 +279,10 @@ export function finalizeGuideLoad(isFirstLoad = false) {
         UIElements.guideDatePicker.value = formatDateForInput(guideState.currentDate);
         UIElements.guideDatePicker.disabled = false;
     } else if (UIElements.guideDatePicker) {
-        UIElements.guideDatePicker.disabled = true; // Disable if no EPG data
+        UIElements.guideDatePicker.disabled = true;
     }
 
 
-    // Prepare program data for searching
     const allPrograms = [];
     const guideStart = new Date(guideState.currentDate);
     guideStart.setHours(0, 0, 0, 0);
@@ -311,8 +294,7 @@ export function finalizeGuideLoad(isFirstLoad = false) {
             guideState.programs[channelId].forEach(prog => {
                 const progStart = new Date(prog.start);
                 const progStop = new Date(prog.stop);
-                // Only include programs within the current guide view
-                if (progStop < guideStart || progStart > guideEnd) return; // Corrected logic to filter out programs completely outside view
+                if (progStop < guideStart || progStart > guideEnd) return;
                     
                 allPrograms.push({
                     ...prog,
@@ -322,14 +304,12 @@ export function finalizeGuideLoad(isFirstLoad = false) {
                         logo: channel.logo,
                         source: channel.source,
                     },
-                    // Ensure a programId is generated for programs in the search index
                     programId: `${channel.id}-${progStart.toISOString()}-${progStop.toISOString()}`
                 });
             });
         }
     }
 
-    // Initialize Fuse.js for fuzzy searching programs
     appState.fusePrograms = new Fuse(allPrograms, {
         keys: ['title'],
         threshold: 0.4,
@@ -353,18 +333,16 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
         const totalRows = channelsToRender.length;
         const showNoData = totalRows === 0;
 
-        // Toggle placeholder vs. guide content visibility
         UIElements.guidePlaceholder.classList.toggle('hidden', !showNoData);
         UIElements.noDataMessage.classList.toggle('hidden', !showNoData);
         UIElements.initialLoadingIndicator.classList.add('hidden');
         UIElements.guideGrid.classList.toggle('hidden', showNoData);
         if (showNoData) {
             UIElements.guideGrid.innerHTML = '';
-            resolve(true); // Resolve even if there's no data
+            resolve(true);
             return;
         }
 
-        // --- Static Header/Time Bar Setup (Done once per full render) ---
         const guideStart = new Date(guideState.currentDate);
         guideStart.setHours(0, 0, 0, 0);
         const guideStartUtc = new Date(Date.UTC(guideStart.getUTCFullYear(), guideStart.getUTCMonth(), guideStart.getUTCDate()));
@@ -405,9 +383,8 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
         rowContainer.style.display = 'grid';
         rowContainer.style.gridTemplateColumns = 'var(--channel-col-width, 180px) 1fr';
 
-        // FIX: Append rowContainer to contentWrapper, not directly to guideGrid
         contentWrapper.appendChild(rowContainer);
-        guideGrid.appendChild(contentWrapper); // Append contentWrapper to guideGrid
+        guideGrid.appendChild(contentWrapper);
 
         const updateVisibleRows = () => {
             if (!guideContainer) return;
@@ -466,11 +443,12 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
                     
                     const uniqueProgramId = `${channel.id}-${progStart.toISOString()}-${progStop.toISOString()}`;
 
-                    const hasNotification = findNotificationForProgram({ programId: uniqueProgramId, ...prog }, channel.id);
+                    const hasNotification = findNotificationForProgram({ ...prog, programId: uniqueProgramId }, channel.id);
                     const notificationClass = hasNotification ? 'has-notification' : '';
 
-                    const dvrJob = findDvrJobForProgram({ programId: uniqueProgramId, ...prog });
+                    const dvrJob = findDvrJobForProgram({ ...prog, channelId: channel.id });
                     const recordingClass = dvrJob ? `has-recording status-${dvrJob.status}` : '';
+
 
                     programsHTML += `<div class="programme-item absolute top-1 bottom-1 bg-gray-800 rounded-md p-2 overflow-hidden flex flex-col justify-center z-5 ${isLive ? 'live' : ''} ${progStop < now ? 'past' : ''} ${notificationClass} ${recordingClass}" style="left:${left}px; width:${Math.max(0, width - 2)}px" data-channel-url="${channel.url}" data-channel-id="${channel.id}" data-channel-name="${channelName}" data-prog-title="${prog.title}" data-prog-desc="${prog.desc}" data-prog-start="${progStart.toISOString()}" data-prog-stop="${progStop.toISOString()}" data-prog-id="${uniqueProgramId}"><div class="programme-progress" style="width:${progressWidth}%"></div><p class="prog-title text-white font-semibold truncate relative z-10">${prog.title}</p><p class="prog-time text-gray-400 truncate relative z-10">${progStart.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} - ${progStop.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p></div>`;
                 });
@@ -552,11 +530,6 @@ const updateNowLine = (guideStartUtc, shouldScroll = false) => {
         nowLineEl.classList.add('hidden');
     }
     
-    // FIX: Removed this line. The height of now-line should be 100% via CSS based on its parent.
-    // const contentWrapper = UIElements.guideGrid.querySelector('#virtual-content-wrapper');
-    // nowLineEl.style.height = `${contentWrapper?.scrollHeight || UIElements.guideContainer.scrollHeight}px`;
-
-
     document.querySelectorAll('.programme-item').forEach(item => {
         const progStart = new Date(item.dataset.progStart);
         const progStop = new Date(item.dataset.progStop);
@@ -726,12 +699,10 @@ const throttle = (func, limit) => {
  */
 export const scrollToChannel = (channelId) => {
     return new Promise((resolve) => {
-        // Find the index of the channel in the currently filtered list
         const channelIndex = guideState.visibleChannels.findIndex(ch =>
             ch.id === channelId || ch.id.endsWith(channelId)
         );
 
-        // If channel isn't in the list, we can't scroll to it.
         if (channelIndex === -1) {
             console.warn(`[GUIDE_SCROLL_FAIL] Channel with ID/suffix "${channelId}" not found in visibleChannels list.`);
             resolve(false);
@@ -739,25 +710,16 @@ export const scrollToChannel = (channelId) => {
         }
 
         const foundChannel = guideState.visibleChannels[channelIndex];
-        console.log(`[GUIDE_SCROLL] Found channel for ID "${channelId}". Matched with "${foundChannel.id}". Scrolling to index ${channelIndex}.`);
-        
-        // Calculate the target scroll position
         const targetScrollTop = channelIndex * ROW_HEIGHT;
-
-        // Initiate the scroll
         UIElements.guideContainer.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
 
-        // --- NEW ROBUST WAITER ---
-        // Now, wait for the element to actually be rendered by the virtualization logic.
         let attempts = 0;
-        const maxAttempts = 100; // 100 * 50ms = 5 second timeout
+        const maxAttempts = 100; // 5 second timeout
         const checkInterval = setInterval(() => {
             const channelElement = UIElements.guideGrid.querySelector(`.channel-info[data-id="${foundChannel.id}"]`);
 
             if (channelElement) {
-                // Element is in the DOM! We can now safely proceed.
                 clearInterval(checkInterval);
-                console.log(`[GUIDE_SCROLL] Channel element for "${foundChannel.id}" is now visible in the DOM.`);
                 resolve(true);
             } else {
                 attempts++;
@@ -767,26 +729,9 @@ export const scrollToChannel = (channelId) => {
                     resolve(false);
                 }
             }
-        }, 50); // Check every 50ms
+        }, 50);
     });
 };
-
-
-// REMOVED: The updateGuidePaddingTop function is no longer needed
-// function updateGuidePaddingTop() {
-//     if (!UIElements.mainHeader || !UIElements.unifiedGuideHeader || !UIElements.pageGuide) {
-//         return;
-//     }
-
-//     const mainHeaderHeight = UIElements.mainHeader.offsetHeight;
-//     const unifiedHeaderHeight = UIElements.unifiedGuideHeader.offsetHeight;
-//     const totalHeaderHeight = mainHeaderHeight + unifiedHeaderHeight;
-
-//     // Apply this total height as padding-top to #page-guide
-//     UIElements.pageGuide.style.paddingTop = `${totalHeaderHeight}px`;
-//     console.log(`[GUIDE_PADDING] Applied padding-top of ${totalHeaderHeight}px to #page-guide.`);
-// }
-
 
 // --- Event Listeners ---
 
@@ -831,8 +776,6 @@ export function setupGuideEventListeners() {
     }
 
     UIElements.guideGrid.addEventListener('click', (e) => {
-        console.log('[GUIDE_DEBUG] guideGrid click event fired. Target:', e.target);
-        
         const favoriteStar = e.target.closest('.favorite-star');
         const channelInfo = e.target.closest('.channel-info');
         const progItem = e.target.closest('.programme-item');
@@ -912,15 +855,6 @@ export function setupGuideEventListeners() {
     });
 
     let lastScrollTop = 0;
-    // REMOVED: initialHeaderHeight and calculateInitialHeaderHeight are no longer needed
-    // let initialHeaderHeight = 0;
-
-    // const calculateInitialHeaderHeight = () => {
-    //     let height = 0;
-    //     if (UIElements.mainHeader) height += UIElements.mainHeader.offsetHeight;
-    //     if (UIElements.unifiedGuideHeader) height += UIElements.unifiedGuideHeader.offsetHeight;
-    //     return height;
-    // };
 
     const handleScrollHeader = throttle(() => {
         if (!UIElements.guideContainer || !UIElements.appContainer || !UIElements.pageGuide) {
@@ -930,14 +864,7 @@ export function setupGuideEventListeners() {
         const scrollTop = UIElements.guideContainer.scrollTop;
         const scrollDirection = scrollTop > lastScrollTop ? 'down' : 'up';
 
-        // REMOVED: The logic tied to initialHeaderHeight is now irrelevant
-        // if (initialHeaderHeight === 0) {
-        //     initialHeaderHeight = calculateInitialHeaderHeight();
-        // }
-
-        // Adjust collapse threshold to account for sticky headers not taking up space in the document flow
-        // A smaller threshold works better here as the visible header space is the actual sticky element heights.
-        const collapseThreshold = 50; // Arbitrary small value, adjust as needed
+        const collapseThreshold = 50;
 
         if (scrollDirection === 'down' && scrollTop > collapseThreshold) {
             UIElements.appContainer.classList.add('header-collapsed');
@@ -946,15 +873,9 @@ export function setupGuideEventListeners() {
         }
         lastScrollTop = scrollTop <= 0 ? 0 : scrollTop;
 
-        // REMOVED: Call to updateGuidePaddingTop on scroll
-        // updateGuidePaddingTop();
     }, 100);
 
-    // Attach the scroll handler to the guide container
     if (UIElements.guideContainer) {
         UIElements.guideContainer.addEventListener('scroll', handleScrollHeader);
     }
-
-    // REMOVED: Initial call to updateGuidePaddingTop
-    // updateGuidePaddingTop();
 }
