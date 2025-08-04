@@ -1498,11 +1498,12 @@ function startRecording(job) {
         .replace(/{userAgent}/g, userAgent.value)
         .replace(/{filePath}/g, fullFilePath);
 
-    const args = commandTemplate.split(' ').filter(arg => arg); // Filter out empty strings
-    const command = args.shift();
+    // FIX: Correctly parse the command and arguments for spawn
+    // This regex correctly handles quoted strings for arguments.
+    const args = (commandTemplate.match(/(?:[^\s"]+|"[^"]*")+/g) || []).map(arg => arg.replace(/^"|"$/g, ''));
 
-    console.log(`[DVR] Spawning ffmpeg for job ${job.id} with command: ${command} ${args.join(' ')}`);
-    const ffmpeg = spawn(command, args);
+    console.log(`[DVR] Spawning ffmpeg for job ${job.id} with command: ffmpeg ${args.join(' ')}`);
+    const ffmpeg = spawn('ffmpeg', args); // Explicitly use 'ffmpeg' as the command
     runningFFmpegProcesses.set(job.id, ffmpeg.pid);
 
     db.run("UPDATE dvr_jobs SET status = 'recording', ffmpeg_pid = ?, filePath = ? WHERE id = ?", [ffmpeg.pid, fullFilePath, job.id]);
@@ -1781,4 +1782,3 @@ function parseM3U(data) {
     }
     return channels;
 }
-
