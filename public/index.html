@@ -239,11 +239,16 @@
             box-shadow: none;
             padding-top: initial;
             padding-bottom: initial;
+            /* Added for sticky behavior */
+            position: sticky;
+            left: 0;
+            width: 100%;
+            box-sizing: border-box;
         }
         
         /* Specific padding for main-header and unified-guide-header to control collapse */
-        #main-header { padding: 1rem; }
-        #unified-guide-header { padding: 0.5rem 1rem; }
+        #main-header { padding: 1rem; top: 0; z-index: 40; } /* Higher z-index for main header */
+        #unified-guide-header { padding: 0.5rem 1rem; top: var(--main-header-height, 0px); z-index: 35; } /* Stick below main header */
 
         /* Collapsed state for top headers (applied to app-container by JS) */
         #app-container.header-collapsed #main-header,
@@ -262,6 +267,8 @@
         /* Adjust page-guide padding based on header state */
         #page-guide {
             transition: padding-top 0.3s ease-out;
+            /* Remove explicit padding-top here as sticky headers will manage layout */
+            padding-top: 0 !important; /* Ensure no static padding */
         }
         /* Visual indicator for programs with notifications */
         .programme-item.has-notification {
@@ -398,14 +405,15 @@
             right: 1.25rem; /* ~p-5 Tailwind equivalent */
             z-index: 100;
             pointer-events: none; /* Clicks pass through the wrapper */
+            /* Ensure it is hidden by default using class, not display:none */
         }
 
         #notification-modal-wrapper.hidden {
-            display: none;
+            display: none; /* Hide the entire wrapper when no notification is active */
         }
         
-        #notification-modal-wrapper > div { /* This is the actual visible notification box */
-            background-color: #ef4444; /* red-500 default */
+        /* The actual visible notification box */
+        #notification-box {
             color: white;
             padding: 0.5rem 1rem; /* py-2 px-4 */
             border-radius: 0.5rem; /* rounded-lg */
@@ -413,19 +421,20 @@
             pointer-events: all; /* This specific div is clickable */
             opacity: 0;
             transform: translateY(-20px); /* Slide in from top */
-            transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+            transition: opacity 0.3s ease-out, transform 0.3s ease-out, background-color 0.2s ease-in-out;
             min-width: 250px; /* Ensure it's not a dot */
             text-align: center;
+            background-color: #ef4444; /* Default error color */
         }
 
-        #notification-modal-wrapper:not(.hidden) > div {
+        #notification-modal-wrapper:not(.hidden) #notification-box {
             opacity: 1;
             transform: translateY(0);
         }
 
-        /* Classes to change background color via JS */
-        #notification-modal-wrapper.green-bg > div { background-color: #22c55e; /* green-500 */ }
-        #notification-modal-wrapper.red-bg > div { background-color: #ef4444; /* red-500 */ }
+        /* Classes to change background color via JS on notification-box */
+        #notification-box.success-bg { background-color: #22c55e; /* green-500 */ }
+        #notification-box.error-bg { background-color: #ef4444; /* red-500 */ }
 
 
     </style>
@@ -653,7 +662,7 @@
 
                     <h2 class="text-xl font-bold text-white mt-8 mb-4 border-b border-gray-700 pb-2">Past & Expired Notifications</h2>
                     <div id="no-past-notifications-message" class="hidden text-center text-gray-500 p-4">
-                        <svg class="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <svg class="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         <h3 class="mt-2 text-sm font-medium">No Past Notifications</h3>
                         <p class="mt-1 text-sm">Notifications that have already triggered or expired will appear here.</p>
                     </div>
@@ -808,7 +817,7 @@
                     <div class="bg-red-900/50 border border-red-700/50 p-4 sm:p-6 rounded-xl shadow-lg">
                         <h2 class="text-xl font-bold text-red-300 mb-4 border-b border-red-700/50 pb-2">Danger Zone</h2>
                         <p class="text-sm text-gray-400 mb-4">This permanently deletes all saved application data from the server and your browser cache. The page will reload.</p>
-                        <button id="clear-data-btn" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center gap-2"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg><span>Clear All Data & Reset</span></button>
+                        <button id="clear-data-btn" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-md flex items-center justify-center gap-2"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg><span>Clear All Data & Reset</span></button>
                     </div>
                 </div>
             </div>
@@ -894,7 +903,7 @@
     
     <!-- NEW: Notification Modal Wrapper (to hold the actual notification box) -->
     <div id="notification-modal-wrapper" class="hidden">
-        <div><p id="notification-message"></p></div>
+        <div id="notification-box"><p id="notification-message"></p></div>
     </div>
 
     <div id="confirm-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
