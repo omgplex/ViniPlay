@@ -5,8 +5,10 @@
 
 import { UIElements, dvrState, guideState } from './state.js';
 import { apiFetch } from './api.js';
-import { showNotification, showConfirm, openModal, closeModal, navigate } from './ui.js';
-import { scrollToChannel, handleSearchAndFilter, openProgramDetails } from './guide.js';
+import { showNotification, showConfirm, openModal, closeModal } from './ui.js';
+import { handleSearchAndFilter } from './guide.js';
+// MODIFIED: Import the corrected navigation function from notification.js
+import { navigateToProgramInGuide } from './notification.js';
 
 /**
  * Initializes the DVR page by fetching all required data from the backend.
@@ -150,6 +152,10 @@ export function setupDvrEventListeners() {
         if (button.classList.contains('go-to-guide-btn')) {
             const channelId = button.dataset.channelId;
             const programStartIso = button.dataset.programStart;
+            // ADDED: Detailed logging as requested
+            console.log(`[DVR_DEBUG] 'Go to Guide' button clicked.`);
+            console.log(`[DVR_DEBUG] Calling navigateToProgramInGuide with Channel ID: ${channelId}, Program Start: ${programStartIso}`);
+            // MODIFIED: Call the imported, correct function
             navigateToProgramInGuide(channelId, programStartIso);
         } else if (button.classList.contains('cancel-job-btn')) {
             showConfirm('Cancel Recording?', 'Are you sure?', async () => {
@@ -278,54 +284,8 @@ export async function addOrRemoveDvrJob(programData) {
     }
 }
 
-async function navigateToProgramInGuide(channelId, programStartIso) {
-    const stableChannelIdSuffix = channelId.includes('_') ? '_' + channelId.split('_').pop() : channelId;
-    
-    navigate('/tvguide');
-    await new Promise(resolve => setTimeout(resolve, 50));
-
-    const targetProgramStart = new Date(programStartIso);
-    const currentGuideDate = new Date(guideState.currentDate);
-    currentGuideDate.setHours(0, 0, 0, 0);
-
-    if (targetProgramStart.toDateString() !== currentGuideDate.toDateString()) {
-        guideState.currentDate = targetProgramStart;
-        await handleSearchAndFilter(true);
-    }
-
-    const channelScrolled = await scrollToChannel(stableChannelIdSuffix);
-    if (!channelScrolled) {
-        showNotification("Could not find the channel in the guide.", false);
-        return;
-    }
-    
-    setTimeout(() => {
-        const currentChannelElement = UIElements.guideGrid.querySelector(`.channel-info[data-id$="${stableChannelIdSuffix}"]`);
-        if (!currentChannelElement) return;
-        
-        const currentDynamicChannelId = currentChannelElement.dataset.id;
-        const programElement = UIElements.guideGrid.querySelector(
-            `.programme-item[data-prog-start="${targetProgramStart.toISOString()}"][data-channel-id="${currentDynamicChannelId}"]`
-        );
-        
-        if (programElement) {
-            const container = UIElements.guideContainer;
-            const programRect = programElement.getBoundingClientRect();
-            const containerRect = container.getBoundingClientRect();
-
-            const desiredScrollLeft = container.scrollLeft + programRect.left - containerRect.left - (containerRect.width / 2) + (programRect.width / 2);
-            container.scrollTo({ left: Math.max(0, desiredScrollLeft), behavior: 'smooth' });
-            
-            programElement.classList.add('highlighted-search');
-            setTimeout(() => {
-                programElement.classList.remove('highlighted-search');
-                openProgramDetails(programElement);
-            }, 3000);
-        } else {
-            showNotification("Could not find the specific program in the timeline.", false);
-        }
-    }, 500);
-}
+// REMOVED: Deleted the local, non-functional navigateToProgramInGuide function.
+// The button now uses the imported version from notification.js.
 
 function formatBytes(bytes) {
     if (!bytes || bytes === 0) return '0 Bytes';
