@@ -77,7 +77,6 @@ const renderSourceTable = (sourceType) => {
  */
 export const updateUIFromSettings = () => {
     const settings = guideState.settings;
-    const user = appState.currentUser;
 
     // FIX: One-time timezone auto-detection and setting.
     const timezoneSetFlag = localStorage.getItem('vini_timezone_auto_set');
@@ -104,25 +103,37 @@ export const updateUIFromSettings = () => {
     settings.searchScope = settings.searchScope || 'channels_only';
     settings.notificationLeadTime = settings.notificationLeadTime ?? 10;
     
+    // NEW: Set DVR defaults if they don't exist
     settings.dvr = settings.dvr || {};
     settings.dvr.preBufferMinutes = settings.dvr.preBufferMinutes ?? 1;
     settings.dvr.postBufferMinutes = settings.dvr.postBufferMinutes ?? 2;
     settings.dvr.maxConcurrentRecordings = settings.dvr.maxConcurrentRecordings ?? 1;
     settings.dvr.autoDeleteDays = settings.dvr.autoDeleteDays ?? 0;
 
+
+    // Update dropdowns and inputs
     UIElements.timezoneOffsetSelect.value = settings.timezoneOffset;
     UIElements.searchScopeSelect.value = settings.searchScope;
     UIElements.notificationLeadTimeInput.value = settings.notificationLeadTime;
     
-    // Update DVR inputs
+    // Update DVR inputs and section visibility
+    const hasDvrAccess = appState.currentUser?.isAdmin || appState.currentUser?.canUseDvr;
+    const dvrSettingsSection = document.getElementById('dvr-settings-section');
+    if (dvrSettingsSection) {
+        dvrSettingsSection.classList.toggle('hidden', !hasDvrAccess);
+    }
+    
     if (UIElements.dvrPreBufferInput) UIElements.dvrPreBufferInput.value = settings.dvr.preBufferMinutes;
     if (UIElements.dvrPostBufferInput) UIElements.dvrPostBufferInput.value = settings.dvr.postBufferMinutes;
     if (UIElements.dvrMaxStreamsInput) UIElements.dvrMaxStreamsInput.value = settings.dvr.maxConcurrentRecordings;
     if (UIElements.dvrStorageDeleteDays) UIElements.dvrStorageDeleteDays.value = settings.dvr.autoDeleteDays;
 
+
+    // Render tables
     renderSourceTable('m3u');
     renderSourceTable('epg');
 
+    // Helper to populate select elements
     const populateSelect = (selectId, items, activeId) => {
         const selectEl = UIElements[selectId];
         if (!selectEl) return;
@@ -138,14 +149,10 @@ export const updateUIFromSettings = () => {
 
     populateSelect('userAgentSelect', settings.userAgents || [], settings.activeUserAgentId);
     populateSelect('streamProfileSelect', settings.streamProfiles || [], settings.activeStreamProfileId);
+    populateSelect('dvrRecordingProfileSelect', settings.dvr?.recordingProfiles || [], settings.dvr?.activeRecordingProfileId);
 
-    // Conditionally populate DVR select and hide section if no access
-    const hasDvrAccess = user?.isAdmin || user?.canUseDvr;
-    UIElements.dvrSettingsSection.classList.toggle('hidden', !hasDvrAccess);
-    if (hasDvrAccess) {
-        populateSelect('dvrRecordingProfileSelect', settings.dvr?.recordingProfiles || [], settings.dvr?.activeRecordingProfileId);
-    }
 
+    // Update button states based on selection
     const selectedProfile = (settings.streamProfiles || []).find(p => p.id === UIElements.streamProfileSelect.value);
     UIElements.editStreamProfileBtn.disabled = !selectedProfile;
     UIElements.deleteStreamProfileBtn.disabled = !selectedProfile || selectedProfile.isDefault;
@@ -158,7 +165,9 @@ export const updateUIFromSettings = () => {
     UIElements.editDvrProfileBtn.disabled = !selectedRecordingProfile;
     UIElements.deleteDvrProfileBtn.disabled = !selectedRecordingProfile || selectedRecordingProfile?.isDefault;
 
-    if (user?.isAdmin) {
+
+    // Ensure user list is always populated for admins when this page is viewed.
+    if (appState.currentUser?.isAdmin) {
         refreshUserList();
     }
 };
@@ -175,26 +184,16 @@ export const refreshUserList = async () => {
         const res = await apiFetch('/api/users');
         if (!res) return;
         const users = await res.json();
-        UIElements.userList.innerHTML = users.map(user => {
-            const isAdminBadge = user.isAdmin ? '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-200 text-green-800">Admin</span>' : '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800">User</span>';
-            const hasDvrBadge = user.canUseDvr ? '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-200 text-blue-800">DVR</span>' : '';
-
-            return `
-                <tr data-user-id="${user.id}">
-                    <td class="px-4 py-3 whitespace-nowrap text-sm text-white">${user.username}</td>
-                    <td class="px-4 py-3 whitespace-nowrap text-sm">
-                        <div class="flex items-center gap-2">
-                           ${isAdminBadge}
-                           ${hasDvrBadge}
-                        </div>
-                    </td>
-                    <td class="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
-                        <button class="text-blue-400 hover:text-blue-600 edit-user-btn">Edit</button>
-                        <button class="text-red-400 hover:text-red-600 ml-4 delete-user-btn" ${appState.currentUser.username === user.username ? 'disabled' : ''}>Delete</button>
-                    </td>
-                </tr>
-            `;
-        }).join('');
+        UIElements.userList.innerHTML = users.map(user => `
+            <tr data-user-id="${user.id}">
+                <td class="px-4 py-3 whitespace-nowrap text-sm text-white">${user.username}</td>
+                <td class="px-4 py-3 whitespace-nowrap text-sm">${user.isAdmin ? '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-200 text-green-800">Admin</span>' : '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800">User</span>'}</td>
+                <td class="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
+                    <button class="text-blue-400 hover:text-blue-600 edit-user-btn">Edit</button>
+                    <button class="text-red-400 hover:text-red-600 ml-4 delete-user-btn" ${appState.currentUser.username === user.username ? 'disabled' : ''}>Delete</button>
+                </td>
+            </tr>
+        `).join('');
     } catch (error) {
         console.error("Failed to refresh user list:", error);
         UIElements.userList.innerHTML = `<tr><td colspan="3" class="text-center text-red-400 py-4">Failed to load users.</td></tr>`;
