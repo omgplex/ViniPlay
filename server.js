@@ -89,7 +89,7 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
             db.run(`CREATE TABLE IF NOT EXISTS notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, channelId TEXT NOT NULL, channelName TEXT NOT NULL, channelLogo TEXT, programTitle TEXT NOT NULL, programDesc TEXT, programStart TEXT NOT NULL, programStop TEXT NOT NULL, notificationTime TEXT NOT NULL, programId TEXT NOT NULL, status TEXT DEFAULT 'pending', triggeredAt TEXT, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)`);
             db.run(`CREATE TABLE IF NOT EXISTS push_subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, endpoint TEXT UNIQUE NOT NULL, p256dh TEXT NOT NULL, auth TEXT NOT NULL, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)`);
 
-            // --- NEW: DVR Database Tables ---
+            // --- DVR Database Table (MODIFIED) ---
             db.run(`CREATE TABLE IF NOT EXISTS dvr_jobs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -105,10 +105,22 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 userAgentId TEXT,
                 preBufferMinutes INTEGER,
                 postBufferMinutes INTEGER,
+                errorMessage TEXT, -- NEW: To store detailed error messages
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )`, (err) => {
-                if(err) console.error("[DB] Error creating 'dvr_jobs' table:", err.message);
-                else console.log("[DB] 'dvr_jobs' table checked/created.");
+                if(err) {
+                    console.error("[DB] Error creating/altering 'dvr_jobs' table:", err.message);
+                } else {
+                    console.log("[DB] 'dvr_jobs' table checked/created.");
+                    // Add errorMessage column if it doesn't exist (for backward compatibility)
+                    db.run("ALTER TABLE dvr_jobs ADD COLUMN errorMessage TEXT", (alterErr) => {
+                        if (alterErr && !alterErr.message.includes('duplicate column name')) {
+                           console.error("[DB] Error adding 'errorMessage' column to 'dvr_jobs':", alterErr.message);
+                        } else {
+                           console.log("[DB] 'errorMessage' column in 'dvr_jobs' checked/added.");
+                        }
+                    });
+                }
             });
 
             db.run(`CREATE TABLE IF NOT EXISTS dvr_recordings (
@@ -127,7 +139,6 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 if(err) console.error("[DB] Error creating 'dvr_recordings' table:", err.message);
                 else {
                     console.log("[DB] 'dvr_recordings' table checked/created.");
-                    // MOVED: Call loadAndScheduleAllDvrJobs here, after all tables are guaranteed to be created
                     loadAndScheduleAllDvrJobs();
                 }
             });
@@ -136,7 +147,6 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
 });
 
 // --- Middleware ---
-// Basic static file and body parsing middleware should come first
 app.use(express.static(PUBLIC_DIR));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -146,7 +156,6 @@ if (!sessionSecret || sessionSecret.includes('replace_this')) {
     console.warn('[SECURITY] Using a weak or default SESSION_SECRET.');
 }
 
-// Session middleware must be set up before any routes that rely on req.session
 app.use(
   session({
     store: new SQLiteStore({ db: 'viniplay.db', dir: DATA_DIR, table: 'sessions' }),
@@ -157,16 +166,12 @@ app.use(
   })
 );
 
-// --- NEW DEBUG LOGGING MIDDLEWARE ---
 app.use((req, res, next) => {
     const user_info = req.session.userId ? `User ID: ${req.session.userId}, Admin: ${req.session.isAdmin}` : 'No session';
     console.log(`[HTTP_TRACE] ${req.method} ${req.originalUrl} - Session: [${user_info}]`);
     next();
 });
-// --- END NEW DEBUG LOGGING MIDDLEWARE ---
 
-// --- Authentication Middleware ---
-// MOVED: These definitions are now before their first usage in any routes.
 const requireAuth = (req, res, next) => {
     if (req.session && req.session.userId) return next();
     return res.status(401).json({ error: 'Authentication required.' });
@@ -176,8 +181,7 @@ const requireAdmin = (req, res, next) => {
     return res.status(403).json({ error: 'Administrator privileges required.' });
 };
 
-// Now that requireAuth is defined, we can use it
-app.use('/dvr', requireAuth, express.static(DVR_DIR)); // NEW: Serve recorded files statically
+app.use('/dvr', requireAuth, express.static(DVR_DIR));
 
 // --- Helper Functions ---
 function getSettings() {
@@ -191,7 +195,6 @@ function getSettings() {
                 { id: 'ffmpeg-default', name: 'ffmpeg (Built in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: true },
                 { id: 'redirect', name: 'Redirect (No Transcoding)', command: 'redirect', isDefault: false }
             ],
-            // --- NEW: DVR Settings ---
             dvr: {
                 preBufferMinutes: 1,
                 postBufferMinutes: 2,
@@ -213,7 +216,6 @@ function getSettings() {
     }
     try {
         const settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
-        // Ensure defaults for new settings
         if (!settings.dvr) {
             settings.dvr = {
                 preBufferMinutes: 1,
@@ -225,7 +227,7 @@ function getSettings() {
         return settings;
     } catch (e) {
         console.error("[SETTINGS] Could not parse settings.json, returning default. Error:", e.message);
-        return {}; // Return empty to avoid crashes, will be repopulated on next save
+        return {};
     }
 }
 
@@ -272,7 +274,7 @@ const parseEpgTime = (timeStr, offsetHours = 0) => {
     const match = timeStr.match(/(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s*(([+-])(\d{2})(\d{2}))?/);
     if (!match) {
         console.warn(`[EPG_PARSE] Invalid time format encountered: ${timeStr}`);
-        return new Date(); // Return current date as fallback for invalid format
+        return new Date();
     }
     
     const [ , year, month, day, hours, minutes, seconds, , sign, tzHours, tzMinutes] = match;
@@ -290,7 +292,7 @@ const parseEpgTime = (timeStr, offsetHours = 0) => {
 
 async function processAndMergeSources() {
     console.log('[PROCESS] Starting to process and merge all active sources.');
-    const settings = getSettings(); // Re-fetch latest settings
+    const settings = getSettings();
 
     let mergedM3uContent = '#EXTM3U\n';
     const activeM3uSources = settings.m3uSources.filter(s => s.isActive);
@@ -302,10 +304,10 @@ async function processAndMergeSources() {
         console.log(`[M3U] Processing source: "${source.name}" (ID: ${source.id}, Type: ${source.type}, Path: ${source.path})`);
         try {
             let content = '';
-            let sourcePathForLog = source.path; // Use original path for logging
+            let sourcePathForLog = source.path;
 
             if (source.type === 'file') {
-                const sourceFilePath = path.join(SOURCES_DIR, path.basename(source.path)); // Use basename for safety
+                const sourceFilePath = path.join(SOURCES_DIR, path.basename(source.path));
                 if (fs.existsSync(sourceFilePath)) {
                     content = fs.readFileSync(sourceFilePath, 'utf-8');
                     sourcePathForLog = sourceFilePath;
@@ -356,7 +358,7 @@ async function processAndMergeSources() {
         } catch (error) {
             console.error(`[M3U] Failed to process source "${source.name}" from ${source.path}:`, error.message);
             source.status = 'Error';
-            source.statusMessage = `Processing failed: ${error.message.substring(0, 100)}...`; // Truncate error
+            source.statusMessage = `Processing failed: ${error.message.substring(0, 100)}...`;
         }
         source.lastUpdated = new Date().toISOString();
     }
@@ -379,13 +381,12 @@ async function processAndMergeSources() {
         console.log(`[EPG] Processing source: "${source.name}" (ID: ${source.id}, Type: ${source.type}, Path: ${source.path})`);
         try {
             let xmlString = '';
-            let epgFilePath = path.join(SOURCES_DIR, `epg_${source.id}.xml`); // Standardized EPG file path
+            let epgFilePath = path.join(SOURCES_DIR, `epg_${source.id}.xml`);
 
             if (source.type === 'file') {
-                // For file types, the source.path should already be the saved file path in SOURCES_DIR
                 if (fs.existsSync(source.path)) {
                     xmlString = fs.readFileSync(source.path, 'utf-8');
-                    epgFilePath = source.path; // Use the actual path for logging
+                    epgFilePath = source.path;
                 } else {
                     console.error(`[EPG] File not found for source "${source.name}": ${source.path}. Skipping.`);
                     source.status = 'Error';
@@ -409,7 +410,6 @@ async function processAndMergeSources() {
                 console.warn(`[EPG] No programs found in EPG source "${source.name}". Check XML structure.`);
             }
 
-            // Iterate over all M3U sources to ensure correct channel ID mapping
             const m3uSourceProviders = settings.m3uSources.filter(m3u => m3u.isActive);
 
             for (const prog of programs) {
@@ -444,7 +444,7 @@ async function processAndMergeSources() {
         } catch (error) {
             console.error(`[EPG] Failed to process source "${source.name}" from ${source.path}:`, error.message);
             source.status = 'Error';
-            source.statusMessage = `Processing failed: ${error.message.substring(0, 100)}...`; // Truncate error
+            source.statusMessage = `Processing failed: ${error.message.substring(0, 100)}...`;
         }
          source.lastUpdated = new Date().toISOString();
     }
@@ -462,18 +462,15 @@ async function processAndMergeSources() {
 }
 
 
-// --- NEW: Per-Source Refresh Scheduler ---
 const updateAndScheduleSourceRefreshes = () => {
     console.log('[SCHEDULER] Updating and scheduling all source refreshes...');
     const settings = getSettings();
     const allSources = [...(settings.m3uSources || []), ...(settings.epgSources || [])];
     const activeUrlSources = new Set();
 
-    // Schedule new or updated timers
     allSources.forEach(source => {
         if (source.type === 'url' && source.isActive && source.refreshHours > 0) {
             activeUrlSources.add(source.id);
-            // If a timer already exists, clear it to reschedule with potentially new interval
             if (sourceRefreshTimers.has(source.id)) {
                 clearTimeout(sourceRefreshTimers.get(source.id));
             }
@@ -502,7 +499,6 @@ const updateAndScheduleSourceRefreshes = () => {
         }
     });
 
-    // Clean up timers for sources that are no longer scheduled
     for (const [sourceId, timeoutId] of sourceRefreshTimers.entries()) {
         if (!activeUrlSources.has(sourceId)) {
             console.log(`[SCHEDULER] Clearing obsolete refresh timer for source ID: ${sourceId}`);
@@ -753,9 +749,8 @@ app.get('/api/config', requireAuth, (req, res) => {
     try {
         let config = { m3uContent: null, epgContent: null, settings: {} };
         let globalSettings = getSettings();
-        config.settings = globalSettings; // Start with global settings
+        config.settings = globalSettings;
 
-        // Read merged M3U and EPG files
         if (fs.existsSync(MERGED_M3U_PATH)) {
             config.m3uContent = fs.readFileSync(MERGED_M3U_PATH, 'utf-8');
             console.log(`[API] Loaded M3U content from ${MERGED_M3U_PATH}.`);
@@ -774,7 +769,6 @@ app.get('/api/config', requireAuth, (req, res) => {
             console.log(`[API] No merged EPG JSON file found at ${MERGED_EPG_JSON_PATH}.`);
         }
         
-        // Fetch user-specific settings and merge them
         db.all(`SELECT key, value FROM user_settings WHERE user_id = ?`, [req.session.userId], (err, rows) => {
             if (err) {
                 console.error("[API] Error fetching user settings:", err);
@@ -846,7 +840,7 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
         sourceToUpdate.refreshHours = parseInt(refreshHours, 10) || 0;
         sourceToUpdate.lastUpdated = new Date().toISOString();
 
-        if (req.file) { // New file uploaded
+        if (req.file) {
             console.log(`[SOURCES_API] New file uploaded for source ${id}. Deleting old file if exists.`);
             if (sourceToUpdate.type === 'file' && fs.existsSync(sourceToUpdate.path)) {
                 try {
@@ -866,7 +860,7 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
                 console.error('[SOURCES_API] Error renaming updated source file:', e);
                 return res.status(500).json({ error: 'Could not save updated file.' });
             }
-        } else if (url !== undefined) { // URL provided, could be same or new URL, or changing from file to URL
+        } else if (url !== undefined) {
             console.log(`[SOURCES_API] URL provided for source ${id}.`);
             if (sourceToUpdate.type === 'file' && fs.existsSync(sourceToUpdate.path)) {
                 try {
@@ -1083,7 +1077,6 @@ app.post('/api/user/settings', requireAuth, (req, res) => {
 });
 
 // --- Notification Endpoints ---
-
 app.get('/api/notifications/vapid-public-key', requireAuth, (req, res) => {
     console.log('[PUSH_API] Request for VAPID public key.');
     if (!vapidKeys.publicKey) {
@@ -1314,7 +1307,7 @@ app.get('/stream', requireAuth, (req, res) => {
     });
 });
 
-// --- ADDED: Multi-View Layout API Endpoints ---
+// --- Multi-View Layout API Endpoints ---
 app.get('/api/multiview/layouts', requireAuth, (req, res) => {
     console.log(`[LAYOUT_API] Fetching layouts for user ${req.session.userId}.`);
     db.all("SELECT id, name, layout_data FROM multiview_layouts WHERE user_id = ?", [req.session.userId], (err, rows) => {
@@ -1456,7 +1449,28 @@ async function checkAndSendNotifications() {
 }
 
 
-// --- NEW: DVR Engine ---
+// --- DVR Engine (MODIFIED) ---
+
+/**
+ * NEW: Gracefully stops an FFmpeg recording process.
+ * @param {number} jobId - The ID of the DVR job to stop.
+ */
+function stopRecording(jobId) {
+    const pid = runningFFmpegProcesses.get(jobId);
+    if (pid) {
+        console.log(`[DVR] Gracefully stopping recording for job ${jobId} (PID: ${pid}). Sending SIGINT.`);
+        try {
+            // Send SIGINT (Ctrl+C), which allows ffmpeg to finalize the file correctly.
+            process.kill(pid, 'SIGINT');
+        } catch (e) {
+            console.error(`[DVR] Error sending SIGINT to ffmpeg process for job ${jobId}: ${e.message}. Trying SIGKILL.`);
+            try { process.kill(pid, 'SIGKILL'); } catch (e2) {} // Fallback to forceful kill
+        }
+    } else {
+        console.warn(`[DVR] Cannot stop job ${jobId}: No running ffmpeg process found.`);
+    }
+}
+
 
 /**
  * Starts an ffmpeg recording process for a given DVR job.
@@ -1469,27 +1483,29 @@ function startRecording(job) {
     const channel = allChannels.find(c => c.id === job.channelId);
 
     if (!channel) {
-        console.error(`[DVR] Cannot start recording job ${job.id}: Channel ID ${job.channelId} not found in M3U.`);
-        db.run("UPDATE dvr_jobs SET status = 'error', ffmpeg_pid = NULL WHERE id = ?", [job.id]);
+        const errorMsg = `Channel ID ${job.channelId} not found in M3U.`;
+        console.error(`[DVR] Cannot start recording job ${job.id}: ${errorMsg}`);
+        db.run("UPDATE dvr_jobs SET status = 'error', ffmpeg_pid = NULL, errorMessage = ? WHERE id = ?", [errorMsg, job.id]);
         return;
     }
 
-    const recProfile = (settings.dvr.recordingProfiles || []).find(p => p.id === settings.dvr.activeRecordingProfileId);
+    const recProfile = (settings.dvr.recordingProfiles || []).find(p => p.id === job.profileId);
     if (!recProfile) {
-        console.error(`[DVR] Cannot start recording job ${job.id}: Active recording profile not found.`);
-        db.run("UPDATE dvr_jobs SET status = 'error', ffmpeg_pid = NULL WHERE id = ?", [job.id]);
+        const errorMsg = `Active recording profile not found.`;
+        console.error(`[DVR] Cannot start recording job ${job.id}: ${errorMsg}`);
+        db.run("UPDATE dvr_jobs SET status = 'error', ffmpeg_pid = NULL, errorMessage = ? WHERE id = ?", [errorMsg, job.id]);
         return;
     }
 
     const userAgent = (settings.userAgents || []).find(ua => ua.id === job.userAgentId);
     if (!userAgent) {
-        console.error(`[DVR] Cannot start recording job ${job.id}: User agent not found.`);
-        db.run("UPDATE dvr_jobs SET status = 'error', ffmpeg_pid = NULL WHERE id = ?", [job.id]);
+        const errorMsg = `User agent not found.`;
+        console.error(`[DVR] Cannot start recording job ${job.id}: ${errorMsg}`);
+        db.run("UPDATE dvr_jobs SET status = 'error', ffmpeg_pid = NULL, errorMessage = ? WHERE id = ?", [errorMsg, job.id]);
         return;
     }
 
     const streamUrlToRecord = channel.url;
-    // Sanitize filename
     const safeFilename = `${job.id}_${job.programTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.mp4`;
     const fullFilePath = path.join(DVR_DIR, safeFilename);
 
@@ -1497,30 +1513,29 @@ function startRecording(job) {
         .replace(/{streamUrl}/g, streamUrlToRecord)
         .replace(/{userAgent}/g, userAgent.value)
         .replace(/{filePath}/g, fullFilePath);
-
-    // FIX: Correctly parse the command and arguments for spawn
-    // This regex correctly handles quoted strings for arguments.
+        
     const args = (commandTemplate.match(/(?:[^\s"]+|"[^"]*")+/g) || []).map(arg => arg.replace(/^"|"$/g, ''));
 
     console.log(`[DVR] Spawning ffmpeg for job ${job.id} with command: ffmpeg ${args.join(' ')}`);
-    const ffmpeg = spawn('ffmpeg', args); // Explicitly use 'ffmpeg' as the command
+    const ffmpeg = spawn('ffmpeg', args);
     runningFFmpegProcesses.set(job.id, ffmpeg.pid);
 
     db.run("UPDATE dvr_jobs SET status = 'recording', ffmpeg_pid = ?, filePath = ? WHERE id = ?", [ffmpeg.pid, fullFilePath, job.id]);
-
-    ffmpeg.stderr.on('data', (data) => console.log(`[FFMPEG_DVR][${job.id}] ${data.toString().trim()}`));
     
-    // --- SERVER CRASH FIX ---
-    // The following event handlers are corrected to not use `req` or `res` objects,
-    // which don't exist in this background context, thus preventing the server crash.
+    let ffmpegErrorOutput = '';
+    ffmpeg.stderr.on('data', (data) => {
+        const line = data.toString().trim();
+        console.log(`[FFMPEG_DVR][${job.id}] ${line}`);
+        ffmpegErrorOutput += line + '\n';
+    });
+
     ffmpeg.on('close', (code) => {
         runningFFmpegProcesses.delete(job.id);
         const logMessage = code === 0 ? 'finished gracefully' : `exited with error code ${code}`;
         console.log(`[DVR] Recording process for job ${job.id} ("${job.programTitle}") ${logMessage}.`);
 
         fs.stat(fullFilePath, (statErr, stats) => {
-            if (code === 0 && !statErr && stats && stats.size > 0) {
-                // On successful recording, create an entry in the completed recordings table.
+            if (code === 0 && !statErr && stats && stats.size > 1024) { // Check for a reasonable file size
                 const durationSeconds = (new Date(job.endTime) - new Date(job.startTime)) / 1000;
                 db.run(`INSERT INTO dvr_recordings (job_id, user_id, channelName, programTitle, startTime, durationSeconds, fileSizeBytes, filePath) 
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1533,14 +1548,12 @@ function startRecording(job) {
                         }
                     }
                 );
-                // Mark the original job as completed.
                 db.run("UPDATE dvr_jobs SET status = 'completed', ffmpeg_pid = NULL WHERE id = ?", [job.id]);
             } else {
-                // If the recording failed or produced an empty file, mark the job as 'error'.
-                console.error(`[DVR] Recording for job ${job.id} failed or produced an empty/invalid file. Stat error: ${statErr}`);
-                db.run("UPDATE dvr_jobs SET status = 'error', ffmpeg_pid = NULL WHERE id = ?", [job.id]);
-                // Clean up the empty/corrupt file if it exists.
-                if (!statErr) {
+                const finalErrorMessage = `Recording failed. FFmpeg exit code: ${code}. ${statErr ? 'File stat error: ' + statErr.message : ''}. FFmpeg output: ${ffmpegErrorOutput.slice(-1000)}`;
+                console.error(`[DVR] Recording for job ${job.id} failed. ${finalErrorMessage}`);
+                db.run("UPDATE dvr_jobs SET status = 'error', ffmpeg_pid = NULL, errorMessage = ? WHERE id = ?", [finalErrorMessage, job.id]);
+                if (!statErr && stats.size <= 1024) { // Only delete if file exists but is tiny
                     fs.unlink(fullFilePath, (unlinkErr) => {
                         if (unlinkErr) console.error(`[DVR] Could not delete failed recording file: ${fullFilePath}`, unlinkErr);
                     });
@@ -1550,12 +1563,11 @@ function startRecording(job) {
     });
 
     ffmpeg.on('error', (err) => {
-        // This event fires if the ffmpeg process could not be spawned.
-        console.error(`[DVR] Failed to spawn ffmpeg process for job ${job.id}: ${err.message}`);
+        const errorMsg = `Failed to spawn ffmpeg process: ${err.message}`;
+        console.error(`[DVR] ${errorMsg} for job ${job.id}`);
         runningFFmpegProcesses.delete(job.id);
-        db.run("UPDATE dvr_jobs SET status = 'error', ffmpeg_pid = NULL WHERE id = ?", [job.id]);
+        db.run("UPDATE dvr_jobs SET status = 'error', ffmpeg_pid = NULL, errorMessage = ? WHERE id = ?", [errorMsg, job.id]);
     });
-    // --- END FIX ---
 }
 
 /**
@@ -1564,7 +1576,7 @@ function startRecording(job) {
  */
 function scheduleDvrJob(job) {
     if (activeDvrJobs.has(job.id)) {
-        activeDvrJobs.get(job.id).cancel();
+        activeDvrJobs.get(job.id)?.cancel();
         activeDvrJobs.delete(job.id);
     }
 
@@ -1575,12 +1587,11 @@ function scheduleDvrJob(job) {
     if (endTime <= now) {
         console.log(`[DVR] Job ${job.id} for "${job.programTitle}" is already in the past. Skipping schedule.`);
         if (job.status === 'scheduled') {
-            db.run("UPDATE dvr_jobs SET status = 'error' WHERE id = ?", [job.id]);
+            db.run("UPDATE dvr_jobs SET status = 'error', errorMessage = 'Job was scheduled for a time in the past.' WHERE id = ?", [job.id]);
         }
         return;
     }
 
-    // Schedule the start
     if (startTime > now) {
         const startJob = schedule.scheduleJob(startTime, () => startRecording(job));
         activeDvrJobs.set(job.id, startJob);
@@ -1589,37 +1600,23 @@ function scheduleDvrJob(job) {
         startRecording(job);
     }
 
-    // Schedule the stop
-    schedule.scheduleJob(endTime, () => {
-        if (runningFFmpegProcesses.has(job.id)) {
-            const pid = runningFFmpegProcesses.get(job.id);
-            console.log(`[DVR] Scheduled stop time reached for job ${job.id}. Killing ffmpeg process PID: ${pid}`);
-            try {
-                process.kill(pid, 'SIGTERM');
-            } catch (e) {
-                console.error(`[DVR] Error killing ffmpeg process for job ${job.id}: ${e.message}`);
-            }
-        }
-    });
+    schedule.scheduleJob(endTime, () => stopRecording(job.id));
+    console.log(`[DVR] Scheduled recording stop for job ${job.id} at ${endTime}`);
 }
+
 
 /**
  * Loads all pending DVR jobs from the database and schedules them.
  */
 function loadAndScheduleAllDvrJobs() {
     console.log('[DVR] Loading and scheduling all pending DVR jobs from database...');
-    // Mark any 'recording' jobs as 'error' on startup, as they were not gracefully stopped
-    db.run("UPDATE dvr_jobs SET status = 'error' WHERE status = 'recording'", [], (err) => {
+    db.run("UPDATE dvr_jobs SET status = 'error', errorMessage = 'Server restarted during recording.' WHERE status = 'recording'", [], (err) => {
         if (err) {
             console.error('[DVR] Error updating recording jobs status on startup:', err.message);
-            // If the UPDATE fails because dvr_jobs doesn't exist, proceed to SELECT
-            // This is a common pattern for "fire and forget" updates at startup
-            // but for mission critical updates it's better to ensure it's completed first.
         } else {
             console.log("[DVR] Updated status of previous 'recording' jobs to 'error'.");
         }
         
-        // NOW fetch the scheduled jobs, this query will only run after the UPDATE (or its error) is handled
         db.all("SELECT * FROM dvr_jobs WHERE status = 'scheduled'", [], (err, jobs) => {
             if (err) {
                 console.error('[DVR] Error fetching pending DVR jobs:', err);
@@ -1632,12 +1629,13 @@ function loadAndScheduleAllDvrJobs() {
 }
 
 
-// --- NEW: DVR API Endpoints ---
+// --- DVR API Endpoints (MODIFIED & NEW) ---
 
 app.post('/api/dvr/schedule', requireAuth, (req, res) => {
     const { channelId, channelName, programTitle, programStart, programStop } = req.body;
     const settings = getSettings();
     const dvrSettings = settings.dvr || {};
+    // FIX: Ensure DVR settings are respected from the correct object
     const preBuffer = (dvrSettings.preBufferMinutes || 0) * 60 * 1000;
     const postBuffer = (dvrSettings.postBufferMinutes || 0) * 60 * 1000;
 
@@ -1692,11 +1690,13 @@ app.delete('/api/dvr/jobs/:id', requireAuth, (req, res) => {
     const { id } = req.params;
     const jobId = parseInt(id, 10);
     if (activeDvrJobs.has(jobId)) {
-        activeDvrJobs.get(jobId).cancel();
+        activeDvrJobs.get(jobId)?.cancel();
         activeDvrJobs.delete(jobId);
     }
     db.run("UPDATE dvr_jobs SET status = 'cancelled' WHERE id = ? AND user_id = ?", [jobId, req.session.userId], function(err) {
         if (err) return res.status(500).json({ error: 'Could not cancel job.' });
+        if(this.changes === 0) return res.status(404).json({ error: 'Job not found or not authorized to cancel.' });
+        console.log(`[DVR_API] Cancelled job ${jobId}.`);
         res.json({ success: true });
     });
 });
@@ -1715,6 +1715,63 @@ app.delete('/api/dvr/recordings/:id', requireAuth, (req, res) => {
             if (deleteErr) return res.status(500).json({ error: 'Failed to delete recording record.' });
             res.json({ success: true });
         });
+    });
+});
+
+// NEW: Endpoint to stop a recording in progress
+app.post('/api/dvr/jobs/:id/stop', requireAuth, (req, res) => {
+    const { id } = req.params;
+    const jobId = parseInt(id, 10);
+    console.log(`[DVR_API] Received request to stop recording for job ${jobId}.`);
+    stopRecording(jobId);
+    db.run("UPDATE dvr_jobs SET status = 'completed' WHERE id = ? AND user_id = ?", [jobId, req.session.userId], function(err){
+        if (err) return res.status(500).json({ error: 'Could not update job status after stop.' });
+        if(this.changes === 0) return res.status(404).json({ error: 'Job not found or not authorized to stop.' });
+        res.json({ success: true });
+    });
+});
+
+// NEW: Endpoint to update a scheduled recording's time
+app.put('/api/dvr/jobs/:id', requireAuth, (req, res) => {
+    const { id } = req.params;
+    const { startTime, endTime } = req.body;
+    if (!startTime || !endTime) {
+        return res.status(400).json({ error: 'Both startTime and endTime are required.' });
+    }
+    
+    db.get("SELECT * from dvr_jobs WHERE id = ? AND user_id = ?", [id, req.session.userId], (err, job) => {
+        if (err) return res.status(500).json({ error: 'DB error fetching job.'});
+        if (!job) return res.status(404).json({ error: 'Job not found or unauthorized.' });
+        if (job.status !== 'scheduled') return res.status(400).json({ error: 'Only scheduled jobs can be modified.' });
+        
+        db.run("UPDATE dvr_jobs SET startTime = ?, endTime = ? WHERE id = ?", [startTime, endTime, id], function(err) {
+            if (err) return res.status(500).json({ error: 'Could not update job.' });
+            
+            const updatedJob = { ...job, startTime, endTime };
+            scheduleDvrJob(updatedJob); // Reschedule with new times
+            
+            console.log(`[DVR_API] Updated and rescheduled job ${id}.`);
+            res.json({ success: true, job: updatedJob });
+        });
+    });
+});
+
+// NEW: Endpoint to delete a job from history
+app.delete('/api/dvr/jobs/:id/history', requireAuth, (req, res) => {
+    const { id } = req.params;
+    db.get("SELECT status FROM dvr_jobs WHERE id = ? AND user_id = ?", [id, req.session.userId], (err, job) => {
+        if (err || !job) {
+             return res.status(404).json({ error: 'Job not found or unauthorized.' });
+        }
+        if (['error', 'cancelled', 'completed'].includes(job.status)) {
+            db.run("DELETE FROM dvr_jobs WHERE id = ?", [id], function(err) {
+                if(err) return res.status(500).json({ error: 'Could not delete job history.' });
+                console.log(`[DVR_API] Deleted job history for job ${id}.`);
+                res.json({ success: true });
+            });
+        } else {
+            return res.status(400).json({ error: 'Only completed, cancelled, or error jobs can be removed from history.' });
+        }
     });
 });
 
@@ -1743,9 +1800,6 @@ app.listen(port, () => {
     if (notificationCheckInterval) clearInterval(notificationCheckInterval);
     notificationCheckInterval = setInterval(checkAndSendNotifications, 60000);
     console.log('[Push] Notification checker started.');
-
-    // Removed direct call here, moved into db.serialize callback for dvr_recordings table
-    // loadAndScheduleAllDvrJobs();
 });
 
 // --- Helper Functions (Full Implementation) ---
