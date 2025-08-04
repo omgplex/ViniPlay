@@ -248,6 +248,20 @@ function setupCoreEventListeners() {
     } else {
         console.log('[MAIN] Channel column resize handle not applied (mobile or elements not found).');
     }
+
+    // NEW: Use ResizeObserver to update CSS variable for sticky header positioning
+    if (UIElements.mainHeader && UIElements.unifiedGuideHeader) {
+        const mainHeaderObserver = new ResizeObserver(entries => {
+            for (let entry of entries) {
+                if (entry.target === UIElements.mainHeader) {
+                    document.documentElement.style.setProperty('--main-header-height', `${entry.contentRect.height}px`);
+                    console.log(`[MAIN] Main header height updated to: ${entry.contentRect.height}px`);
+                }
+            }
+        });
+        mainHeaderObserver.observe(UIElements.mainHeader);
+        console.log('[MAIN] ResizeObserver attached to main-header.');
+    }
 }
 
 
