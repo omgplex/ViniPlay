@@ -17,8 +17,10 @@ export async function initDvrPage() {
     console.log('[DVR] Initializing DVR page...');
     await Promise.all([
         loadScheduledJobs(),
-        loadCompletedRecordings()
+        loadCompletedRecordings(),
+        loadStorageInfo()
     ]);
+    populateManualRecordingChannels();
     console.log('[DVR] DVR page initialized.');
 }
 
@@ -49,6 +51,21 @@ async function loadCompletedRecordings() {
 }
 
 /**
+ * NEW: Fetches storage usage information from the server.
+ */
+async function loadStorageInfo() {
+    const res = await apiFetch('/api/dvr/storage');
+    if (res && res.ok) {
+        const storageData = await res.json();
+        renderStorageBar(storageData);
+    } else {
+        // Hide the storage bar if it fails to load
+        UIElements.dvrStorageBarContainer.classList.add('hidden');
+        console.error('[DVR] Could not load storage information.');
+    }
+}
+
+/**
  * Renders the table of scheduled and in-progress recording jobs.
  */
 function renderScheduledJobs() {
@@ -66,6 +83,10 @@ function renderScheduledJobs() {
             ? `<button class="status-badge ${job.status} view-error-btn" data-job-id="${job.id}">${job.status}</button>`
             : `<span class="status-badge ${job.status}">${job.status}</span>`;
 
+        // NEW: Conflict Icon
+        const conflictIcon = job.isConflicting ? 
+            `<svg class="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20" title="This recording conflicts with another scheduled recording."><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1.75-5.25a.75.75 0 00-1.5 0v3.5a.75.75 0 001.5 0v-3.5z" clip-rule="evenodd" /></svg>` : '';
+
         const tr = document.createElement('tr');
         tr.dataset.jobId = job.id;
         tr.innerHTML = `
@@ -74,6 +95,8 @@ function renderScheduledJobs() {
             <td>${startTime}</td>
             <td>${endTime}</td>
             <td>${statusHTML}</td>
+            <!-- NEW: Conflict Cell -->
+            <td class="text-center">${conflictIcon}</td>
             <td class="text-right">
                 <div class="flex items-center justify-end gap-3">
                     ${job.status === 'recording' ? `
@@ -134,6 +157,43 @@ function renderCompletedRecordings() {
     });
 }
 
+/**
+ * NEW: Renders the storage usage bar.
+ * @param {object} storageData - Object with total, used, and percentage properties.
+ */
+function renderStorageBar(storageData) {
+    const { total, used, percentage } = storageData;
+    UIElements.dvrStorageText.textContent = `${formatBytes(used)} of ${formatBytes(total)} used`;
+    UIElements.dvrStorageBar.style.width = `${percentage}%`;
+    UIElements.dvrStorageBar.classList.toggle('bg-red-600', percentage > 90);
+    UIElements.dvrStorageBar.classList.toggle('bg-yellow-500', percentage > 75 && percentage <= 90);
+    UIElements.dvrStorageBar.classList.toggle('bg-blue-600', percentage <= 75);
+    UIElements.dvrStorageBarContainer.classList.remove('hidden');
+}
+
+/**
+ * NEW: Populates the channel dropdown for the manual recording form.
+ */
+function populateManualRecordingChannels() {
+    const selectEl = UIElements.manualRecChannelSelect;
+    if (!selectEl) return;
+
+    const channels = [...guideState.channels].sort((a, b) => {
+        const nameA = a.displayName || a.name;
+        const nameB = b.displayName || b.name;
+        return nameA.localeCompare(nameB);
+    });
+
+    selectEl.innerHTML = '<option value="" disabled selected>Select a channel...</option>';
+    channels.forEach(channel => {
+        const option = document.createElement('option');
+        option.value = channel.id;
+        option.textContent = channel.displayName || channel.name;
+        option.dataset.channelName = channel.displayName || channel.name; // Store name for API
+        selectEl.appendChild(option);
+    });
+}
+
 const toISOStringLocal = (localDateTimeString) => new Date(localDateTimeString).toISOString();
 const fromISOStringToLocalDateTime = (isoString) => {
     const date = new Date(isoString);
@@ -150,7 +210,6 @@ export function setupDvrEventListeners() {
             const channelId = button.dataset.channelId;
             const bufferedStartIso = button.dataset.programStart;
 
-            // Find the full job object from the state to get the pre-buffer minutes
             const jobId = button.closest('tr')?.dataset.jobId;
             const job = dvrState.scheduledJobs.find(j => j.id == jobId);
 
@@ -160,19 +219,10 @@ export function setupDvrEventListeners() {
                 return;
             }
 
-            // Calculate the original program start time by adding the pre-buffer back
             const preBufferMs = (job.preBufferMinutes || 0) * 60 * 1000;
             const originalProgramStart = new Date(new Date(bufferedStartIso).getTime() + preBufferMs);
             const originalProgramStartIso = originalProgramStart.toISOString();
 
-            // ADDED: Detailed logging as requested
-            console.log(`[DVR_DEBUG] 'Go to Guide' button clicked.`);
-            console.log(`[DVR_DEBUG] Buffered Start (from job): ${bufferedStartIso}`);
-            console.log(`[DVR_DEBUG] Pre-buffer (minutes): ${job.preBufferMinutes}`);
-            console.log(`[DVR_DEBUG] Calculated Original Start: ${originalProgramStartIso}`);
-            console.log(`[DVR_DEBUG] Calling navigateToProgramInGuide with Channel ID: ${channelId}, Original Program Start: ${originalProgramStartIso}`);
-
-            // MODIFIED: Call with the corrected, original start time
             navigateToProgramInGuide(channelId, originalProgramStartIso);
 
         } else if (button.classList.contains('cancel-job-btn')) {
@@ -268,6 +318,47 @@ export function setupDvrEventListeners() {
             await loadScheduledJobs();
         }
     });
+
+    // NEW: Manual Recording Form Handler
+    UIElements.manualRecordingForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const channelSelect = UIElements.manualRecChannelSelect;
+        const channelId = channelSelect.value;
+        const channelName = channelSelect.options[channelSelect.selectedIndex].dataset.channelName;
+        const startTime = UIElements.manualRecStart.value;
+        const endTime = UIElements.manualRecEnd.value;
+
+        if (!channelId || !startTime || !endTime) {
+            return showNotification('Please fill out all fields for manual recording.', true);
+        }
+        if (new Date(endTime) <= new Date(startTime)) {
+            return showNotification('End time must be after the start time.', true);
+        }
+
+        const body = {
+            channelId,
+            channelName,
+            startTime: toISOStringLocal(startTime),
+            endTime: toISOStringLocal(endTime),
+        };
+
+        const res = await apiFetch('/api/dvr/schedule/manual', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        
+        if (res) {
+            if (res.ok) {
+                showNotification('Manual recording scheduled successfully.');
+                UIElements.manualRecordingForm.reset();
+                await loadScheduledJobs();
+            } else if (res.status === 409) {
+                const conflictData = await res.json();
+                showConflictModal(conflictData);
+            }
+        }
+    });
 }
 
 export function findDvrJobForProgram(program) {
@@ -301,20 +392,49 @@ export async function addOrRemoveDvrJob(programData) {
             programStart: programData.start,
             programStop: programData.stop
         };
-        if (await apiFetch('/api/dvr/schedule', {
+        const res = await apiFetch('/api/dvr/schedule', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
-        })) {
-            showNotification(`"${programData.title}" scheduled to record.`);
-            await loadScheduledJobs();
-            handleSearchAndFilter(false);
+        });
+
+        if (res) {
+            if (res.ok) {
+                showNotification(`"${programData.title}" scheduled to record.`);
+                await loadScheduledJobs();
+                handleSearchAndFilter(false);
+            } else if (res.status === 409) {
+                const conflictData = await res.json();
+                showConflictModal(conflictData);
+            }
         }
     }
 }
 
-// REMOVED: Deleted the local, non-functional navigateToProgramInGuide function.
-// The button now uses the imported version from notification.js.
+/**
+ * NEW: Displays a modal showing recording conflicts.
+ * @param {object} conflictData - The conflict data from the server.
+ */
+function showConflictModal(conflictData) {
+    const { newJob, conflictingJobs } = conflictData;
+    let conflictList = '';
+    conflictingJobs.forEach(job => {
+        conflictList += `<li class="text-sm">- ${job.programTitle} on ${job.channelName}</li>`;
+    });
+
+    const message = `
+        Could not schedule "${newJob.programTitle}".
+        <br><br>
+        Your maximum number of simultaneous recordings would be exceeded.
+        It conflicts with the following scheduled recording(s):
+        <ul class="list-disc list-inside mt-2 text-gray-400">
+            ${conflictList}
+        </ul>
+    `;
+
+    // A simple confirm modal will be used for now. A more complex modal could be added later.
+    showConfirm('Recording Conflict', message, () => {});
+}
 
 function formatBytes(bytes) {
     if (!bytes || bytes === 0) return '0 Bytes';
@@ -333,4 +453,3 @@ function formatDuration(totalSeconds) {
     if (minutes > 0) result += `${minutes}m`;
     return result.trim() || '0m';
 }
-
