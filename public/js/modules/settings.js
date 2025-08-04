@@ -102,19 +102,25 @@ export const updateUIFromSettings = () => {
     
     settings.searchScope = settings.searchScope || 'channels_only';
     settings.notificationLeadTime = settings.notificationLeadTime ?? 10;
+    
     // NEW: Set DVR defaults if they don't exist
     settings.dvr = settings.dvr || {};
     settings.dvr.preBufferMinutes = settings.dvr.preBufferMinutes ?? 1;
     settings.dvr.postBufferMinutes = settings.dvr.postBufferMinutes ?? 2;
+    settings.dvr.maxConcurrentRecordings = settings.dvr.maxConcurrentRecordings ?? 1;
+    settings.dvr.autoDeleteDays = settings.dvr.autoDeleteDays ?? 0;
 
 
     // Update dropdowns and inputs
     UIElements.timezoneOffsetSelect.value = settings.timezoneOffset;
     UIElements.searchScopeSelect.value = settings.searchScope;
     UIElements.notificationLeadTimeInput.value = settings.notificationLeadTime;
-    // FIX: Use the correct UIElements names for DVR inputs
+    
+    // Update DVR inputs
     if (UIElements.dvrPreBufferInput) UIElements.dvrPreBufferInput.value = settings.dvr.preBufferMinutes;
     if (UIElements.dvrPostBufferInput) UIElements.dvrPostBufferInput.value = settings.dvr.postBufferMinutes;
+    if (UIElements.dvrMaxStreamsInput) UIElements.dvrMaxStreamsInput.value = settings.dvr.maxConcurrentRecordings;
+    if (UIElements.dvrStorageDeleteDays) UIElements.dvrStorageDeleteDays.value = settings.dvr.autoDeleteDays;
 
 
     // Render tables
@@ -453,24 +459,25 @@ export function setupSettingsEventListeners() {
         await saveSettingAndNotify(saveGlobalSetting, { notificationLeadTime: value });
     });
 
-    // --- DVR Settings (FIXED) ---
+    // --- DVR Settings ---
+    const handleDvrSettingChange = (key, value) => {
+        const newDvrSettings = { ...guideState.settings.dvr, [key]: value };
+        saveSettingAndNotify(saveGlobalSetting, { dvr: newDvrSettings });
+    };
+
     if (UIElements.dvrPreBufferInput) {
-        UIElements.dvrPreBufferInput.addEventListener('change', (e) => {
-            const newDvrSettings = { ...guideState.settings.dvr, preBufferMinutes: parseInt(e.target.value, 10) };
-            saveSettingAndNotify(saveGlobalSetting, { dvr: newDvrSettings });
-        });
+        UIElements.dvrPreBufferInput.addEventListener('change', (e) => handleDvrSettingChange('preBufferMinutes', parseInt(e.target.value, 10)));
     }
     if (UIElements.dvrPostBufferInput) {
-        UIElements.dvrPostBufferInput.addEventListener('change', (e) => {
-            const newDvrSettings = { ...guideState.settings.dvr, postBufferMinutes: parseInt(e.target.value, 10) };
-            saveSettingAndNotify(saveGlobalSetting, { dvr: newDvrSettings });
-        });
+        UIElements.dvrPostBufferInput.addEventListener('change', (e) => handleDvrSettingChange('postBufferMinutes', parseInt(e.target.value, 10)));
     }
-    UIElements.dvrRecordingProfileSelect.addEventListener('change', (e) => {
-        const newDvrSettings = { ...guideState.settings.dvr, activeRecordingProfileId: e.target.value };
-        saveSettingAndNotify(saveGlobalSetting, { dvr: newDvrSettings });
-    });
-
+    if (UIElements.dvrMaxStreamsInput) {
+        UIElements.dvrMaxStreamsInput.addEventListener('change', (e) => handleDvrSettingChange('maxConcurrentRecordings', parseInt(e.target.value, 10)));
+    }
+    if (UIElements.dvrStorageDeleteDays) {
+        UIElements.dvrStorageDeleteDays.addEventListener('change', (e) => handleDvrSettingChange('autoDeleteDays', parseInt(e.target.value, 10)));
+    }
+    UIElements.dvrRecordingProfileSelect.addEventListener('change', (e) => handleDvrSettingChange('activeRecordingProfileId', e.target.value));
 
     // --- Player Settings (User Agents & Stream Profiles) ---
     UIElements.addUserAgentBtn.addEventListener('click', () => openEditorModal('userAgent'));
@@ -512,7 +519,7 @@ export function setupSettingsEventListeners() {
     UIElements.userAgentSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { activeUserAgentId: e.target.value }));
     UIElements.streamProfileSelect.addEventListener('change', (e) => saveSettingAndNotify(saveGlobalSetting, { activeStreamProfileId: e.target.value }));
 
-    // --- Recording Profiles (FIXED) ---
+    // --- Recording Profiles ---
     UIElements.addDvrProfileBtn.addEventListener('click', () => openEditorModal('recordingProfile'));
     UIElements.editDvrProfileBtn.addEventListener('click', () => {
         const profile = (guideState.settings.dvr?.recordingProfiles || []).find(p => p.id === UIElements.dvrRecordingProfileSelect.value);
