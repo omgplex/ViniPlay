@@ -186,6 +186,8 @@ const fromISOStringToLocalDateTime = (isoString) => {
 };
 
 export function setupDvrEventListeners() {
+    console.log('[DVR_EVENTS] Setting up DVR event listeners...');
+
     UIElements.dvrJobsTbody.addEventListener('click', async (e) => {
         const button = e.target.closest('button');
         if (!button) return;
@@ -349,8 +351,10 @@ export function setupDvrEventListeners() {
     });
 
     // MODIFIED: Add event listener for the new "Select Channel" button
+    console.log(`[DVR_EVENTS] Attaching listener to #manual-rec-channel-select-btn. Found: ${!!UIElements.manualRecChannelSelectBtn}`);
     if (UIElements.manualRecChannelSelectBtn) {
         UIElements.manualRecChannelSelectBtn.addEventListener('click', () => {
+            console.log('[DVR_EVENTS] manual-rec-channel-select-btn clicked!');
             // Use a data attribute to signal that the modal is opened for DVR
             document.body.dataset.channelSelectorContext = 'dvr';
             populateChannelSelector(); // Populate the modal with channels
@@ -359,15 +363,19 @@ export function setupDvrEventListeners() {
     }
 
     // MODIFIED: Add a listener to the channel list in the modal, specific to the DVR context
+    console.log(`[DVR_EVENTS] Attaching listener to #channel-selector-list for DVR context. Found: ${!!UIElements.channelSelectorList}`);
     if (UIElements.channelSelectorList) {
         UIElements.channelSelectorList.addEventListener('click', (e) => {
+            console.log('[DVR_EVENTS] channel-selector-list clicked in DVR context handler.');
             // Only act if the modal was opened for the DVR
             if (document.body.dataset.channelSelectorContext !== 'dvr') {
+                console.log('[DVR_EVENTS] Not DVR context, returning.');
                 return;
             }
 
             const channelItem = e.target.closest('.channel-item');
             if (channelItem) {
+                console.log('[DVR_EVENTS] Channel item selected:', channelItem.dataset.name);
                 const channelName = channelItem.dataset.name;
                 const channelId = channelItem.dataset.id;
 
@@ -381,14 +389,18 @@ export function setupDvrEventListeners() {
             
             // Always clean up the context flag after a selection is made or modal is closed
             delete document.body.dataset.channelSelectorContext;
+            console.log('[DVR_EVENTS] Cleared channelSelectorContext flag.');
         });
     }
 
     // MODIFIED: Ensure the context flag is cleared if the modal is cancelled
+    console.log(`[DVR_EVENTS] Attaching listener to #channel-selector-cancel-btn for DVR context. Found: ${!!UIElements.channelSelectorCancelBtn}`);
     if (UIElements.channelSelectorCancelBtn) {
         UIElements.channelSelectorCancelBtn.addEventListener('click', () => {
+            console.log('[DVR_EVENTS] channel-selector-cancel-btn clicked in DVR context handler.');
             if (document.body.dataset.channelSelectorContext === 'dvr') {
                 delete document.body.dataset.channelSelectorContext;
+                console.log('[DVR_EVENTS] Cleared channelSelectorContext flag on cancel.');
             }
         });
     }
