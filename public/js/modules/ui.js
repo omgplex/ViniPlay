@@ -39,25 +39,51 @@ export const showNotification = (message, isError = false, duration = 3000) => {
 };
 
 /**
- * Displays a modal.
+ * Displays a modal and adds a listener to close it when clicking outside.
  * @param {HTMLElement} modal - The modal element to show.
  */
 export const openModal = (modal) => {
+    if (!modal) return;
     modal.classList.replace('hidden', 'flex');
     document.body.classList.add('modal-open');
+
+    // Define the handler function
+    const closeOnOutsideClick = (e) => {
+        // If the click is on the modal overlay itself (the parent) and not its children
+        if (e.target === modal) {
+            closeModal(modal);
+        }
+    };
+
+    // Use a timeout to add the listener, preventing it from firing immediately
+    // if the same click that opened the modal bubbles up to the modal element.
+    setTimeout(() => {
+        modal.addEventListener('click', closeOnOutsideClick);
+        // Store the handler on the element so we can remove it later
+        modal._closeOnOutsideClickHandler = closeOnOutsideClick;
+    }, 0);
 };
 
 /**
- * Hides a modal.
+ * Hides a modal and removes the outside click listener.
  * @param {HTMLElement} modal - The modal element to hide.
  */
 export const closeModal = (modal) => {
+    if (!modal) return;
     modal.classList.replace('flex', 'hidden');
+    
     // Remove the body class only if no other modals are open
     if (!document.querySelector('.fixed.inset-0.flex')) {
         document.body.classList.remove('modal-open');
     }
+
+    // Remove the specific event listener if it exists
+    if (modal._closeOnOutsideClickHandler) {
+        modal.removeEventListener('click', modal._closeOnOutsideClickHandler);
+        delete modal._closeOnOutsideClickHandler;
+    }
 };
+
 
 /**
  * Shows a confirmation dialog.
