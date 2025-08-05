@@ -458,9 +458,11 @@ function playChannelInWidget(widgetId, channel, gridstackItemContentEl) {
     const titleEl = gridstackItemContentEl.querySelector('.player-header-title');
 
     titleEl.textContent = channel.name;
-    gridstackItemContentEl.dataset.channelId = channel.id;
-    gridstackItemContentEl.dataset.channelLogo = channel.logo;
-    gridstackItemContentEl.dataset.channelName = channel.name;
+    // VINI-MOD: Set the channel ID on the placeholder, not the content element
+    if (playerPlaceholderEl) {
+        playerPlaceholderEl.dataset.channelId = channel.id;
+    }
+
 
     videoEl.classList.remove('hidden');
     if (playerPlaceholderEl) {
@@ -533,12 +535,9 @@ function stopAndCleanupPlayer(widgetId, resetUI = true) {
             
             if (playerPlaceholderEl) {
                 playerPlaceholderEl.classList.remove('hidden');
+                playerPlaceholderEl.dataset.channelId = ''; // VINI-MOD: Clear channelId from placeholder
             }
             widgetContentEl.querySelector('.player-header-title').textContent = 'No Channel';
-            
-            widgetContentEl.dataset.channelId = '';
-            widgetContentEl.dataset.channelLogo = '';
-            widgetContentEl.dataset.channelName = '';
         }
     }
 }
@@ -635,18 +634,26 @@ async function saveLayout(e) {
         return;
     }
 
-    // FIX: Filter out any widgets that don't have a DOM element before mapping.
-    const layoutData = grid.save(false)
-        .filter(w => w.el) 
-        .map(w => ({
-            x: w.x,
-            y: w.y,
-            w: w.w,
-            h: w.h,
-            id: w.el.querySelector('.player-placeholder')?.id || w.id,
-            // Also save channel info if available
-            channelId: w.el.querySelector('.player-placeholder')?.dataset.channelId || null
-        }));
+    // VINI-MOD: Get the grid items directly from the DOM to ensure we only save what's visible.
+    const gridItems = grid.getGridItems();
+    if (gridItems.length === 0) {
+        showNotification("Cannot save an empty layout.", true);
+        return;
+    }
+
+    const layoutData = gridItems.map(item => {
+        const node = item.gridstackNode;
+        const placeholder = item.querySelector('.player-placeholder');
+        return {
+            x: node.x,
+            y: node.y,
+            w: node.w,
+            h: node.h,
+            id: placeholder?.id || node.id,
+            channelId: placeholder?.dataset.channelId || null
+        };
+    });
+
 
     const res = await apiFetch('/api/multiview/layouts', {
         method: 'POST',
@@ -714,3 +721,4 @@ async function deleteLayout() {
         }
     });
 }
+
