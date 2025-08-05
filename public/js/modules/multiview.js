@@ -101,48 +101,94 @@ function updateGridBackground() {
 function setupMultiViewEventListeners() {
     console.log('[MultiView_EVENTS] Setting up Multi-View event listeners...');
 
-    UIElements.multiviewAddPlayer.addEventListener('click', () => addPlayerWidget());
-    UIElements.multiviewRemovePlayer.addEventListener('click', removeLastPlayer);
+    // Debugging specific buttons
+    console.log(`[MultiView_EVENTS] Attempting to attach listener to #multiview-add-player. Found: ${!!UIElements.multiviewAddPlayer}`);
+    if (UIElements.multiviewAddPlayer) {
+        UIElements.multiviewAddPlayer.addEventListener('click', () => {
+            console.log('[MultiView_EVENTS] #multiview-add-player clicked!');
+            addPlayerWidget();
+        });
+    }
+
+    console.log(`[MultiView_EVENTS] Attempting to attach listener to #multiview-remove-player. Found: ${!!UIElements.multiviewRemovePlayer}`);
+    if (UIElements.multiviewRemovePlayer) {
+        UIElements.multiviewRemovePlayer.addEventListener('click', () => {
+            console.log('[MultiView_EVENTS] #multiview-remove-player clicked!');
+            removeLastPlayer();
+        });
+    }
 
     // Layout buttons
-    UIElements.layoutBtnAuto.addEventListener('click', () => applyPresetLayout('auto'));
-    UIElements.layoutBtn2x2.addEventListener('click', () => applyPresetLayout('2x2'));
-    UIElements.layoutBtn1x3.addEventListener('click', () => applyPresetLayout('1x3'));
+    console.log(`[MultiView_EVENTS] Attempting to attach listener to #layout-btn-auto. Found: ${!!UIElements.layoutBtnAuto}`);
+    if (UIElements.layoutBtnAuto) {
+        UIElements.layoutBtnAuto.addEventListener('click', () => {
+            console.log('[MultiView_EVENTS] #layout-btn-auto clicked!');
+            applyPresetLayout('auto');
+        });
+    }
+
+    console.log(`[MultiView_EVENTS] Attempting to attach listener to #layout-btn-2x2. Found: ${!!UIElements.layoutBtn2x2}`);
+    if (UIElements.layoutBtn2x2) {
+        UIElements.layoutBtn2x2.addEventListener('click', () => {
+            console.log('[MultiView_EVENTS] #layout-btn-2x2 clicked!');
+            applyPresetLayout('2x2');
+        });
+    }
+
+    console.log(`[MultiView_EVENTS] Attempting to attach listener to #layout-btn-1x3. Found: ${!!UIElements.layoutBtn1x3}`);
+    if (UIElements.layoutBtn1x3) {
+        UIElements.layoutBtn1x3.addEventListener('click', () => {
+            console.log('[MultiView_EVENTS] #layout-btn-1x3 clicked!');
+            applyPresetLayout('1x3');
+        });
+    }
 
     // Save/Load Layout Buttons
-    UIElements.multiviewSaveLayoutBtn.addEventListener('click', () => openModal(UIElements.saveLayoutModal));
-    UIElements.multiviewLoadLayoutBtn.addEventListener('click', loadSelectedLayout);
-    UIElements.multiviewDeleteLayoutBtn.addEventListener('click', deleteLayout);
-    UIElements.saveLayoutForm.addEventListener('submit', saveLayout);
-    UIElements.saveLayoutCancelBtn.addEventListener('click', () => closeModal(UIElements.saveLayoutModal));
+    console.log(`[MultiView_EVENTS] Attempting to attach listener to #multiview-save-layout-btn. Found: ${!!UIElements.multiviewSaveLayoutBtn}`);
+    if (UIElements.multiviewSaveLayoutBtn) {
+        UIElements.multiviewSaveLayoutBtn.addEventListener('click', () => {
+            console.log('[MultiView_EVENTS] #multiview-save-layout-btn clicked!');
+            openModal(UIElements.saveLayoutModal);
+        });
+    }
 
-    // Removed specific listeners for channelSelectorCancelBtn and multiviewChannelFilter
-    // as they are now handled universally in main.js.
-    // console.log(`[MultiView_EVENTS] Attaching listener to #channel-selector-cancel-btn. Found: ${!!UIElements.channelSelectorCancelBtn}`);
-    // if (UIElements.channelSelectorCancelBtn) {
-    //     UIElements.channelSelectorCancelBtn.addEventListener('click', () => {
-    //         console.log('[MultiView_EVENTS] channel-selector-cancel-btn clicked in Multi-View context handler.');
-    //         if (document.body.dataset.channelSelectorContext) {
-    //             delete document.body.dataset.channelSelectorContext;
-    //             console.log('[MultiView_EVENTS] Cleared channelSelectorContext flag on cancel.');
-    //         }
-    //         closeModal(UIElements.multiviewChannelSelectorModal);
-    //     });
-    // }
+    console.log(`[MultiView_EVENTS] Attempting to attach listener to #multiview-load-layout-btn. Found: ${!!UIElements.multiviewLoadLayoutBtn}`);
+    if (UIElements.multiviewLoadLayoutBtn) {
+        UIElements.multiviewLoadLayoutBtn.addEventListener('click', () => {
+            console.log('[MultiView_EVENTS] #multiview-load-layout-btn clicked!');
+            loadSelectedLayout();
+        });
+    }
+
+    console.log(`[MultiView_EVENTS] Attempting to attach listener to #multiview-delete-layout-btn. Found: ${!!UIElements.multiviewDeleteLayoutBtn}`);
+    if (UIElements.multiviewDeleteLayoutBtn) {
+        UIElements.multiviewDeleteLayoutBtn.addEventListener('click', () => {
+            console.log('[MultiView_EVENTS] #multiview-delete-layout-btn clicked!');
+            deleteLayout();
+        });
+    }
+    
+    console.log(`[MultiView_EVENTS] Attempting to attach listener to #save-layout-form. Found: ${!!UIElements.saveLayoutForm}`);
+    if (UIElements.saveLayoutForm) {
+        UIElements.saveLayoutForm.addEventListener('submit', (e) => {
+            console.log('[MultiView_EVENTS] #save-layout-form submitted!');
+            saveLayout(e);
+        });
+    }
+
+    console.log(`[MultiView_EVENTS] Attempting to attach listener to #save-layout-cancel-btn. Found: ${!!UIElements.saveLayoutCancelBtn}`);
+    if (UIElements.saveLayoutCancelBtn) {
+        UIElements.saveLayoutCancelBtn.addEventListener('click', () => {
+            console.log('[MultiView_EVENTS] #save-layout-cancel-btn clicked!');
+            closeModal(UIElements.saveLayoutModal);
+        });
+    }
+
 
     UIElements.channelSelectorSearch.addEventListener('input', (e) => {
         console.log('[MultiView_EVENTS] channel-selector-search input changed.');
         populateChannelSelector();
     });
-
-    // Removed specific listener for multiviewChannelFilter as it's now handled universally in main.js.
-    // console.log(`[MultiView_EVENTS] Attaching listener to #multiview-channel-filter. Found: ${!!UIElements.multiviewChannelFilter}`);
-    // if (UIElements.multiviewChannelFilter) {
-    //     UIElements.multiviewChannelFilter.addEventListener('change', () => {
-    //         console.log('[MultiView_EVENTS] multiview-channel-filter changed.');
-    //         populateChannelSelector();
-    //     });
-    // }
 
     UIElements.channelSelectorList.addEventListener('click', (e) => {
         // IMPORTANT: Only handle the click if the modal was NOT opened by the DVR page.
@@ -175,6 +221,7 @@ function setupMultiViewEventListeners() {
  * @returns {HTMLElement} The added widget element.
  */
 function addPlayerWidget(channel = null, layout = {}) {
+    console.log('[MultiView] addPlayerWidget called.'); // Debugging addPlayerWidget
     if (grid.getGridItems().length >= MAX_PLAYERS) {
         showNotification(`You can add a maximum of ${MAX_PLAYERS} players.`, true);
         return null;
@@ -226,6 +273,7 @@ function addPlayerWidget(channel = null, layout = {}) {
  * Removes the most recently added player from the grid.
  */
 function removeLastPlayer() {
+    console.log('[MultiView] removeLastPlayer called.'); // Debugging removeLastPlayer
     const items = grid.getGridItems();
     if (items.length > 0) {
         // Sort items by creation time (using timestamp from ID) to be sure
@@ -257,6 +305,7 @@ function removeLastPlayer() {
  * @param {'auto'|'2x2'|'1x3'} layoutName - The name of the layout to apply.
  */
 function applyPresetLayout(layoutName) {
+    console.log(`[MultiView] applyPresetLayout called with: ${layoutName}`); // Debugging applyPresetLayout
     const numPlayers = grid.getGridItems().length;
 
     // Special case for 'auto' layout: if the grid is empty, it should just add one player.
@@ -671,6 +720,7 @@ function populateLayoutsDropdown() {
  */
 async function saveLayout(e) {
     e.preventDefault();
+    console.log('[MultiView] saveLayout called.'); // Debugging saveLayout
     const name = UIElements.saveLayoutName.value.trim();
     if (!name) {
         showNotification('Layout name cannot be empty.', true);
@@ -723,6 +773,7 @@ async function saveLayout(e) {
  * Loads a selected layout from the dropdown onto the grid.
  */
 function loadSelectedLayout() {
+    console.log('[MultiView] loadSelectedLayout called.'); // Debugging loadSelectedLayout
     const layoutId = UIElements.savedLayoutsSelect.value;
     if (!layoutId) {
         showNotification('Please select a layout to load.', true);
@@ -761,6 +812,7 @@ function loadSelectedLayout() {
  * Deletes the currently selected layout from the server.
  */
 async function deleteLayout() {
+    console.log('[MultiView] deleteLayout called.'); // Debugging deleteLayout
     const layoutId = UIElements.savedLayoutsSelect.value;
     if (!layoutId) {
         showNotification('Please select a layout to delete.', true);
