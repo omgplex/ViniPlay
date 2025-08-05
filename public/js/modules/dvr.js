@@ -173,17 +173,29 @@ function renderStorageBar(storageData) {
     UIElements.dvrStorageBarContainer.classList.remove('hidden');
 }
 
-/**
- * NEW: Populates the channel dropdown for the manual recording form.
- */
-// MODIFIED: This function is no longer needed and is removed.
-
 const toISOStringLocal = (localDateTimeString) => new Date(localDateTimeString).toISOString();
 const fromISOStringToLocalDateTime = (isoString) => {
     const date = new Date(isoString);
     date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
     return date.toISOString().slice(0, 16);
 };
+
+/**
+ * NEW: Handles the channel selection logic specifically for the DVR page.
+ * This function is exported and called by the central event listener in main.js.
+ * @param {HTMLElement} channelItem - The clicked channel item element from the modal list.
+ */
+export function handleDvrChannelClick(channelItem) {
+    const channelName = channelItem.dataset.name;
+    const channelId = channelItem.dataset.id;
+
+    // Update the UI and hidden form fields
+    UIElements.manualRecSelectedChannelName.textContent = channelName;
+    UIElements.manualRecChannelId.value = channelId;
+    UIElements.manualRecChannelName.value = channelName;
+
+    closeModal(UIElements.multiviewChannelSelectorModal);
+}
 
 export function setupDvrEventListeners() {
     UIElements.dvrJobsTbody.addEventListener('click', async (e) => {
@@ -358,40 +370,8 @@ export function setupDvrEventListeners() {
         });
     }
 
-    // MODIFIED: Add a listener to the channel list in the modal, specific to the DVR context
-    if (UIElements.channelSelectorList) {
-        UIElements.channelSelectorList.addEventListener('click', (e) => {
-            // Only act if the modal was opened for the DVR
-            if (document.body.dataset.channelSelectorContext !== 'dvr') {
-                return;
-            }
-
-            const channelItem = e.target.closest('.channel-item');
-            if (channelItem) {
-                const channelName = channelItem.dataset.name;
-                const channelId = channelItem.dataset.id;
-
-                // Update the UI and hidden form fields
-                UIElements.manualRecSelectedChannelName.textContent = channelName;
-                UIElements.manualRecChannelId.value = channelId;
-                UIElements.manualRecChannelName.value = channelName;
-
-                closeModal(UIElements.multiviewChannelSelectorModal);
-            }
-            
-            // Always clean up the context flag after a selection is made or modal is closed
-            delete document.body.dataset.channelSelectorContext;
-        });
-    }
-
-    // MODIFIED: Ensure the context flag is cleared if the modal is cancelled
-    if (UIElements.channelSelectorCancelBtn) {
-        UIElements.channelSelectorCancelBtn.addEventListener('click', () => {
-            if (document.body.dataset.channelSelectorContext === 'dvr') {
-                delete document.body.dataset.channelSelectorContext;
-            }
-        });
-    }
+    // MODIFIED: The specific listeners for the channel selector modal list and cancel button
+    // have been removed from this file. They will be handled by the central listener in main.js.
 }
 
 export function findDvrJobForProgram(program) {
