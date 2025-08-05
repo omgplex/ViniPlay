@@ -96,6 +96,7 @@ function updateGridBackground() {
 
 /**
  * Sets up global event listeners for the Multi-View page controls.
+ * NOTE: Event listeners for the shared channel selector modal have been moved to main.js.
  */
 function setupMultiViewEventListeners() {
     UIElements.multiviewAddPlayer.addEventListener('click', () => addPlayerWidget());
@@ -113,35 +114,27 @@ function setupMultiViewEventListeners() {
     UIElements.saveLayoutForm.addEventListener('submit', saveLayout);
     UIElements.saveLayoutCancelBtn.addEventListener('click', () => closeModal(UIElements.saveLayoutModal));
 
-    // Channel Selector Modal
-    UIElements.channelSelectorCancelBtn.addEventListener('click', () => {
-        // Clean up context flag on cancel
-        if (document.body.dataset.channelSelectorContext) {
-            delete document.body.dataset.channelSelectorContext;
-        }
-        closeModal(UIElements.multiviewChannelSelectorModal);
-    });
-    UIElements.channelSelectorSearch.addEventListener('input', (e) => populateChannelSelector());
-    UIElements.multiviewChannelFilter.addEventListener('change', () => populateChannelSelector());
-    UIElements.channelSelectorList.addEventListener('click', (e) => {
-        // IMPORTANT: Only handle the click if the modal was NOT opened by the DVR page.
-        if (document.body.dataset.channelSelectorContext === 'dvr') {
-            return;
-        }
-
-        const channelItem = e.target.closest('.channel-item');
-        if (channelItem && channelSelectorCallback) {
-            const channel = {
-                id: channelItem.dataset.id,
-                name: channelItem.dataset.name,
-                url: channelItem.dataset.url,
-                logo: channelItem.dataset.logo,
-            };
-            channelSelectorCallback(channel);
-            closeModal(UIElements.multiviewChannelSelectorModal);
-        }
-    });
+    // Channel Selector Modal Listeners are now handled globally in main.js to allow sharing with the DVR page.
 }
+
+/**
+ * NEW: Handles the channel selection logic specifically for the Multi-View page.
+ * This function is exported and called by the central event listener in main.js.
+ * @param {HTMLElement} channelItem - The clicked channel item element from the modal list.
+ */
+export function handleMultiViewChannelClick(channelItem) {
+    if (channelItem && channelSelectorCallback) {
+        const channel = {
+            id: channelItem.dataset.id,
+            name: channelItem.dataset.name,
+            url: channelItem.dataset.url,
+            logo: channelItem.dataset.logo,
+        };
+        channelSelectorCallback(channel);
+        closeModal(UIElements.multiviewChannelSelectorModal);
+    }
+}
+
 
 /**
  * Creates and adds a new player widget to the grid.
@@ -310,41 +303,6 @@ function applyPresetLayout(layoutName) {
         createLayout();
     }
 }
-
-/**
- * Creates the inner HTML for a new player widget.
- * @param {string} widgetId - The unique ID for this widget.
- * @returns {string} The HTML content string for the widget.
- */
-// This function is now correctly placed to return only the inner HTML Gridstack expects
-// It was previously misidentified in the user's provided snippet as "deleted"
-// but it's essential for creating the player content.
-/*
-function createPlayerWidgetHTML(widgetId) {
-    // This function now returns a simple string, not a DOM element.
-    const content = `
-        <div class="player-header">
-            <span class="player-header-title">No Channel</span>
-            <div class="player-controls">
-                <button class="select-channel-btn" title="Select Channel"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg></button>
-                <button class="mute-btn" title="Mute"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" id="mute-icon-${widgetId}"><path d="M5.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h3.5a.75.75 0 00.75-.75V3.75A.75.75 0 009.25 3h-3.5zM14.25 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h3.5a.75.75 0 00.75-.75V3.75a.75.75 0 00-.75-.75h-3.5z"></path></svg></button>
-                <input type="range" min="0" max="1" step="0.05" value="0.5" class="volume-slider">
-                <button class="fullscreen-btn" title="Fullscreen"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M3 8.75A.75.75 0 013.75 8h4.5a.75.75 0 010 1.5h-3.25v3.25a.75.75 0 01-1.5 0V8.75zM11.25 3a.75.75 0 01.75.75v3.25h3.25a.75.75 0 010 1.5h-4.5a.75.75 0 01-.75-.75V3.75A.75.75 0 0111.25 3zM8.75 17a.75.75 0 01-.75-.75v-3.25H4.75a.75.75 0 010-1.5h4.5a.75.75 0 01.75.75v4.5a.75.75 0 01-.75.75zM17 11.25a.75.75 0 01-.75.75h-3.25v3.25a.75.75 0 01-1.5 0v-4.5a.75.75 0 01.75-.75h4.5a.75.75 0 01.75.75z"></path></svg></button>
-                <button class="stop-btn" title="Stop Channel"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2H5z"></path></svg></button>
-                <button class="remove-widget-btn" title="Remove Player"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" /></svg></button>
-            </div>
-        </div>
-        <div class="player-body">
-            <div class="player-placeholder">
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                <span>Click to Select Channel</span>
-            </div>
-            <video class="hidden w-full h-full object-contain" muted></video>
-        </div>
-    `;
-    return content;
-}
-*/ // End of original createPlayerWidgetHTML, which is now replaced by the inlined content above
 
 /**
  * Attaches event listeners to the controls within a player widget.
@@ -721,4 +679,3 @@ async function deleteLayout() {
         }
     });
 }
-
