@@ -13,7 +13,9 @@ import { setupPlayerEventListeners } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
 import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu, showNotification } from './modules/ui.js';
 import { loadAndScheduleNotifications, subscribeUserToPush } from './modules/notification.js';
-import { setupDvrEventListeners } from './modules/dvr.js'; // NEW: Import DVR event listeners
+import { setupDvrEventListeners, handleDvrChannelClick } from './modules/dvr.js';
+import { handleMultiViewChannelClick, populateChannelSelector } from './modules/multiview.js';
+
 // The initializeCastApi function is no longer called directly from here,
 // but the cast.js module will handle its own initialization via the window callback.
 
@@ -224,6 +226,50 @@ function setupCoreEventListeners() {
     UIElements.confirmCancelBtn?.addEventListener('click', () => { console.log('[UI] Confirm modal canceled.'); closeModal(UIElements.confirmModal); });
     UIElements.confirmOkBtn?.addEventListener('click', () => { console.log('[UI] Confirm modal confirmed.'); handleConfirm(); });
     UIElements.detailsCloseBtn?.addEventListener('click', () => { console.log('[UI] Program details modal closed.'); closeModal(UIElements.programDetailsModal); });
+
+    // --- NEW: Centralized Channel Selector Modal Listeners ---
+    console.log('[MAIN] Setting up shared channel selector modal listeners.');
+    
+    // Listener for the filter dropdown (All, Favorites, Recents)
+    UIElements.multiviewChannelFilter?.addEventListener('change', () => {
+        populateChannelSelector();
+    });
+
+    // Listener for the search input
+    UIElements.channelSelectorSearch?.addEventListener('input', () => {
+        // Debounce search to avoid excessive re-renders on every keystroke
+        clearTimeout(appState.searchDebounceTimer);
+        appState.searchDebounceTimer = setTimeout(() => populateChannelSelector(), 250);
+    });
+    
+    // Central listener for clicks within the channel list
+    UIElements.channelSelectorList?.addEventListener('click', (e) => {
+        const channelItem = e.target.closest('.channel-item');
+        if (!channelItem) return;
+
+        // Check the context to decide which module handles the click
+        if (document.body.dataset.channelSelectorContext === 'dvr') {
+            console.log('[MAIN_MODAL] Channel selected in DVR context.');
+            handleDvrChannelClick(channelItem);
+        } else {
+            console.log('[MAIN_MODAL] Channel selected in Multi-View context.');
+            handleMultiViewChannelClick(channelItem);
+        }
+        
+        // Always clean up the context flag after a selection is made
+        delete document.body.dataset.channelSelectorContext;
+    });
+    
+    // Central listener for the modal's cancel button
+    UIElements.channelSelectorCancelBtn?.addEventListener('click', () => {
+        console.log('[MAIN_MODAL] Channel selector cancelled.');
+        // Clean up the context flag on cancel
+        if (document.body.dataset.channelSelectorContext) {
+            delete document.body.dataset.channelSelectorContext;
+        }
+        closeModal(UIElements.multiviewChannelSelectorModal);
+    });
+    // --- END: Centralized Listeners ---
 
     // Make modals resizable
     if (UIElements.videoResizeHandle && UIElements.videoModalContainer) {
