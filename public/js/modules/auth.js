@@ -9,240 +9,109 @@ import { showNotification } from './ui.js'; // Import showNotification for consi
 
 /**
  * Populates the UIElements object with references to DOM elements.
- * This is now the definitive list, ensuring all elements are mapped correctly.
- * It runs once after a successful login.
+ * This is now called from showApp() to ensure the main container is visible.
  */
 const initializeUIElements = () => {
-    console.log('[AUTH_UI] Mapping all DOM elements to UIElements state...');
+    // Populate UIElements by querying all elements with an 'id' attribute
+    // and converting their kebab-case IDs to camelCase keys.
+    Object.assign(UIElements, Object.fromEntries(
+        [...document.querySelectorAll('[id]')].map(el => [
+            el.id.replace(/-(\w)/g, (match, letter) => letter.toUpperCase()),
+            el
+        ])
+    ));
+
+    // Add specific references that might not be picked up by generic ID mapping
+    // or are critical and need direct assignment for clarity.
+    UIElements.appContainer = document.getElementById('app-container');
+    UIElements.mainHeader = document.getElementById('main-header');
+    UIElements.unifiedGuideHeader = document.getElementById('unified-guide-header');
+    UIElements.pageGuide = document.getElementById('page-guide');
+    UIElements.guideDateDisplay = document.getElementById('guide-date-display');
+    UIElements.stickyCorner = document.querySelector('.sticky-corner');
+    UIElements.channelColumnResizeHandle = document.getElementById('channel-column-resize-handle');
+    UIElements.userDisplay = document.getElementById('user-display');
+    UIElements.userManagementSection = document.getElementById('user-management-section');
+    // NOTE: dvrSettingsSection is the entire settings div, not a separate element. Logic will handle visibility.
+
+
+    // Program Details Modal and its Buttons
+    UIElements.programDetailsModal = document.getElementById('program-details-modal');
+    UIElements.programDetailsNotifyBtn = document.getElementById('program-details-notify-btn');
+    UIElements.programDetailsRecordBtn = document.getElementById('program-details-record-btn');
+
+    // Mobile menu elements
+    UIElements.mobileMenuToggle = document.getElementById('mobile-menu-toggle');
+    UIElements.mobileNavMenu = document.getElementById('mobile-nav-menu');
+    UIElements.mobileMenuClose = document.getElementById('mobile-menu-close');
+    UIElements.mobileNavGuide = document.getElementById('mobile-nav-guide');
+    UIElements.mobileNavSettings = document.getElementById('mobile-nav-settings');
+    UIElements.mobileNavLogoutBtn = document.getElementById('mobile-nav-logout-btn');
+    UIElements.mobileMenuOverlay = document.getElementById('mobile-menu-overlay');
+
+    // Notification Tab/Page Elements
+    UIElements.tabNotifications = document.getElementById('tab-notifications'); // Desktop Nav
+    UIElements.mobileNavNotifications = document.getElementById('mobile-nav-notifications'); // Mobile Nav
+    UIElements.pageNotifications = document.getElementById('page-notifications');
+    UIElements.notificationsList = document.getElementById('notifications-list');
+    UIElements.noNotificationsMessage = document.getElementById('no-notifications-message');
+    UIElements.notificationLeadTimeInput = document.getElementById('notification-lead-time-input');
+    UIElements.pastNotificationsList = document.getElementById('past-notifications-list');
+    UIElements.noPastNotificationsMessage = document.getElementById('no-past-notifications-message');
+    UIElements.notificationModal = document.getElementById('notification-modal-wrapper');
+    UIElements.notificationBox = document.getElementById('notification-box');
+    UIElements.notificationMessage = document.getElementById('notification-message');
+
+
+    // Multi-View Elements
+    UIElements.pageMultiview = document.getElementById('page-multiview');
+    UIElements.tabMultiview = document.getElementById('tab-multiview');
+    UIElements.mobileNavMultiview = document.getElementById('mobile-nav-multiview');
+    UIElements.multiviewHeader = document.getElementById('multiview-header');
+    UIElements.multiviewContainer = document.getElementById('multiview-container');
+    UIElements.multiviewAddPlayer = document.getElementById('multiview-add-player');
+    UIElements.multiviewRemovePlayer = document.getElementById('multiview-remove-player');
+    UIElements.layoutBtnAuto = document.getElementById('layout-btn-auto');
+    UIElements.layoutBtn2x2 = document.getElementById('layout-btn-2x2');
+    UIElements.layoutBtn1x3 = document.getElementById('layout-btn-1x3');
+    UIElements.multiviewChannelSelectorModal = document.getElementById('multiview-channel-selector-modal');
+    UIElements.channelSelectorList = document.getElementById('channel-selector-list');
+    UIElements.channelSelectorSearch = document.getElementById('channel-selector-search');
+    UIElements.channelSelectorCancelBtn = document.getElementById('channel-selector-cancel-btn');
+    UIElements.multiviewSaveLayoutBtn = document.getElementById('multiview-save-layout-btn');
+    UIElements.multiviewLoadLayoutBtn = document.getElementById('multiview-load-layout-btn');
+    UIElements.multiviewDeleteLayoutBtn = document.getElementById('multiview-delete-layout-btn');
+    UIElements.savedLayoutsSelect = document.getElementById('saved-layouts-select');
+    UIElements.saveLayoutModal = document.getElementById('save-layout-modal');
+    UIElements.saveLayoutForm = document.getElementById('save-layout-form');
+    UIElements.saveLayoutName = document.getElementById('save-layout-name');
+    UIElements.saveLayoutCancelBtn = document.getElementById('save-layout-cancel-btn');
+    UIElements.multiviewChannelFilter = document.getElementById('multiview-channel-filter');
     
-    // Auth
-    Object.assign(UIElements, {
-        authContainer: document.getElementById('auth-container'),
-        loginForm: document.getElementById('login-form'),
-        setupForm: document.getElementById('setup-form'),
-        loginError: document.getElementById('login-error'),
-        setupError: document.getElementById('setup-error'),
-        authLoader: document.getElementById('auth-loader')
-    });
+    // DVR Elements
+    UIElements.pageDvr = document.getElementById('page-dvr');
+    UIElements.tabDvr = document.getElementById('tab-dvr');
+    UIElements.mobileNavDvr = document.getElementById('mobile-nav-dvr');
+    UIElements.dvrJobsTbody = document.getElementById('dvr-jobs-tbody');
+    UIElements.noDvrJobsMessage = document.getElementById('no-dvr-jobs-message');
+    UIElements.dvrRecordingsTbody = document.getElementById('dvr-recordings-tbody');
+    UIElements.noDvrRecordingsMessage = document.getElementById('no-dvr-recordings-message');
+    UIElements.recordingPlayerModal = document.getElementById('recording-player-modal');
+    UIElements.recordingVideoElement = document.getElementById('recording-video-element');
+    UIElements.recordingTitle = document.getElementById('recording-title');
+    UIElements.closeRecordingPlayerBtn = document.getElementById('close-recording-player-btn');
+    UIElements.dvrPreBufferInput = document.getElementById('dvr-pre-buffer-input');
+    UIElements.dvrPostBufferInput = document.getElementById('dvr-post-buffer-input');
+    UIElements.addRecordingProfileBtn = document.getElementById('add-recording-profile-btn');
+    UIElements.editRecordingProfileBtn = document.getElementById('edit-recording-profile-btn');
+    UIElements.deleteRecordingProfileBtn = document.getElementById('delete-recording-profile-btn');
+    UIElements.recordingProfileSelect = document.getElementById('recording-profile-select');
 
-    // Main App Structure
-    Object.assign(UIElements, {
-        appContainer: document.getElementById('app-container'),
-        mainHeader: document.getElementById('main-header'),
-        userDisplay: document.getElementById('user-display'),
-        logoutBtn: document.getElementById('logout-btn')
-    });
-
-    // Pages
-    Object.assign(UIElements, {
-        pageGuide: document.getElementById('page-guide'),
-        pageMultiview: document.getElementById('page-multiview'),
-        pageDvr: document.getElementById('page-dvr'),
-        pageNotifications: document.getElementById('page-notifications'),
-        pageSettings: document.getElementById('page-settings')
-    });
-
-    // Navigation (Desktop & Mobile)
-    Object.assign(UIElements, {
-        tabGuide: document.getElementById('tab-guide'),
-        tabMultiview: document.getElementById('tab-multiview'),
-        tabDvr: document.getElementById('tab-dvr'),
-        tabNotifications: document.getElementById('tab-notifications'),
-        tabSettings: document.getElementById('tab-settings'),
-        mobileMenuToggle: document.getElementById('mobile-menu-toggle'),
-        mobileNavMenu: document.getElementById('mobile-nav-menu'),
-        mobileMenuClose: document.getElementById('mobile-menu-close'),
-        mobileMenuOverlay: document.getElementById('mobile-menu-overlay'),
-        mobileNavGuide: document.getElementById('mobile-nav-guide'),
-        mobileNavMultiview: document.getElementById('mobile-nav-multiview'),
-        mobileNavDvr: document.getElementById('mobile-nav-dvr'),
-        mobileNavNotifications: document.getElementById('mobile-nav-notifications'),
-        mobileNavSettings: document.getElementById('mobile-nav-settings'),
-        mobileNavLogoutBtn: document.getElementById('mobile-nav-logout-btn')
-    });
-
-    // Guide Page
-    Object.assign(UIElements, {
-        unifiedGuideHeader: document.getElementById('unified-guide-header'),
-        guideDateDisplay: document.getElementById('guide-date-display'),
-        guideDatePicker: document.getElementById('guide-date-picker'),
-        groupFilter: document.getElementById('group-filter'),
-        sourceFilter: document.getElementById('source-filter'),
-        searchInput: document.getElementById('search-input'),
-        searchResultsContainer: document.getElementById('search-results-container'),
-        guideContainer: document.getElementById('guide-container'),
-        guidePlaceholder: document.getElementById('guide-placeholder'),
-        initialLoadingIndicator: document.getElementById('initial-loading-indicator'),
-        noDataMessage: document.getElementById('no-data-message'),
-        guideGrid: document.getElementById('guide-grid'),
-        channelColumnResizeHandle: document.getElementById('channel-column-resize-handle')
-    });
-    
-    // Multi-View Page & Shared Channel Selector Modal
-    Object.assign(UIElements, {
-        multiviewHeader: document.getElementById('multiview-header'),
-        multiviewContainer: document.getElementById('multiview-container'),
-        multiviewAddPlayer: document.getElementById('multiview-add-player'),
-        multiviewRemovePlayer: document.getElementById('multiview-remove-player'),
-        layoutBtnAuto: document.getElementById('layout-btn-auto'),
-        layoutBtn2x2: document.getElementById('layout-btn-2x2'),
-        layoutBtn1x3: document.getElementById('layout-btn-1x3'),
-        multiviewSaveLayoutBtn: document.getElementById('multiview-save-layout-btn'),
-        multiviewLoadLayoutBtn: document.getElementById('multiview-load-layout-btn'),
-        multiviewDeleteLayoutBtn: document.getElementById('multiview-delete-layout-btn'),
-        savedLayoutsSelect: document.getElementById('saved-layouts-select'),
-        multiviewChannelSelectorModal: document.getElementById('multiview-channel-selector-modal'),
-        multiviewChannelFilter: document.getElementById('multiview-channel-filter'),
-        channelSelectorSearch: document.getElementById('channel-selector-search'),
-        channelSelectorList: document.getElementById('channel-selector-list'),
-        channelSelectorCancelBtn: document.getElementById('channel-selector-cancel-btn')
-    });
-
-    // DVR Page
-    Object.assign(UIElements, {
-        dvrStorageBarContainer: document.getElementById('dvr-storage-bar-container'),
-        dvrStorageText: document.getElementById('dvr-storage-text'),
-        dvrStorageBar: document.getElementById('dvr-storage-bar'),
-        manualRecordingForm: document.getElementById('manual-recording-form'),
-        manualRecChannelSelectBtn: document.getElementById('manual-rec-channel-select-btn'),
-        manualRecSelectedChannelName: document.getElementById('manual-rec-selected-channel-name'),
-        manualRecChannelId: document.getElementById('manual-rec-channel-id'),
-        manualRecChannelName: document.getElementById('manual-rec-channel-name'),
-        manualRecStart: document.getElementById('manual-rec-start'),
-        manualRecEnd: document.getElementById('manual-rec-end'),
-        dvrJobsTbody: document.getElementById('dvr-jobs-tbody'),
-        noDvrJobsMessage: document.getElementById('no-dvr-jobs-message'),
-        dvrRecordingsTbody: document.getElementById('dvr-recordings-tbody'),
-        noDvrRecordingsMessage: document.getElementById('no-dvr-recordings-message')
-    });
-
-    // Settings Page
-    Object.assign(UIElements, {
-        userManagementSection: document.getElementById('user-management-section'),
-        addUserBtn: document.getElementById('add-user-btn'),
-        userList: document.getElementById('user-list'),
-        processSourcesBtn: document.getElementById('process-sources-btn'),
-        processSourcesBtnContent: document.getElementById('process-sources-btn-content'),
-        addM3uBtn: document.getElementById('add-m3u-btn'),
-        m3uSourcesTbody: document.getElementById('m3u-sources-tbody'),
-        addEpgBtn: document.getElementById('add-epg-btn'),
-        epgSourcesTbody: document.getElementById('epg-sources-tbody'),
-        userAgentSelect: document.getElementById('user-agent-select'),
-        addUserAgentBtn: document.getElementById('add-user-agent-btn'),
-        editUserAgentBtn: document.getElementById('edit-user-agent-btn'),
-        deleteUserAgentBtn: document.getElementById('delete-user-agent-btn'),
-        streamProfileSelect: document.getElementById('stream-profile-select'),
-        addStreamProfileBtn: document.getElementById('add-stream-profile-btn'),
-        editStreamProfileBtn: document.getElementById('edit-stream-profile-btn'),
-        deleteStreamProfileBtn: document.getElementById('delete-stream-profile-btn'),
-        dvrRecordingProfileSelect: document.getElementById('dvr-recording-profile-select'),
-        addDvrProfileBtn: document.getElementById('add-dvr-profile-btn'),
-        editDvrProfileBtn: document.getElementById('edit-dvr-profile-btn'),
-        deleteDvrProfileBtn: document.getElementById('delete-dvr-profile-btn'),
-        dvrPreBufferInput: document.getElementById('dvr-pre-buffer-input'),
-        dvrPostBufferInput: document.getElementById('dvr-post-buffer-input'),
-        dvrMaxStreamsInput: document.getElementById('dvr-max-streams-input'),
-        dvrStorageDeleteDays: document.getElementById('dvr-storage-delete-days'),
-        timezoneOffsetSelect: document.getElementById('timezone-offset-select'),
-        detectedTimezoneInfo: document.getElementById('detected-timezone-info'),
-        searchScopeSelect: document.getElementById('search-scope-select'),
-        notificationLeadTimeInput: document.getElementById('notification-lead-time-input'),
-        clearDataBtn: document.getElementById('clear-data-btn')
-    });
-
-    // Modals
-    Object.assign(UIElements, {
-        videoModal: document.getElementById('video-modal'),
-        videoModalContainer: document.getElementById('video-modal-container'),
-        videoTitle: document.getElementById('video-title'),
-        videoElement: document.getElementById('videoElement'),
-        castBtn: document.getElementById('cast-btn'),
-        castStatus: document.getElementById('cast-status'),
-        castStatusText: document.getElementById('cast-status-text'),
-        castStatusChannel: document.getElementById('cast-status-channel'),
-        pipBtn: document.getElementById('pip-btn'),
-        closeModal: document.getElementById('close-modal'),
-        videoResizeHandle: document.getElementById('video-resize-handle'),
-        programDetailsModal: document.getElementById('program-details-modal'),
-        programDetailsContainer: document.getElementById('program-details-container'),
-        detailsTitle: document.getElementById('details-title'),
-        detailsTime: document.getElementById('details-time'),
-        detailsDesc: document.getElementById('details-desc'),
-        detailsPlayBtn: document.getElementById('details-play-btn'),
-        detailsFavoriteBtn: document.getElementById('details-favorite-btn'),
-        detailsCloseBtn: document.getElementById('details-close-btn'),
-        detailsResizeHandle: document.getElementById('details-resize-handle'),
-        programDetailsNotifyBtn: document.getElementById('program-details-notify-btn'),
-        programDetailsRecordBtn: document.getElementById('details-record-btn'),
-        notificationModal: document.getElementById('notification-modal-wrapper'),
-        notificationBox: document.getElementById('notification-box'),
-        notificationMessage: document.getElementById('notification-message'),
-        confirmModal: document.getElementById('confirm-modal'),
-        confirmTitle: document.getElementById('confirm-title'),
-        confirmMessage: document.getElementById('confirm-message'),
-        confirmCancelBtn: document.getElementById('confirm-cancel-btn'),
-        confirmOkBtn: document.getElementById('confirm-ok-btn'),
-        saveLayoutModal: document.getElementById('save-layout-modal'),
-        saveLayoutForm: document.getElementById('save-layout-form'),
-        saveLayoutName: document.getElementById('save-layout-name'),
-        saveLayoutCancelBtn: document.getElementById('save-layout-cancel-btn'),
-        sourceEditorModal: document.getElementById('source-editor-modal'),
-        sourceEditorForm: document.getElementById('source-editor-form'),
-        sourceEditorTitle: document.getElementById('source-editor-title'),
-        sourceEditorId: document.getElementById('source-editor-id'),
-        sourceEditorType: document.getElementById('source-editor-type'),
-        sourceEditorName: document.getElementById('source-editor-name'),
-        sourceEditorIsActive: document.getElementById('source-editor-isActive'),
-        sourceEditorTypeBtnUrl: document.getElementById('source-editor-type-btn-url'),
-        sourceEditorTypeBtnFile: document.getElementById('source-editor-type-btn-file'),
-        sourceEditorUrlContainer: document.getElementById('source-editor-url-container'),
-        sourceEditorUrl: document.getElementById('source-editor-url'),
-        sourceEditorFileContainer: document.getElementById('source-editor-file-container'),
-        sourceEditorFile: document.getElementById('source-editor-file'),
-        sourceEditorFileInfo: document.getElementById('source-editor-file-info'),
-        sourceEditorRefreshContainer: document.getElementById('source-editor-refresh-container'),
-        sourceEditorRefreshInterval: document.getElementById('source-editor-refresh-interval'),
-        sourceEditorCancelBtn: document.getElementById('source-editor-cancel-btn'),
-        sourceEditorSaveBtn: document.getElementById('source-editor-save-btn'),
-        editorModal: document.getElementById('editor-modal'),
-        editorTitle: document.getElementById('editor-title'),
-        editorForm: document.getElementById('editor-form'),
-        editorId: document.getElementById('editor-id'),
-        editorType: document.getElementById('editor-type'),
-        editorName: document.getElementById('editor-name'),
-        editorValueContainer: document.getElementById('editor-value-container'),
-        editorValueLabel: document.getElementById('editor-value-label'),
-        editorValue: document.getElementById('editor-value'),
-        editorCancelBtn: document.getElementById('editor-cancel-btn'),
-        editorSaveBtn: document.getElementById('editor-save-btn'),
-        userEditorModal: document.getElementById('user-editor-modal'),
-        userEditorTitle: document.getElementById('user-editor-title'),
-        userEditorForm: document.getElementById('user-editor-form'),
-        userEditorId: document.getElementById('user-editor-id'),
-        userEditorError: document.getElementById('user-editor-error'),
-        userEditorUsername: document.getElementById('user-editor-username'),
-        userEditorPassword: document.getElementById('user-editor-password'),
-        userEditorIsAdmin: document.getElementById('user-editor-isAdmin'),
-        userEditorCanUseDvr: document.getElementById('user-editor-canUseDvr'),
-        userEditorCancelBtn: document.getElementById('user-editor-cancel-btn'),
-        recordingPlayerModal: document.getElementById('recording-player-modal'),
-        recordingTitle: document.getElementById('recording-title'),
-        recordingVideoElement: document.getElementById('recording-video-element'),
-        closeRecordingPlayerBtn: document.getElementById('close-recording-player-btn'),
-        dvrErrorModal: document.getElementById('dvr-error-modal'),
-        dvrErrorModalTitle: document.getElementById('dvr-error-modal-title'),
-        dvrErrorModalContent: document.getElementById('dvr-error-modal-content'),
-        dvrErrorModalCloseBtn: document.getElementById('dvr-error-modal-close-btn'),
-        dvrEditModal: document.getElementById('dvr-edit-modal'),
-        dvrEditModalTitle: document.getElementById('dvr-edit-modal-title'),
-        dvrEditForm: document.getElementById('dvr-edit-form'),
-        dvrEditId: document.getElementById('dvr-edit-id'),
-        dvrEditStart: document.getElementById('dvr-edit-start'),
-        dvrEditEnd: document.getElementById('dvr-edit-end'),
-        dvrEditCancelBtn: document.getElementById('dvr-edit-cancel-btn')
-    });
-
-    console.log(`[AUTH_UI] All UI elements have been mapped into UIElements state.`);
+    // Settings Buttons
+    UIElements.addM3uBtn = document.getElementById('add-m3u-btn');
+    UIElements.addEpgBtn = document.getElementById('add-epg-btn');
+    UIElements.processSourcesBtnContent = document.getElementById('process-sources-btn-content');
+    UIElements.processSourcesBtn = document.getElementById('process-sources-btn');
 };
 
 
