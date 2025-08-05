@@ -83,11 +83,20 @@ export function openProgramDetails(progItem) {
 
     // Favorite button logic
     if (detailsFavoriteBtn) {
-        detailsFavoriteBtn.classList.toggle('favorited', channelData.isFavorite);
+        // MODIFIED: Target the SVG icon inside the button for visual changes.
+        const favoriteIcon = detailsFavoriteBtn.querySelector('.favorite-star');
+        if (favoriteIcon) {
+            favoriteIcon.classList.toggle('favorited', channelData.isFavorite);
+        }
+
         detailsFavoriteBtn.onclick = (e) => {
             e.stopPropagation();
             channelData.isFavorite = !channelData.isFavorite;
-            detailsFavoriteBtn.classList.toggle('favorited', channelData.isFavorite);
+            
+            // MODIFIED: Toggle the class on the icon, not the button.
+            if (favoriteIcon) {
+                favoriteIcon.classList.toggle('favorited', channelData.isFavorite);
+            }
 
             // Also update the star in the main guide view if it exists
             const guideStar = document.querySelector(`.favorite-star[data-channel-id="${channelId}"]`);
@@ -907,3 +916,4 @@ export function setupGuideEventListeners() {
         UIElements.guideContainer.addEventListener('scroll', handleScrollHeader);
     }
 }
+
