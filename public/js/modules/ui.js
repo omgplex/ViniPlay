@@ -8,11 +8,16 @@ import { UIElements, appState, guideState } from './state.js';
 import { refreshUserList, updateUIFromSettings } from './settings.js';
 import { renderNotifications } from './notification.js'; // NEW: Import renderNotifications
 import { initMultiView, isMultiViewActive, cleanupMultiView } from './multiview.js';
-import { initDvrPage } from './dvr.js'; // NEW: Import DVR page initializer
+import { initDvrPage } from './dvr.js';
+// MODIFIED: Import stopAndCleanupPlayer to allow this module to terminate streams.
+import { stopAndCleanupPlayer } from './player.js';
 
 let confirmCallback = null;
-let currentPage = '/'; // ADDED: To track the current page for navigation logic
-let isResizing = false; // Flag to prevent modal close during resize
+let currentPage = '/';
+// MODIFIED: New variables to manage modal state for resize/close conflict.
+let activeModalCloseListener = null;
+let isResizing = false;
+
 
 /**
  * Shows a notification message at the top-right of the screen.
@@ -40,37 +45,56 @@ export const showNotification = (message, isError = false, duration = 3000) => {
 };
 
 /**
- * Displays a modal and adds a listener to close it when clicking outside.
+ * Displays a modal.
  * @param {HTMLElement} modal - The modal element to show.
  */
 export const openModal = (modal) => {
     modal.classList.replace('hidden', 'flex');
     document.body.classList.add('modal-open');
 
-    // Add a one-time listener for closing the modal by clicking the backdrop
-    const handleClickOutside = (e) => {
-        // Close only if the click is directly on the modal backdrop and not during a resize
-        if (e.target === modal && !isResizing) {
-            closeModal(modal);
+    // MODIFIED: New logic to handle clicking outside the modal to close it,
+    // while ignoring clicks that are part of a resize drag.
+    const handleBackdropClick = (e) => {
+        // Only proceed if the mousedown event is on the backdrop itself, not a child.
+        if (e.target === modal) {
+            // This function handles the mouseup event.
+            const onMouseUp = (upEvent) => {
+                // If the mouseup is also on the backdrop AND we are not resizing, close the modal.
+                if (upEvent.target === modal && !isResizing) {
+                    if (modal === UIElements.videoModal) {
+                        stopAndCleanupPlayer(); // Terminate stream if it's the video player
+                    } else {
+                        closeModal(modal); // Otherwise, just close the modal
+                    }
+                }
+                // Clean up this specific mouseup listener immediately.
+                document.removeEventListener('mouseup', onMouseUp);
+            };
+            // Add a one-time listener for the next mouseup event on the whole document.
+            document.addEventListener('mouseup', onMouseUp, { once: true });
         }
     };
-    modal.addEventListener('click', handleClickOutside);
     
-    // Store the handler on the element so we can remove it later
-    modal._handleClickOutside = handleClickOutside;
+    // Remove any previous listener before adding a new one.
+    if (activeModalCloseListener && activeModalCloseListener.element) {
+        activeModalCloseListener.element.removeEventListener('mousedown', activeModalCloseListener.handler);
+    }
+
+    modal.addEventListener('mousedown', handleBackdropClick);
+    activeModalCloseListener = { element: modal, handler: handleBackdropClick };
 };
 
 /**
- * Hides a modal and removes the click-outside listener.
+ * Hides a modal.
  * @param {HTMLElement} modal - The modal element to hide.
  */
 export const closeModal = (modal) => {
     modal.classList.replace('flex', 'hidden');
     
-    // Remove the specific event listener we added
-    if (modal._handleClickOutside) {
-        modal.removeEventListener('click', modal._handleClickOutside);
-        delete modal._handleClickOutside;
+    // MODIFIED: Clean up the specific backdrop click listener for the closed modal.
+    if (activeModalCloseListener && activeModalCloseListener.element === modal) {
+        activeModalCloseListener.element.removeEventListener('mousedown', activeModalCloseListener.handler);
+        activeModalCloseListener = null;
     }
 
     // Remove the body class only if no other modals are open
@@ -78,6 +102,7 @@ export const closeModal = (modal) => {
         document.body.classList.remove('modal-open');
     }
 };
+
 
 /**
  * Shows a confirmation dialog.
@@ -131,7 +156,8 @@ export const makeModalResizable = (handleEl, containerEl, minWidth, minHeight, s
         let resizeDebounceTimer;
         handleEl.addEventListener('mousedown', e => {
             e.preventDefault();
-            isResizing = true; // Set the resize flag
+            // MODIFIED: Set the global resizing flag to true.
+            isResizing = true; 
             const startX = e.clientX,
                 startY = e.clientY;
             const startWidth = containerEl.offsetWidth;
@@ -148,7 +174,9 @@ export const makeModalResizable = (handleEl, containerEl, minWidth, minHeight, s
                 window.removeEventListener('mousemove', doResize);
                 window.removeEventListener('mouseup', stopResize);
                 document.body.style.cursor = '';
-                isResizing = false; // Reset the resize flag
+                
+                // MODIFIED: Reset the global resizing flag to false.
+                isResizing = false;
 
                 clearTimeout(resizeDebounceTimer);
                 resizeDebounceTimer = setTimeout(() => {
@@ -189,7 +217,7 @@ export const makeColumnResizable = (handleEl, targetEl, minWidth, settingKey, cs
 
         handleEl.addEventListener('mousedown', e => {
             e.preventDefault();
-            isResizing = true; // Set the resize flag
+            isResizing = true; // Set flag for column resize as well
             startX = e.clientX;
             // Get the current value of the CSS variable or default to minWidth if not set
             startWidth = parseInt(getComputedStyle(targetEl).getPropertyValue(cssVarName)) || minWidth;
@@ -204,7 +232,7 @@ export const makeColumnResizable = (handleEl, targetEl, minWidth, settingKey, cs
                 window.removeEventListener('mousemove', doResize);
                 window.removeEventListener('mouseup', stopResize);
                 document.body.style.cursor = ''; // Reset cursor
-                isResizing = false; // Reset the resize flag
+                isResizing = false; // Reset flag
 
                 clearTimeout(resizeDebounceTimer);
                 resizeDebounceTimer = setTimeout(() => {
