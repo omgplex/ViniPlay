@@ -114,10 +114,21 @@ function setupMultiViewEventListeners() {
     UIElements.saveLayoutCancelBtn.addEventListener('click', () => closeModal(UIElements.saveLayoutModal));
 
     // Channel Selector Modal
-    UIElements.channelSelectorCancelBtn.addEventListener('click', () => closeModal(UIElements.multiviewChannelSelectorModal));
+    UIElements.channelSelectorCancelBtn.addEventListener('click', () => {
+        // Clean up context flag on cancel
+        if (document.body.dataset.channelSelectorContext) {
+            delete document.body.dataset.channelSelectorContext;
+        }
+        closeModal(UIElements.multiviewChannelSelectorModal);
+    });
     UIElements.channelSelectorSearch.addEventListener('input', (e) => populateChannelSelector());
     UIElements.multiviewChannelFilter.addEventListener('change', () => populateChannelSelector());
     UIElements.channelSelectorList.addEventListener('click', (e) => {
+        // IMPORTANT: Only handle the click if the modal was NOT opened by the DVR page.
+        if (document.body.dataset.channelSelectorContext === 'dvr') {
+            return;
+        }
+
         const channelItem = e.target.closest('.channel-item');
         if (channelItem && channelSelectorCallback) {
             const channel = {
@@ -346,6 +357,10 @@ function attachWidgetEventListeners(widgetContentEl, widgetId) {
     const gridStackItem = widgetContentEl.closest('.grid-stack-item');
 
     const openSelector = () => {
+        // Clear any previous context before opening for Multi-View
+        if (document.body.dataset.channelSelectorContext) {
+            delete document.body.dataset.channelSelectorContext;
+        }
         channelSelectorCallback = (channel) => playChannelInWidget(widgetId, channel, widgetContentEl);
         populateChannelSelector();
         openModal(UIElements.multiviewChannelSelectorModal);
