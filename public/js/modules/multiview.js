@@ -37,7 +37,7 @@ export function initMultiView() {
             handles: 'e, se, s, sw, w'
         }
     };
-    grid = GridStack.init(options, '#multiview-grid');
+    grid = Gridstack.init(options, '#multiview-grid');
 
     updateGridBackground();
     grid.on('change', updateGridBackground);
@@ -116,35 +116,38 @@ function setupMultiViewEventListeners() {
     UIElements.saveLayoutForm.addEventListener('submit', saveLayout);
     UIElements.saveLayoutCancelBtn.addEventListener('click', () => closeModal(UIElements.saveLayoutModal));
 
-    // Channel Selector Modal
-    console.log(`[MultiView_EVENTS] Attaching listener to #channel-selector-cancel-btn. Found: ${!!UIElements.channelSelectorCancelBtn}`);
-    if (UIElements.channelSelectorCancelBtn) {
-        UIElements.channelSelectorCancelBtn.addEventListener('click', () => {
-            console.log('[MultiView_EVENTS] channel-selector-cancel-btn clicked in Multi-View context handler.');
-            // Clean up context flag on cancel (redundant but safe check)
-            if (document.body.dataset.channelSelectorContext) {
-                delete document.body.dataset.channelSelectorContext;
-                console.log('[MultiView_EVENTS] Cleared channelSelectorContext flag on cancel.');
-            }
-            closeModal(UIElements.multiviewChannelSelectorModal);
-        });
-    }
+    // Removed specific listeners for channelSelectorCancelBtn and multiviewChannelFilter
+    // as they are now handled universally in main.js.
+    // console.log(`[MultiView_EVENTS] Attaching listener to #channel-selector-cancel-btn. Found: ${!!UIElements.channelSelectorCancelBtn}`);
+    // if (UIElements.channelSelectorCancelBtn) {
+    //     UIElements.channelSelectorCancelBtn.addEventListener('click', () => {
+    //         console.log('[MultiView_EVENTS] channel-selector-cancel-btn clicked in Multi-View context handler.');
+    //         if (document.body.dataset.channelSelectorContext) {
+    //             delete document.body.dataset.channelSelectorContext;
+    //             console.log('[MultiView_EVENTS] Cleared channelSelectorContext flag on cancel.');
+    //         }
+    //         closeModal(UIElements.multiviewChannelSelectorModal);
+    //     });
+    // }
 
     UIElements.channelSelectorSearch.addEventListener('input', (e) => {
         console.log('[MultiView_EVENTS] channel-selector-search input changed.');
         populateChannelSelector();
     });
 
-    console.log(`[MultiView_EVENTS] Attaching listener to #multiview-channel-filter. Found: ${!!UIElements.multiviewChannelFilter}`);
-    if (UIElements.multiviewChannelFilter) {
-        UIElements.multiviewChannelFilter.addEventListener('change', () => {
-            console.log('[MultiView_EVENTS] multiview-channel-filter changed.');
-            populateChannelSelector();
-        });
-    }
+    // Removed specific listener for multiviewChannelFilter as it's now handled universally in main.js.
+    // console.log(`[MultiView_EVENTS] Attaching listener to #multiview-channel-filter. Found: ${!!UIElements.multiviewChannelFilter}`);
+    // if (UIElements.multiviewChannelFilter) {
+    //     UIElements.multiviewChannelFilter.addEventListener('change', () => {
+    //         console.log('[MultiView_EVENTS] multiview-channel-filter changed.');
+    //         populateChannelSelector();
+    //     });
+    // }
 
     UIElements.channelSelectorList.addEventListener('click', (e) => {
         // IMPORTANT: Only handle the click if the modal was NOT opened by the DVR page.
+        // The universal listener in main.js will close the modal.
+        // This specific listener only acts if it's the Multi-View page opening the modal.
         if (document.body.dataset.channelSelectorContext === 'dvr') {
             console.log('[MultiView_EVENTS] Not Multi-View context, returning.');
             return;
@@ -577,6 +580,7 @@ function stopAndCleanupPlayer(widgetId, resetUI = true) {
 export function populateChannelSelector() {
     console.log('[MultiView] populateChannelSelector called.');
     const listEl = UIElements.channelSelectorList;
+    // The filter and search inputs are part of UIElements and their listeners are now in main.js
     const filter = UIElements.multiviewChannelFilter.value;
     const searchTerm = UIElements.channelSelectorSearch.value.trim().toLowerCase();
     if (!listEl) {
