@@ -188,6 +188,7 @@ export const refreshUserList = async () => {
             <tr data-user-id="${user.id}">
                 <td class="px-4 py-3 whitespace-nowrap text-sm text-white">${user.username}</td>
                 <td class="px-4 py-3 whitespace-nowrap text-sm">${user.isAdmin ? '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-200 text-green-800">Admin</span>' : '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800">User</span>'}</td>
+                <td class="px-4 py-3 whitespace-nowrap text-sm">${user.canUseDvr ? '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-200 text-blue-800">Yes</span>' : '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800">No</span>'}</td>
                 <td class="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
                     <button class="text-blue-400 hover:text-blue-600 edit-user-btn">Edit</button>
                     <button class="text-red-400 hover:text-red-600 ml-4 delete-user-btn" ${appState.currentUser.username === user.username ? 'disabled' : ''}>Delete</button>
@@ -196,7 +197,7 @@ export const refreshUserList = async () => {
         `).join('');
     } catch (error) {
         console.error("Failed to refresh user list:", error);
-        UIElements.userList.innerHTML = `<tr><td colspan="3" class="text-center text-red-400 py-4">Failed to load users.</td></tr>`;
+        UIElements.userList.innerHTML = `<tr><td colspan="4" class="text-center text-red-400 py-4">Failed to load users.</td></tr>`;
     }
 };
 
