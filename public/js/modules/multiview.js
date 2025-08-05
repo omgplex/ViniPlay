@@ -635,13 +635,18 @@ async function saveLayout(e) {
         return;
     }
 
-    const layoutData = grid.save(false).map(w => ({
-        x: w.x,
-        y: w.y,
-        w: w.w,
-        h: w.h,
-        id: w.el.querySelector('.player-placeholder')?.id || w.id
-    }));
+    // FIX: Filter out any widgets that don't have a DOM element before mapping.
+    const layoutData = grid.save(false)
+        .filter(w => w.el) 
+        .map(w => ({
+            x: w.x,
+            y: w.y,
+            w: w.w,
+            h: w.h,
+            id: w.el.querySelector('.player-placeholder')?.id || w.id,
+            // Also save channel info if available
+            channelId: w.el.querySelector('.player-placeholder')?.dataset.channelId || null
+        }));
 
     const res = await apiFetch('/api/multiview/layouts', {
         method: 'POST',
@@ -679,7 +684,9 @@ function loadSelectedLayout() {
             grid.batchUpdate();
             try {
                 layout.layout_data.forEach(widgetData => {
-                    addPlayerWidget(null, widgetData);
+                    // Try to find the channel to pre-load it
+                    const channel = widgetData.channelId ? guideState.channels.find(c => c.id === widgetData.channelId) : null;
+                    addPlayerWidget(channel, widgetData);
                 });
             } finally {
                 grid.commit();
