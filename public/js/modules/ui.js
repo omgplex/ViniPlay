@@ -12,6 +12,7 @@ import { initDvrPage } from './dvr.js'; // NEW: Import DVR page initializer
 
 let confirmCallback = null;
 let currentPage = '/'; // ADDED: To track the current page for navigation logic
+let isResizing = false; // Flag to prevent modal close during resize
 
 /**
  * Shows a notification message at the top-right of the screen.
@@ -43,47 +44,40 @@ export const showNotification = (message, isError = false, duration = 3000) => {
  * @param {HTMLElement} modal - The modal element to show.
  */
 export const openModal = (modal) => {
-    if (!modal) return;
     modal.classList.replace('hidden', 'flex');
     document.body.classList.add('modal-open');
 
-    // Define the handler function
-    const closeOnOutsideClick = (e) => {
-        // If the click is on the modal overlay itself (the parent) and not its children
-        if (e.target === modal) {
+    // Add a one-time listener for closing the modal by clicking the backdrop
+    const handleClickOutside = (e) => {
+        // Close only if the click is directly on the modal backdrop and not during a resize
+        if (e.target === modal && !isResizing) {
             closeModal(modal);
         }
     };
-
-    // Use a timeout to add the listener, preventing it from firing immediately
-    // if the same click that opened the modal bubbles up to the modal element.
-    setTimeout(() => {
-        modal.addEventListener('click', closeOnOutsideClick);
-        // Store the handler on the element so we can remove it later
-        modal._closeOnOutsideClickHandler = closeOnOutsideClick;
-    }, 0);
+    modal.addEventListener('click', handleClickOutside);
+    
+    // Store the handler on the element so we can remove it later
+    modal._handleClickOutside = handleClickOutside;
 };
 
 /**
- * Hides a modal and removes the outside click listener.
+ * Hides a modal and removes the click-outside listener.
  * @param {HTMLElement} modal - The modal element to hide.
  */
 export const closeModal = (modal) => {
-    if (!modal) return;
     modal.classList.replace('flex', 'hidden');
     
+    // Remove the specific event listener we added
+    if (modal._handleClickOutside) {
+        modal.removeEventListener('click', modal._handleClickOutside);
+        delete modal._handleClickOutside;
+    }
+
     // Remove the body class only if no other modals are open
     if (!document.querySelector('.fixed.inset-0.flex')) {
         document.body.classList.remove('modal-open');
     }
-
-    // Remove the specific event listener if it exists
-    if (modal._closeOnOutsideClickHandler) {
-        modal.removeEventListener('click', modal._closeOnOutsideClickHandler);
-        delete modal._closeOnOutsideClickHandler;
-    }
 };
-
 
 /**
  * Shows a confirmation dialog.
@@ -137,6 +131,7 @@ export const makeModalResizable = (handleEl, containerEl, minWidth, minHeight, s
         let resizeDebounceTimer;
         handleEl.addEventListener('mousedown', e => {
             e.preventDefault();
+            isResizing = true; // Set the resize flag
             const startX = e.clientX,
                 startY = e.clientY;
             const startWidth = containerEl.offsetWidth;
@@ -153,6 +148,7 @@ export const makeModalResizable = (handleEl, containerEl, minWidth, minHeight, s
                 window.removeEventListener('mousemove', doResize);
                 window.removeEventListener('mouseup', stopResize);
                 document.body.style.cursor = '';
+                isResizing = false; // Reset the resize flag
 
                 clearTimeout(resizeDebounceTimer);
                 resizeDebounceTimer = setTimeout(() => {
@@ -193,6 +189,7 @@ export const makeColumnResizable = (handleEl, targetEl, minWidth, settingKey, cs
 
         handleEl.addEventListener('mousedown', e => {
             e.preventDefault();
+            isResizing = true; // Set the resize flag
             startX = e.clientX;
             // Get the current value of the CSS variable or default to minWidth if not set
             startWidth = parseInt(getComputedStyle(targetEl).getPropertyValue(cssVarName)) || minWidth;
@@ -207,6 +204,7 @@ export const makeColumnResizable = (handleEl, targetEl, minWidth, settingKey, cs
                 window.removeEventListener('mousemove', doResize);
                 window.removeEventListener('mouseup', stopResize);
                 document.body.style.cursor = ''; // Reset cursor
+                isResizing = false; // Reset the resize flag
 
                 clearTimeout(resizeDebounceTimer);
                 resizeDebounceTimer = setTimeout(() => {
@@ -399,3 +397,4 @@ export const switchTab = (activeTab) => {
     }
     navigate(newPath);
 };
+
