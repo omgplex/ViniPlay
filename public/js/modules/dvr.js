@@ -7,8 +7,9 @@ import { UIElements, dvrState, guideState } from './state.js';
 import { apiFetch } from './api.js';
 import { showNotification, showConfirm, openModal, closeModal } from './ui.js';
 import { handleSearchAndFilter } from './guide.js';
+// MODIFIED: Import the corrected navigation function from notification.js
 import { navigateToProgramInGuide } from './notification.js';
-// Re-using the channel selector modal by importing its population function.
+// MODIFIED: Import channel selector populator from multiview
 import { populateChannelSelector } from './multiview.js';
 
 /**
@@ -21,6 +22,7 @@ export async function initDvrPage() {
         loadCompletedRecordings(),
         loadStorageInfo()
     ]);
+    // MODIFIED: Removed call to populateManualRecordingChannels()
     console.log('[DVR] DVR page initialized.');
 }
 
@@ -51,7 +53,7 @@ async function loadCompletedRecordings() {
 }
 
 /**
- * Fetches storage usage information from the server.
+ * NEW: Fetches storage usage information from the server.
  */
 async function loadStorageInfo() {
     const res = await apiFetch('/api/dvr/storage');
@@ -59,6 +61,7 @@ async function loadStorageInfo() {
         const storageData = await res.json();
         renderStorageBar(storageData);
     } else {
+        // Hide the storage bar if it fails to load
         UIElements.dvrStorageBarContainer.classList.add('hidden');
         console.error('[DVR] Could not load storage information.');
     }
@@ -82,6 +85,7 @@ function renderScheduledJobs() {
             ? `<button class="status-badge ${job.status} view-error-btn" data-job-id="${job.id}">${job.status}</button>`
             : `<span class="status-badge ${job.status}">${job.status}</span>`;
 
+        // NEW: Conflict Icon
         const conflictIcon = job.isConflicting ? 
             `<svg class="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20" title="This recording conflicts with another scheduled recording."><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1.75-5.25a.75.75 0 00-1.5 0v3.5a.75.75 0 001.5 0v-3.5z" clip-rule="evenodd" /></svg>` : '';
 
@@ -93,6 +97,7 @@ function renderScheduledJobs() {
             <td>${startTime}</td>
             <td>${endTime}</td>
             <td>${statusHTML}</td>
+            <!-- NEW: Conflict Cell -->
             <td class="text-center">${conflictIcon}</td>
             <td class="text-right">
                 <div class="flex items-center justify-end gap-3">
@@ -155,7 +160,7 @@ function renderCompletedRecordings() {
 }
 
 /**
- * Renders the storage usage bar.
+ * NEW: Renders the storage usage bar.
  * @param {object} storageData - Object with total, used, and percentage properties.
  */
 function renderStorageBar(storageData) {
@@ -167,6 +172,11 @@ function renderStorageBar(storageData) {
     UIElements.dvrStorageBar.classList.toggle('bg-blue-600', percentage <= 75);
     UIElements.dvrStorageBarContainer.classList.remove('hidden');
 }
+
+/**
+ * NEW: Populates the channel dropdown for the manual recording form.
+ */
+// MODIFIED: This function is no longer needed and is removed.
 
 const toISOStringLocal = (localDateTimeString) => new Date(localDateTimeString).toISOString();
 const fromISOStringToLocalDateTime = (isoString) => {
@@ -293,8 +303,10 @@ export function setupDvrEventListeners() {
         }
     });
 
+    // NEW: Manual Recording Form Handler
     UIElements.manualRecordingForm.addEventListener('submit', async (e) => {
         e.preventDefault();
+        // MODIFIED: Read channel info from hidden inputs
         const channelId = UIElements.manualRecChannelId.value;
         const channelName = UIElements.manualRecChannelName.value;
         const startTime = UIElements.manualRecStart.value;
@@ -324,6 +336,7 @@ export function setupDvrEventListeners() {
             if (res.ok) {
                 showNotification('Manual recording scheduled successfully.');
                 UIElements.manualRecordingForm.reset();
+                // MODIFIED: Reset the channel display text and hidden inputs
                 UIElements.manualRecSelectedChannelName.textContent = 'No channel selected';
                 UIElements.manualRecChannelId.value = '';
                 UIElements.manualRecChannelName.value = '';
@@ -335,16 +348,50 @@ export function setupDvrEventListeners() {
         }
     });
 
+    // MODIFIED: Add event listener for the new "Select Channel" button
     if (UIElements.manualRecChannelSelectBtn) {
         UIElements.manualRecChannelSelectBtn.addEventListener('click', () => {
+            // Use a data attribute to signal that the modal is opened for DVR
             document.body.dataset.channelSelectorContext = 'dvr';
-            populateChannelSelector();
+            populateChannelSelector(); // Populate the modal with channels
             openModal(UIElements.multiviewChannelSelectorModal);
         });
     }
 
-    // REMOVED: The conflicting event listeners for the modal's internal buttons
-    // have been taken out. The centralized listener in multiview.js will handle them.
+    // MODIFIED: Add a listener to the channel list in the modal, specific to the DVR context
+    if (UIElements.channelSelectorList) {
+        UIElements.channelSelectorList.addEventListener('click', (e) => {
+            // Only act if the modal was opened for the DVR
+            if (document.body.dataset.channelSelectorContext !== 'dvr') {
+                return;
+            }
+
+            const channelItem = e.target.closest('.channel-item');
+            if (channelItem) {
+                const channelName = channelItem.dataset.name;
+                const channelId = channelItem.dataset.id;
+
+                // Update the UI and hidden form fields
+                UIElements.manualRecSelectedChannelName.textContent = channelName;
+                UIElements.manualRecChannelId.value = channelId;
+                UIElements.manualRecChannelName.value = channelName;
+
+                closeModal(UIElements.multiviewChannelSelectorModal);
+            }
+            
+            // Always clean up the context flag after a selection is made or modal is closed
+            delete document.body.dataset.channelSelectorContext;
+        });
+    }
+
+    // MODIFIED: Ensure the context flag is cleared if the modal is cancelled
+    if (UIElements.channelSelectorCancelBtn) {
+        UIElements.channelSelectorCancelBtn.addEventListener('click', () => {
+            if (document.body.dataset.channelSelectorContext === 'dvr') {
+                delete document.body.dataset.channelSelectorContext;
+            }
+        });
+    }
 }
 
 export function findDvrJobForProgram(program) {
@@ -398,7 +445,7 @@ export async function addOrRemoveDvrJob(programData) {
 }
 
 /**
- * Displays a modal showing recording conflicts.
+ * NEW: Displays a modal showing recording conflicts.
  * @param {object} conflictData - The conflict data from the server.
  */
 function showConflictModal(conflictData) {
@@ -418,6 +465,7 @@ function showConflictModal(conflictData) {
         </ul>
     `;
 
+    // A simple confirm modal will be used for now. A more complex modal could be added later.
     showConfirm('Recording Conflict', message, () => {});
 }
 
@@ -438,4 +486,3 @@ function formatDuration(totalSeconds) {
     if (minutes > 0) result += `${minutes}m`;
     return result.trim() || '0m';
 }
-
