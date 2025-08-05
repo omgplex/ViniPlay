@@ -83,11 +83,13 @@ export function openProgramDetails(progItem) {
 
     // Favorite button logic
     if (detailsFavoriteBtn) {
-        detailsFavoriteBtn.classList.toggle('favorited', channelData.isFavorite);
+        const starIcon = detailsFavoriteBtn.querySelector('.favorite-star');
+        starIcon.classList.toggle('favorited', !!channelData.isFavorite);
+
         detailsFavoriteBtn.onclick = (e) => {
             e.stopPropagation();
             channelData.isFavorite = !channelData.isFavorite;
-            detailsFavoriteBtn.classList.toggle('favorited', channelData.isFavorite);
+            starIcon.classList.toggle('favorited', channelData.isFavorite);
 
             // Also update the star in the main guide view if it exists
             const guideStar = document.querySelector(`.favorite-star[data-channel-id="${channelId}"]`);
@@ -103,6 +105,7 @@ export function openProgramDetails(progItem) {
             }
         };
     }
+
 
     const now = new Date();
     const programStopTime = new Date(programData.stop).getTime();
