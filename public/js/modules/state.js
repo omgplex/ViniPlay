@@ -15,6 +15,7 @@ export const appState = {
     fuseChannels: null, // Fuse.js instance for channels
     fusePrograms: null, // Fuse.js instance for programs
     currentSourceTypeForEditor: 'url',
+    swRegistration: null, // To hold the service worker registration
 };
 
 // State specific to the TV Guide
@@ -46,5 +47,7 @@ export const dvrState = {
 
 // A cache for frequently accessed DOM elements
 // This will be populated by the auth.js module after the main app is visible.
-export const UIElements = {};
-
+export const UIElements = {
+    // --- **FIX: Add the new element for notification settings** ---
+    notificationSettings: document.getElementById('notification-settings-container'),
+};
