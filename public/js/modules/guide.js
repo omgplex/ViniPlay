@@ -547,7 +547,10 @@ const updateNowLine = (guideStartUtc, shouldScroll = false) => {
         nowLineEl.style.left = `${channelInfoColWidth + leftOffsetInScrollableArea}px`;
         nowLineEl.classList.remove('hidden');
         if (shouldScroll) {
-            setTimeout(() => {
+            // **FIXED**: Replaced unreliable setTimeout with requestAnimationFrame
+            // This ensures the scroll action happens only after the browser has
+            // painted the guide, preventing the race condition.
+            requestAnimationFrame(() => {
                 const isMobile = window.innerWidth < 768; 
                 let scrollLeft;
 
@@ -561,7 +564,7 @@ const updateNowLine = (guideStartUtc, shouldScroll = false) => {
                     left: Math.max(0, scrollLeft),
                     behavior: 'smooth'
                 });
-            }, 500);
+            });
         }        
     } else {
         nowLineEl.classList.add('hidden');
@@ -916,4 +919,3 @@ export function setupGuideEventListeners() {
         UIElements.guideContainer.addEventListener('scroll', handleScrollHeader);
     }
 }
-
