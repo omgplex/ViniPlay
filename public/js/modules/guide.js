@@ -18,6 +18,10 @@ import { addOrRemoveDvrJob, findDvrJobForProgram } from './dvr.js';
 const ROW_HEIGHT = 96; // Height in pixels of a single channel row (.channel-info + .timeline-row)
 const OVERSCAN_COUNT = 5; // Number of extra rows to render above and below the visible area for smooth scrolling
 
+// Global variable to hold the ResizeObserver instance for the virtual guide content.
+// This ensures we only have one observer active for the initial scroll.
+let guideContentResizeObserver = null;
+
 /**
  * NEW: Opens the program details modal. This is now a standalone, exportable function.
  * @param {HTMLElement} progItem - The program item element that was clicked.
@@ -358,10 +362,10 @@ export function finalizeGuideLoad(isFirstLoad = false) {
 /**
  * Renders the guide using UI virtualization.
  * @param {Array<object>} channelsToRender - The filtered list of channels to display.
- * @param {boolean} resetScroll - If true, scrolls the guide to the top-left.
+ * @param {boolean} isFirstLoad - If true, indicates this is the initial load, triggering specific scroll logic.
  * @returns {Promise<boolean>} A promise that resolves when the initial render is complete.
  */
-const renderGuide = (channelsToRender, resetScroll = false) => {
+const renderGuide = (channelsToRender, isFirstLoad = false) => {
     return new Promise((resolve) => {
         guideState.visibleChannels = channelsToRender;
         const totalRows = channelsToRender.length;
@@ -373,6 +377,12 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
         UIElements.guideGrid.classList.toggle('hidden', showNoData);
         if (showNoData) {
             UIElements.guideGrid.innerHTML = '';
+            // Disconnect any existing observer if no data is shown
+            if (guideContentResizeObserver) {
+                guideContentResizeObserver.disconnect();
+                guideContentResizeObserver = null;
+                console.log('[GUIDE] Disconnected ResizeObserver due to no data.');
+            }
             resolve(true);
             return;
         }
@@ -524,26 +534,35 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
             }
         };
 
-        // NEW: Use ResizeObserver to trigger scrollToNow when content is rendered
-        if (rowContainer) {
-            const observer = new ResizeObserver((entries) => {
+        // NEW LOGIC FOR RESIZE OBSERVER
+        if (isFirstLoad) {
+            // Disconnect any previous observer if it exists from a prior load cycle
+            if (guideContentResizeObserver) {
+                guideContentResizeObserver.disconnect();
+                console.log('[GUIDE] Disconnecting previous ResizeObserver for initial load.');
+            }
+
+            guideContentResizeObserver = new ResizeObserver((entries) => {
                 for (let entry of entries) {
                     if (entry.target === rowContainer) {
                         // Check if the height has become non-zero, indicating content is rendered
                         if (entry.contentRect.height > 0) {
                             console.log('[GUIDE] ResizeObserver detected content rendered. Triggering scrollToNow.');
                             scrollToNow();
-                            observer.disconnect(); // Disconnect after first successful scroll
+                            guideContentResizeObserver.disconnect(); // Disconnect after first successful scroll for this load
+                            guideContentResizeObserver = null; // Clear the reference
                             resolve(true); // Resolve the promise
                         }
                     }
                 }
             });
-            observer.observe(rowContainer);
-            console.log('[GUIDE] ResizeObserver attached to virtual-row-container.');
+            guideContentResizeObserver.observe(rowContainer);
+            console.log('[GUIDE] New ResizeObserver attached to virtual-row-container for initial load.');
         } else {
-            console.warn('[GUIDE] rowContainer not found for ResizeObserver. Resolving promise.');
-            resolve(true); // Resolve immediately if observer can't be attached
+            // If not the first load (e.g., filter change), content is likely already rendered,
+            // so we can directly resolve the promise and ensure scroll if needed.
+            console.log('[GUIDE] Not first load, resolving renderGuide promise directly.');
+            resolve(true);
         }
     });
 };
@@ -553,7 +572,6 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
  */
 export function scrollToNow() {
     console.log("[GUIDE] scrollToNow called.");
-    // Removed setTimeout, now triggered by ResizeObserver in renderGuide
     requestAnimationFrame(() => {
         const guideStart = new Date(guideState.currentDate);
         guideStart.setHours(0, 0, 0, 0);
