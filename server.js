@@ -1166,23 +1166,27 @@ app.post('/api/notifications/unsubscribe', requireAuth, (req, res) => {
 });
 
 app.post('/api/notifications', requireAuth, (req, res) => {
-    console.log(`[PUSH_API] Add notification request for user ${req.session.userId}.`);
     const { channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, scheduledTime, programId } = req.body;
+    const userId = req.session.userId;
 
-    if (!channelId || !programTitle || !programStart || !scheduledTime || !programId) {
-        console.warn('[PUSH_API] Missing required fields for adding notification.');
-        return res.status(400).json({ error: 'Missing required notification fields.' });
+    // --- **FIX 1: Stricter validation to prevent bad data** ---
+    if (!channelId || !programTitle || !programStart || !scheduledTime || !programId || !channelName) {
+        console.error(`[PUSH_API_ERROR] Add notification failed for user ${userId} due to missing data.`, { body: req.body });
+        return res.status(400).json({ error: 'Invalid notification data. All required fields must be provided.' });
     }
+    
+    // --- **FIX 2: More detailed logging** ---
+    console.log(`[PUSH_API] Adding notification for user ${userId}. Program: "${programTitle}", Channel: "${channelName}", Scheduled Time: ${scheduledTime}`);
 
     db.run(`INSERT INTO notifications (user_id, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime, programId, status)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-        [req.session.userId, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, scheduledTime, programId],
+        [userId, channelId, channelName, channelLogo || '', programTitle, programDesc || '', programStart, programStop, scheduledTime, programId],
         function (err) {
             if (err) {
-                console.error('[PUSH_API] Error adding notification to database:', err);
-                return res.status(500).json({ error: 'Could not add notification.' });
+                console.error(`[PUSH_API_ERROR] Database error adding notification for user ${userId}:`, err);
+                return res.status(500).json({ error: 'Could not add notification to the database.' });
             }
-            console.log(`[PUSH_API] Notification added for program "${programTitle}" (ID: ${this.lastID}) for user ${req.session.userId}.`);
+            console.log(`[PUSH_API] Notification added successfully for program "${programTitle}" (DB ID: ${this.lastID}) for user ${userId}.`);
             res.status(201).json({ success: true, id: this.lastID });
         }
     );
@@ -1438,11 +1442,17 @@ async function checkAndSendNotifications() {
                 continue;
             }
 
+            // --- **FIX 3: Send raw data for timezone-correct display on the client** ---
+            // The service worker (`sw.js`) will now be responsible for formatting the time
+            // based on the user's local device settings. This fixes the timezone issue.
             const payload = JSON.stringify({
-                title: `Upcoming: ${notification.programTitle}`,
-                body: `Starts at ${new Date(notification.programStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} on ${notification.channelName}`,
-                icon: notification.channelLogo || 'https://i.imgur.com/rwa8SjI.png',
+                type: 'program_reminder', // A type to identify this notification in sw.js
+                title: `Reminder: ${notification.programTitle}`, // A simple, non-time-specific title
                 data: {
+                    programTitle: notification.programTitle,
+                    programStart: notification.programStart, // Send the raw UTC time string
+                    channelName: notification.channelName,
+                    channelLogo: notification.channelLogo || 'https://i.imgur.com/rwa8SjI.png',
                     url: `/tvguide?channelId=${notification.channelId}&programId=${notification.programId}`
                 }
             });
