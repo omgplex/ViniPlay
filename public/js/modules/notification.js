@@ -127,7 +127,6 @@ export const addOrRemoveNotification = async (programDetails) => {
             async () => {
                 const success = await deleteProgramNotification(existingNotification.id);
                 if (success) {
-                    // Notify other tabs via BroadcastChannel after a successful local action
                     notificationChannel.postMessage({ type: 'refresh-notifications' });
                     guideState.userNotifications = guideState.userNotifications.filter(n => n.id !== existingNotification.id);
                     renderNotifications();
@@ -165,9 +164,7 @@ export const addOrRemoveNotification = async (programDetails) => {
             }
         }
         
-        // --- **FIX 1: Robust lead time calculation** ---
-        // Ensure notificationLeadTime is a valid number, default to 10 if not.
-        const notificationLeadTime = parseInt(guideState.settings.notificationLeadTime, 10);
+        let notificationLeadTime = parseInt(guideState.settings.notificationLeadTime, 10);
         if (isNaN(notificationLeadTime)) {
             console.warn(`[NOTIF] Invalid 'notificationLeadTime' in settings: ${guideState.settings.notificationLeadTime}. Defaulting to 10.`);
             notificationLeadTime = 10;
@@ -178,7 +175,6 @@ export const addOrRemoveNotification = async (programDetails) => {
 
         const programStartTime = new Date(programDetails.programStart);
         
-        // --- **FIX 2: Validate program start time** ---
         if (isNaN(programStartTime.getTime())) {
             console.error('[NOTIF_ERROR] The program start time is invalid.', programDetails.programStart);
             showNotification('Cannot set notification due to an invalid program start time.', true);
@@ -208,8 +204,7 @@ export const addOrRemoveNotification = async (programDetails) => {
         const addedNotification = await addProgramNotification(newNotificationData);
         if (addedNotification) {
             notificationChannel.postMessage({ type: 'refresh-notifications' });
-            // Manually add the lead time to the object for immediate correct rendering
-            const completeNotification = { ...addedNotification, status: 'pending', notificationLeadTime: notificationLeadTime };
+            const completeNotification = { ...addedNotification, status: 'pending' };
             guideState.userNotifications.push(completeNotification);
 
             renderNotifications();
@@ -223,8 +218,7 @@ export const addOrRemoveNotification = async (programDetails) => {
 };
 
 /**
- * Checks if a given program has ANY notification scheduled (pending, sent, or expired).
- * This makes the visual indicator in the guide persistent.
+ * Checks if a given program has ANY notification scheduled.
  * @param {object} program - The program object.
  * @param {string} channelId - The ID of the channel the program belongs to.
  * @returns {object|null} The notification object if found, otherwise null.
@@ -251,17 +245,14 @@ export const renderNotifications = () => {
     UIElements.noNotificationsMessage.classList.toggle('hidden', upcomingNotifications.length > 0);
 
     notificationListEl.innerHTML = upcomingNotifications.map(notif => {
-        // --- **FIX 3: Robust rendering to prevent crashes and "undefined" bug** ---
         const programStartTime = new Date(notif.programStart);
         const notificationTime = new Date(notif.scheduledTime);
 
-        // If dates are invalid, skip rendering this item to prevent crashes.
         if (isNaN(programStartTime.getTime()) || isNaN(notificationTime.getTime())) {
             console.error('[NOTIF_RENDER] Skipping notification with invalid date:', notif);
             return ''; 
         }
 
-        // Calculate lead time directly from timestamps for accuracy.
         const leadTimeMinutes = Math.round((programStartTime.getTime() - notificationTime.getTime()) / 60000);
 
         const formattedProgramTime = programStartTime.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
@@ -298,16 +289,21 @@ export const renderPastNotifications = () => {
     if (!pastNotificationsListEl) return;
 
     const now = new Date();
+    
+    // --- **FIX: Correctly filter for past notifications based on the new server logic** ---
+    // A notification is considered "past" if its scheduled time is in the past,
+    // regardless of the master 'status', which is now derived on the server.
     const pastNotifications = guideState.userNotifications
-        .filter(n => n.status === 'sent' || n.status === 'expired')
-        .sort((a, b) => new Date(b.triggeredAt || b.notificationTime) - new Date(a.triggeredAt || a.notificationTime))
-        .slice(0, 10);
+        .filter(n => new Date(n.scheduledTime).getTime() <= now.getTime())
+        .sort((a, b) => new Date(b.scheduledTime) - new Date(a.scheduledTime)) // Sort by when it was supposed to trigger
+        .slice(0, 20); // Show a few more past notifications
 
     UIElements.noPastNotificationsMessage.classList.toggle('hidden', pastNotifications.length > 0);
 
     pastNotificationsListEl.innerHTML = pastNotifications.map(notif => {
         const programStartTime = new Date(notif.programStart);
-        const notificationTriggerTime = new Date(notif.triggeredAt || notif.notificationTime);
+        // Use the scheduledTime for display consistency, fallback to triggeredAt if needed.
+        const notificationTriggerTime = new Date(notif.triggeredAt || notif.scheduledTime);
         
         if (isNaN(programStartTime.getTime()) || isNaN(notificationTriggerTime.getTime())) {
             return '';
@@ -317,10 +313,14 @@ export const renderPastNotifications = () => {
         const formattedTriggerTime = notificationTriggerTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
         
         let statusText = '';
+        // The status from the server is now reliable for display.
         if (notif.status === 'sent') {
             statusText = `Notified at ${formattedTriggerTime}`;
         } else if (notif.status === 'expired') {
             statusText = `Expired at ${formattedTriggerTime}`;
+        } else {
+            // This case handles notifications that were due but might not have a final status yet.
+            statusText = `Should have been notified at ${formattedTriggerTime}`;
         }
 
         return `
@@ -362,7 +362,6 @@ const setupNotificationListEventListeners = () => {
                     async () => {
                         const success = await deleteProgramNotification(notificationId);
                         if (success) {
-                            // Notify other tabs via BroadcastChannel after a successful local action
                             notificationChannel.postMessage({ type: 'refresh-notifications' });
                             guideState.userNotifications = guideState.userNotifications.filter(n => n.id != notificationId);
                             renderNotifications();
@@ -399,11 +398,9 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
     const stableChannelIdSuffix = channelId.includes('_') ? '_' + channelId.split('_').pop() : channelId;
     console.log(`[NOTIF_NAV] Using stable channel ID suffix for matching: "${stableChannelIdSuffix}"`);
 
-    // 1. Navigate to the guide page
     navigate('/tvguide');
     await new Promise(resolve => setTimeout(resolve, 50));
 
-    // 2. Adjust date if necessary
     const targetProgramStart = new Date(programStart);
     const currentGuideDate = new Date(guideState.currentDate);
     currentGuideDate.setHours(0, 0, 0, 0);
@@ -414,7 +411,6 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
         await handleSearchAndFilter(true);
     }
 
-    // 3. Scroll vertically and wait for the channel row to be rendered
     console.log('[NOTIF_DEBUG] Awaiting scrollToChannel to confirm vertical scroll and render.');
     const channelScrolledAndRendered = await scrollToChannel(stableChannelIdSuffix);
     
@@ -424,17 +420,14 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
     }
     console.log('[NOTIF_DEBUG] scrollToChannel confirmed channel row is rendered.');
 
-    // 4. Now that the row is rendered, find the program element directly with a FRESH query.
-    // This is crucial to avoid stale DOM references after potential re-renders from virtualization.
     const currentChannelElement = UIElements.guideGrid.querySelector(`.channel-info[data-id$="${stableChannelIdSuffix}"]`);
     if (!currentChannelElement) {
         console.error(`[NOTIF_DEBUG] CRITICAL: Channel element with suffix ${stableChannelIdSuffix} not found after scrollToChannel resolved true.`);
         showNotification("An unexpected error occurred while locating the channel.", true);
         return;
     }
-    const currentDynamicChannelId = currentChannelElement.dataset.id; // Get the full dynamic ID
+    const currentDynamicChannelId = currentChannelElement.dataset.id;
 
-    // Use a more specific selector now that we have the actual rendered channel's ID
     const programElement = UIElements.guideGrid.querySelector(
         `.programme-item[data-prog-start="${programStart}"][data-channel-id="${currentDynamicChannelId}"]`
     );
@@ -447,14 +440,11 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
 
     console.log('[NOTIF_DEBUG] Program element found. Proceeding with centering and opening details.');
 
-    // --- 5. Centering and Opening Logic ---
     const guideContainer = UIElements.guideContainer;
     
-    // Use getBoundingClientRect for accurate positioning relative to the viewport
     const programRect = programElement.getBoundingClientRect();
     const containerRect = guideContainer.getBoundingClientRect();
     
-    // Calculate the desired scroll position to center the element
     const desiredScrollTop = guideContainer.scrollTop + programRect.top - containerRect.top - (containerRect.height / 2) + (programRect.height / 2);
     const desiredScrollLeft = guideContainer.scrollLeft + programRect.left - containerRect.left - (containerRect.width / 2) + (programRect.width / 2);
 
@@ -464,13 +454,11 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
         behavior: 'smooth'
     });
 
-    // Wait for the smooth scroll to have an effect before opening details
     setTimeout(() => {
         console.log('[NOTIF_DEBUG] Calling openProgramDetails directly.');
-        // Pass the re-queried programElement to ensure it's a live DOM node
         openProgramDetails(programElement);
         
         programElement.classList.add('highlighted-search');
         setTimeout(() => { programElement.classList.remove('highlighted-search'); }, 2500);
-    }, 300); // 300ms should be enough for the scroll animation to start
+    }, 300);
 };
