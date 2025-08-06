@@ -83,14 +83,11 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
     } else {
         console.log("[DB] Connected to the SQLite database.");
         db.serialize(() => {
-            // VINI-MOD: Added canUseDvr column to users table and added backward compatibility check.
             db.run(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, isAdmin INTEGER DEFAULT 0, canUseDvr INTEGER DEFAULT 0)`, (err) => {
                 if (err) {
                     console.error("[DB] Error creating 'users' table:", err.message);
                 } else {
-                    db.run("ALTER TABLE users ADD COLUMN canUseDvr INTEGER DEFAULT 0", () => {
-                        // This will fail silently if the column already exists, which is the desired behavior.
-                    });
+                    db.run("ALTER TABLE users ADD COLUMN canUseDvr INTEGER DEFAULT 0", () => {});
                 }
             });
             db.run(`CREATE TABLE IF NOT EXISTS user_settings (user_id INTEGER NOT NULL, key TEXT NOT NULL, value TEXT, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY (user_id, key))`);
@@ -98,7 +95,20 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
             db.run(`CREATE TABLE IF NOT EXISTS notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, channelId TEXT NOT NULL, channelName TEXT NOT NULL, channelLogo TEXT, programTitle TEXT NOT NULL, programDesc TEXT, programStart TEXT NOT NULL, programStop TEXT NOT NULL, notificationTime TEXT NOT NULL, programId TEXT NOT NULL, status TEXT DEFAULT 'pending', triggeredAt TEXT, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)`);
             db.run(`CREATE TABLE IF NOT EXISTS push_subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, endpoint TEXT UNIQUE NOT NULL, p256dh TEXT NOT NULL, auth TEXT NOT NULL, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)`);
 
-            // --- DVR Database Table (MODIFIED) ---
+            // --- **FIX 1: New table for per-device notification tracking** ---
+            db.run(`CREATE TABLE IF NOT EXISTS notification_deliveries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                notification_id INTEGER NOT NULL,
+                subscription_id INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending', -- pending, sent, failed, expired
+                updatedAt TEXT NOT NULL,
+                FOREIGN KEY (notification_id) REFERENCES notifications(id) ON DELETE CASCADE,
+                FOREIGN KEY (subscription_id) REFERENCES push_subscriptions(id) ON DELETE CASCADE
+            )`, (err) => {
+                if (err) console.error("[DB] Error creating 'notification_deliveries' table:", err.message);
+                else console.log("[DB] 'notification_deliveries' table checked/created.");
+            });
+
             db.run(`CREATE TABLE IF NOT EXISTS dvr_jobs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -115,14 +125,13 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 preBufferMinutes INTEGER,
                 postBufferMinutes INTEGER,
                 errorMessage TEXT,
-                isConflicting INTEGER DEFAULT 0, -- NEW: For conflict management
+                isConflicting INTEGER DEFAULT 0,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )`, (err) => {
                 if(err) {
                     console.error("[DB] Error creating/altering 'dvr_jobs' table:", err.message);
                 } else {
                     console.log("[DB] 'dvr_jobs' table checked/created.");
-                    // Add columns if they don't exist for backward compatibility
                     db.run("ALTER TABLE dvr_jobs ADD COLUMN errorMessage TEXT", () => {});
                     db.run("ALTER TABLE dvr_jobs ADD COLUMN isConflicting INTEGER DEFAULT 0", () => {});
                 }
@@ -172,7 +181,6 @@ app.use(
 );
 
 app.use((req, res, next) => {
-    // VINI-MOD: Added canUseDvr to session log trace
     const user_info = req.session.userId ? `User ID: ${req.session.userId}, Admin: ${req.session.isAdmin}, DVR: ${req.session.canUseDvr}` : 'No session';
     console.log(`[HTTP_TRACE] ${req.method} ${req.originalUrl} - Session: [${user_info}]`);
     next();
@@ -186,14 +194,12 @@ const requireAdmin = (req, res, next) => {
     if (req.session && req.session.isAdmin) return next();
     return res.status(403).json({ error: 'Administrator privileges required.' });
 };
-// VINI-MOD: New middleware to check for DVR access
 const requireDvrAccess = (req, res, next) => {
     if (req.session && (req.session.canUseDvr || req.session.isAdmin)) return next();
     return res.status(403).json({ error: 'DVR access required.' });
 };
 
 
-// VINI-MOD: Added requireDvrAccess to protect the static DVR folder
 app.use('/dvr', requireAuth, requireDvrAccess, express.static(DVR_DIR));
 
 // --- Helper Functions ---
@@ -212,7 +218,7 @@ function getSettings() {
                 preBufferMinutes: 1,
                 postBufferMinutes: 2,
                 maxConcurrentRecordings: 1,
-                autoDeleteDays: 0, // 0 means disabled
+                autoDeleteDays: 0,
                 activeRecordingProfileId: 'dvr-mp4-default',
                 recordingProfiles: [{
                     id: 'dvr-mp4-default',
@@ -564,7 +570,6 @@ app.post('/api/auth/setup-admin', (req, res) => {
                 console.error('[AUTH_API] Error hashing password during admin setup:', err);
                 return res.status(500).json({ error: 'Error hashing password.' });
             }
-            // VINI-MOD: Set canUseDvr to true for the initial admin user.
             db.run("INSERT INTO users (username, password, isAdmin, canUseDvr) VALUES (?, ?, 1, 1)", [username, hash], function(err) {
                 if (err) {
                     console.error('[AUTH_API] Error inserting admin user:', err.message);
@@ -573,7 +578,7 @@ app.post('/api/auth/setup-admin', (req, res) => {
                 req.session.userId = this.lastID;
                 req.session.username = username;
                 req.session.isAdmin = true;
-                req.session.canUseDvr = true; // VINI-MOD: Set session variable
+                req.session.canUseDvr = true;
                 console.log(`[AUTH_API] Admin user "${username}" created successfully (ID: ${this.lastID}). Session set.`);
                 res.json({ success: true, user: { username: req.session.username, isAdmin: req.session.isAdmin, canUseDvr: req.session.canUseDvr } });
             });
@@ -600,7 +605,6 @@ app.post('/api/auth/login', (req, res) => {
                 return res.status(500).json({ error: 'Authentication error.' });
             }
             if (result) {
-                // VINI-MOD: Add canUseDvr to session and response
                 req.session.userId = user.id;
                 req.session.username = user.username;
                 req.session.isAdmin = user.isAdmin === 1;
@@ -635,7 +639,6 @@ app.post('/api/auth/logout', (req, res) => {
 app.get('/api/auth/status', (req, res) => {
     console.log(`[AUTH_API] GET /api/auth/status - Checking session ID: ${req.sessionID}`);
     if (req.session && req.session.userId) {
-        // VINI-MOD: Return canUseDvr status
         console.log(`[AUTH_API_STATUS] Valid session found for user "${req.session.username}" (ID: ${req.session.userId}). Responding with isLoggedIn: true.`);
         res.json({ isLoggedIn: true, user: { username: req.session.username, isAdmin: req.session.isAdmin, canUseDvr: req.session.canUseDvr } });
     } else {
@@ -647,7 +650,6 @@ app.get('/api/auth/status', (req, res) => {
 // --- User Management API Endpoints (Admin only) ---
 app.get('/api/users', requireAdmin, (req, res) => {
     console.log('[USER_API] Fetching all users.');
-    // VINI-MOD: Select canUseDvr column
     db.all("SELECT id, username, isAdmin, canUseDvr FROM users ORDER BY username", [], (err, rows) => {
         if (err) {
             console.error('[USER_API] Error fetching users:', err.message);
@@ -660,7 +662,6 @@ app.get('/api/users', requireAdmin, (req, res) => {
 
 app.post('/api/users', requireAdmin, (req, res) => {
     console.log('[USER_API] Adding new user.');
-    // VINI-MOD: Get canUseDvr from request body
     const { username, password, isAdmin, canUseDvr } = req.body;
     if (!username || !password) {
         console.warn('[USER_API] Add user failed: Username and/or password missing.');
@@ -672,7 +673,6 @@ app.post('/api/users', requireAdmin, (req, res) => {
             console.error('[USER_API] Error hashing password for new user:', err);
             return res.status(500).json({ error: 'Error hashing password' });
         }
-        // VINI-MOD: Insert canUseDvr value
         db.run("INSERT INTO users (username, password, isAdmin, canUseDvr) VALUES (?, ?, ?, ?)", [username, hash, isAdmin ? 1 : 0, canUseDvr ? 1 : 0], function (err) {
             if (err) {
                 console.error('[USER_API] Error inserting new user:', err.message);
@@ -686,7 +686,6 @@ app.post('/api/users', requireAdmin, (req, res) => {
 
 app.put('/api/users/:id', requireAdmin, (req, res) => {
     const { id } = req.params;
-    // VINI-MOD: Get canUseDvr from request body
     const { username, password, isAdmin, canUseDvr } = req.body;
     console.log(`[USER_API] Updating user ID: ${id}. Username: ${username}, IsAdmin: ${isAdmin}, CanUseDvr: ${canUseDvr}`);
 
@@ -697,7 +696,6 @@ app.put('/api/users/:id', requireAdmin, (req, res) => {
                     console.error('[USER_API] Error hashing password during user update:', err);
                     return res.status(500).json({ error: 'Error hashing password' });
                 }
-                // VINI-MOD: Update canUseDvr column
                 db.run("UPDATE users SET username = ?, password = ?, isAdmin = ?, canUseDvr = ? WHERE id = ?", [username, hash, isAdmin ? 1 : 0, canUseDvr ? 1 : 0, id], (err) => {
                     if (err) {
                         console.error(`[USER_API] Error updating user ${id} with new password:`, err.message);
@@ -706,7 +704,7 @@ app.put('/api/users/:id', requireAdmin, (req, res) => {
                     if (req.session.userId == id) {
                         req.session.username = username;
                         req.session.isAdmin = isAdmin;
-                        req.session.canUseDvr = canUseDvr; // VINI-MOD: Update session
+                        req.session.canUseDvr = canUseDvr;
                         console.log(`[USER_API] Current user's session (ID: ${id}) updated.`);
                     }
                     console.log(`[USER_API] User ${id} updated successfully (with password change).`);
@@ -714,7 +712,6 @@ app.put('/api/users/:id', requireAdmin, (req, res) => {
                 });
             });
         } else {
-            // VINI-MOD: Update canUseDvr column
             db.run("UPDATE users SET username = ?, isAdmin = ?, canUseDvr = ? WHERE id = ?", [username, isAdmin ? 1 : 0, canUseDvr ? 1 : 0, id], (err) => {
                 if (err) {
                     console.error(`[USER_API] Error updating user ${id} without password change:`, err.message);
@@ -723,7 +720,7 @@ app.put('/api/users/:id', requireAdmin, (req, res) => {
                  if (req.session.userId == id) {
                     req.session.username = username;
                     req.session.isAdmin = isAdmin;
-                    req.session.canUseDvr = canUseDvr; // VINI-MOD: Update session
+                    req.session.canUseDvr = canUseDvr;
                     console.log(`[USER_API] Current user's session (ID: ${id}) updated.`);
                  }
                 console.log(`[USER_API] User ${id} updated successfully (without password change).`);
@@ -1169,13 +1166,11 @@ app.post('/api/notifications', requireAuth, (req, res) => {
     const { channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, scheduledTime, programId } = req.body;
     const userId = req.session.userId;
 
-    // --- **FIX 1: Stricter validation to prevent bad data** ---
     if (!channelId || !programTitle || !programStart || !scheduledTime || !programId || !channelName) {
         console.error(`[PUSH_API_ERROR] Add notification failed for user ${userId} due to missing data.`, { body: req.body });
         return res.status(400).json({ error: 'Invalid notification data. All required fields must be provided.' });
     }
     
-    // --- **FIX 2: More detailed logging** ---
     console.log(`[PUSH_API] Adding notification for user ${userId}. Program: "${programTitle}", Channel: "${channelName}", Scheduled Time: ${scheduledTime}`);
 
     db.run(`INSERT INTO notifications (user_id, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime, programId, status)
@@ -1186,8 +1181,27 @@ app.post('/api/notifications', requireAuth, (req, res) => {
                 console.error(`[PUSH_API_ERROR] Database error adding notification for user ${userId}:`, err);
                 return res.status(500).json({ error: 'Could not add notification to the database.' });
             }
-            console.log(`[PUSH_API] Notification added successfully for program "${programTitle}" (DB ID: ${this.lastID}) for user ${userId}.`);
-            res.status(201).json({ success: true, id: this.lastID });
+            const notificationId = this.lastID;
+            console.log(`[PUSH_API] Notification added successfully for program "${programTitle}" (DB ID: ${notificationId}) for user ${userId}.`);
+            
+            // --- **FIX 2: Create a delivery record for each of the user's devices** ---
+            db.all("SELECT id FROM push_subscriptions WHERE user_id = ?", [userId], (subErr, subs) => {
+                if (subErr) {
+                    console.error(`[PUSH_API_ERROR] Could not fetch subscriptions for user ${userId} to create deliveries.`, subErr);
+                    return;
+                }
+                const now = new Date().toISOString();
+                const deliveryStmt = db.prepare("INSERT INTO notification_deliveries (notification_id, subscription_id, status, updatedAt) VALUES (?, ?, 'pending', ?)");
+                subs.forEach(sub => {
+                    deliveryStmt.run(notificationId, sub.id, now);
+                });
+                deliveryStmt.finalize(finalizeErr => {
+                    if (finalizeErr) console.error(`[PUSH_API_ERROR] Error finalizing delivery creation for notification ${notificationId}.`, finalizeErr);
+                    else console.log(`[PUSH_API] Created ${subs.length} delivery records for notification ${notificationId}.`);
+                });
+            });
+
+            res.status(201).json({ success: true, id: notificationId });
         }
     );
 });
@@ -1213,6 +1227,7 @@ app.get('/api/notifications', requireAuth, (req, res) => {
 app.delete('/api/notifications/:id', requireAuth, (req, res) => {
     const { id } = req.params;
     console.log(`[PUSH_API] Deleting notification ID: ${id} for user ${req.session.userId}.`);
+    // Deleting from the main `notifications` table will cascade and delete related `notification_deliveries`.
     db.run(`DELETE FROM notifications WHERE id = ? AND user_id = ?`,
         [id, req.session.userId],
         function (err) {
@@ -1399,89 +1414,100 @@ app.delete('/api/multiview/layouts/:id', requireAuth, (req, res) => {
 });
 
 
+// --- **FIX 3: Rewritten notification checker for multi-device delivery** ---
 async function checkAndSendNotifications() {
-    console.log('[PUSH_CHECKER] Running scheduled notification check.');
+    console.log('[PUSH_CHECKER] Running scheduled notification check for all devices.');
+    const now = new Date();
+    const nowIso = now.toISOString();
+    
+    // --- **FIX 4: 1-day timeout logic** ---
+    // Calculate the cutoff time (24 hours ago)
+    const timeoutCutoff = new Date(now.getTime() - (24 * 60 * 60 * 1000)).toISOString();
+
     try {
-        const now = new Date();
-        const nowIso = now.toISOString();
-        const dueNotifications = await new Promise((resolve, reject) => {
-            db.all("SELECT * FROM notifications WHERE status = 'pending' AND notificationTime <= ?", [nowIso], (err, rows) => {
+        // First, mark any pending deliveries for notifications older than 24 hours as 'expired'.
+        db.run(`
+            UPDATE notification_deliveries
+            SET status = 'expired', updatedAt = ?
+            WHERE status = 'pending' AND notification_id IN (
+                SELECT id FROM notifications WHERE notificationTime < ?
+            )
+        `, [nowIso, timeoutCutoff], function(err) {
+            if (err) {
+                console.error('[PUSH_CHECKER_CLEANUP] Error expiring old notifications:', err.message);
+            } else if (this.changes > 0) {
+                console.log(`[PUSH_CHECKER_CLEANUP] Expired ${this.changes} old notification deliveries.`);
+            }
+        });
+
+        // Fetch all pending deliveries that are due and not expired.
+        const dueDeliveries = await new Promise((resolve, reject) => {
+            const query = `
+                SELECT
+                    d.id as delivery_id,
+                    d.status,
+                    n.*,
+                    s.id as subscription_id,
+                    s.endpoint,
+                    s.p256dh,
+                    s.auth
+                FROM notification_deliveries d
+                JOIN notifications n ON d.notification_id = n.id
+                JOIN push_subscriptions s ON d.subscription_id = s.id
+                WHERE d.status = 'pending' AND n.notificationTime <= ?
+            `;
+            db.all(query, [nowIso], (err, rows) => {
                 if (err) reject(err);
                 else resolve(rows);
             });
         });
 
-        if (dueNotifications.length > 0) {
-            console.log(`[PUSH_CHECKER] Found ${dueNotifications.length} due notifications to process.`);
+        if (dueDeliveries.length > 0) {
+            console.log(`[PUSH_CHECKER] Found ${dueDeliveries.length} due notification deliveries to process.`);
         } else {
-            console.log('[PUSH_CHECKER] No due notifications found.');
+            return; // No work to do
         }
 
-        for (const notification of dueNotifications) {
-            console.log(`[PUSH_CHECKER] Processing notification ID: ${notification.id} for "${notification.programTitle}".`);
-            if (new Date(notification.programStop).getTime() <= now.getTime()) {
-                db.run("UPDATE notifications SET status = 'expired', triggeredAt = ? WHERE id = ?", [nowIso, notification.id], (err) => {
-                    if (err) console.error(`[PUSH_CHECKER] Error marking notification ${notification.id} as expired:`, err.message);
-                });
-                console.log(`[PUSH_CHECKER] Notification for "${notification.programTitle}" (ID: ${notification.id}) expired. Program already ended.`);
-                continue;
-            }
-
-            const subscriptions = await new Promise((resolve, reject) => {
-                db.all("SELECT * FROM push_subscriptions WHERE user_id = ?", [notification.user_id], (err, rows) => {
-                    if (err) reject(err);
-                    else resolve(rows);
-                });
-            });
-
-            if (subscriptions.length === 0) {
-                console.log(`[PUSH_CHECKER] No active push subscriptions for user ${notification.user_id}. Marking notification ${notification.id} as expired.`);
-                 db.run("UPDATE notifications SET status = 'expired', triggeredAt = ? WHERE id = ?", [nowIso, notification.id], (err) => {
-                    if (err) console.error(`[PUSH_CHECKER] Error marking notification ${notification.id} as expired (no subscriptions):`, err.message);
-                });
-                continue;
-            }
-
-            // --- **FIX 3: Send raw data for timezone-correct display on the client** ---
-            // The service worker (`sw.js`) will now be responsible for formatting the time
-            // based on the user's local device settings. This fixes the timezone issue.
+        for (const delivery of dueDeliveries) {
+            console.log(`[PUSH_CHECKER] Processing delivery ID ${delivery.delivery_id} for program "${delivery.programTitle}" to subscription ${delivery.subscription_id}.`);
+            
             const payload = JSON.stringify({
-                type: 'program_reminder', // A type to identify this notification in sw.js
-                title: `Reminder: ${notification.programTitle}`, // A simple, non-time-specific title
+                type: 'program_reminder',
+                title: `Reminder: ${delivery.programTitle}`,
                 data: {
-                    programTitle: notification.programTitle,
-                    programStart: notification.programStart, // Send the raw UTC time string
-                    channelName: notification.channelName,
-                    channelLogo: notification.channelLogo || 'https://i.imgur.com/rwa8SjI.png',
-                    url: `/tvguide?channelId=${notification.channelId}&programId=${notification.programId}`
+                    programTitle: delivery.programTitle,
+                    programStart: delivery.programStart,
+                    channelName: delivery.channelName,
+                    channelLogo: delivery.channelLogo || 'https://i.imgur.com/rwa8SjI.png',
+                    url: `/tvguide?channelId=${delivery.channelId}&programId=${delivery.programId}`
                 }
             });
 
-            const sendPromises = subscriptions.map(sub => {
-                const pushSubscription = {
-                    endpoint: sub.endpoint,
-                    keys: { p256dh: sub.p256dh, auth: sub.auth }
-                };
+            const pushSubscription = {
+                endpoint: delivery.endpoint,
+                keys: { p256dh: delivery.p256dh, auth: delivery.auth }
+            };
 
-                return webpush.sendNotification(pushSubscription, payload)
-                    .then(() => {
-                        console.log(`[PUSH_CHECKER] Notification "${notification.programTitle}" (ID: ${notification.id}) sent to endpoint: ${sub.endpoint}`);
-                        db.run("UPDATE notifications SET status = 'sent', triggeredAt = ? WHERE id = ?", [nowIso, notification.id], (err) => {
-                            if (err) console.error(`[PUSH_CHECKER] Error updating notification ${notification.id} status to sent:`, err.message);
-                        });
-                    })
-                    .catch(error => {
-                        console.error(`[PUSH_CHECKER] Error sending notification ${notification.id} to ${sub.endpoint}:`, error.statusCode, error.body || error.message);
-                        if (error.statusCode === 410 || error.statusCode === 404) {
-                            console.log(`[PUSH_CHECKER] Subscription expired or invalid (410/404). Deleting endpoint: ${sub.endpoint}`);
-                            db.run("DELETE FROM push_subscriptions WHERE endpoint = ?", [sub.endpoint], (err) => {
-                                if (err) console.error(`[PUSH_CHECKER] Error deleting expired subscription ${sub.endpoint}:`, err.message);
-                            });
-                        }
-                    });
-            });
+            try {
+                await webpush.sendNotification(pushSubscription, payload);
+                console.log(`[PUSH_CHECKER] Successfully sent notification for delivery ID ${delivery.delivery_id}.`);
+                // Mark this specific delivery as 'sent'
+                db.run("UPDATE notification_deliveries SET status = 'sent', updatedAt = ? WHERE id = ?", [nowIso, delivery.delivery_id]);
 
-            await Promise.all(sendPromises);
+            } catch (error) {
+                console.error(`[PUSH_CHECKER] Error sending notification for delivery ID ${delivery.delivery_id}:`, error.statusCode, error.body || error.message);
+                
+                if (error.statusCode === 410 || error.statusCode === 404) {
+                    console.log(`[PUSH_CHECKER] Subscription ${delivery.subscription_id} is invalid (410/404). Deleting subscription and marking deliveries as failed.`);
+                    // Delete the invalid subscription
+                    db.run("DELETE FROM push_subscriptions WHERE id = ?", [delivery.subscription_id]);
+                    // Mark all pending deliveries for this subscription as failed to prevent retries
+                    db.run("UPDATE notification_deliveries SET status = 'failed', updatedAt = ? WHERE subscription_id = ? AND status = 'pending'", [nowIso, delivery.subscription_id]);
+                } else {
+                    // For other errors (e.g., network issues), just mark this attempt as failed. It will be retried.
+                    db.run("UPDATE notification_deliveries SET status = 'failed', updatedAt = ? WHERE id = ?", [nowIso, delivery.delivery_id]);
+                }
+            }
         }
     } catch (error) {
         console.error('[PUSH_CHECKER] Unhandled error in checkAndSendNotifications:', error);
@@ -1491,20 +1517,15 @@ async function checkAndSendNotifications() {
 
 // --- DVR Engine (MODIFIED & NEW) ---
 
-/**
- * NEW: Gracefully stops an FFmpeg recording process.
- * @param {number} jobId - The ID of the DVR job to stop.
- */
 function stopRecording(jobId) {
     const pid = runningFFmpegProcesses.get(jobId);
     if (pid) {
         console.log(`[DVR] Gracefully stopping recording for job ${jobId} (PID: ${pid}). Sending SIGINT.`);
         try {
-            // Send SIGINT (Ctrl+C), which allows ffmpeg to finalize the file correctly.
             process.kill(pid, 'SIGINT');
         } catch (e) {
             console.error(`[DVR] Error sending SIGINT to ffmpeg process for job ${jobId}: ${e.message}. Trying SIGKILL.`);
-            try { process.kill(pid, 'SIGKILL'); } catch (e2) {} // Fallback to forceful kill
+            try { process.kill(pid, 'SIGKILL'); } catch (e2) {}
         }
     } else {
         console.warn(`[DVR] Cannot stop job ${jobId}: No running ffmpeg process found.`);
@@ -1512,10 +1533,6 @@ function stopRecording(jobId) {
 }
 
 
-/**
- * Starts an ffmpeg recording process for a given DVR job.
- * @param {object} job - The DVR job object from the database.
- */
 function startRecording(job) {
     console.log(`[DVR] Starting recording for job ${job.id}: "${job.programTitle}"`);
     const settings = getSettings();
@@ -1611,10 +1628,6 @@ function startRecording(job) {
     });
 }
 
-/**
- * Schedules a recording job using node-schedule.
- * @param {object} job - The DVR job object from the database.
- */
 function scheduleDvrJob(job) {
     if (activeDvrJobs.has(job.id)) {
         activeDvrJobs.get(job.id)?.cancel();
@@ -1646,9 +1659,6 @@ function scheduleDvrJob(job) {
 }
 
 
-/**
- * Loads all pending DVR jobs from the database and schedules them.
- */
 function loadAndScheduleAllDvrJobs() {
     console.log('[DVR] Loading and scheduling all pending DVR jobs from database...');
     db.run("UPDATE dvr_jobs SET status = 'error', errorMessage = 'Server restarted during recording.' WHERE status = 'recording'", [], (err) => {
@@ -1669,14 +1679,6 @@ function loadAndScheduleAllDvrJobs() {
     });
 }
 
-// --- NEW: DVR Conflict & Storage Management Functions ---
-
-/**
- * Checks if a new recording job conflicts with existing scheduled jobs.
- * @param {object} newJob - The potential new job to schedule.
- * @param {number} userId - The ID of the user scheduling the job.
- * @returns {Promise<Array<object>>} - A promise that resolves to an array of conflicting jobs. Empty if no conflict.
- */
 async function checkForConflicts(newJob, userId) {
     return new Promise((resolve, reject) => {
         const settings = getSettings();
@@ -1691,7 +1693,6 @@ async function checkForConflicts(newJob, userId) {
             const conflictingJobs = scheduledJobs.filter(existingJob => {
                 const existingStart = new Date(existingJob.startTime).getTime();
                 const existingEnd = new Date(existingJob.endTime).getTime();
-                // Check for overlap
                 return newStart < existingEnd && newEnd > existingStart;
             });
 
@@ -1704,9 +1705,6 @@ async function checkForConflicts(newJob, userId) {
     });
 }
 
-/**
- * Periodically runs to delete old recordings based on user settings.
- */
 async function autoDeleteOldRecordings() {
     console.log('[DVR_STORAGE] Running daily check for old recordings to delete.');
     db.all("SELECT id FROM users", [], (err, users) => {
@@ -1719,7 +1717,7 @@ async function autoDeleteOldRecordings() {
                 
                 const deleteDays = userDvrSettings.autoDeleteDays;
                 if (!deleteDays || deleteDays <= 0) {
-                    return; // Skip if disabled for this user
+                    return;
                 }
 
                 const cutoffDate = new Date();
@@ -1742,7 +1740,6 @@ async function autoDeleteOldRecordings() {
                                 }
                             });
                         } else {
-                            // File doesn't exist, just clean up the DB record
                             db.run("DELETE FROM dvr_recordings WHERE id = ?", [rec.id]);
                         }
                     });
@@ -1755,7 +1752,6 @@ async function autoDeleteOldRecordings() {
 
 // --- DVR API Endpoints (MODIFIED & NEW) ---
 
-// VINI-MOD: Added requireDvrAccess middleware to all DVR endpoints
 app.post('/api/dvr/schedule', requireAuth, requireDvrAccess, async (req, res) => {
     const { channelId, channelName, programTitle, programStart, programStop } = req.body;
     const settings = getSettings();
@@ -1812,7 +1808,7 @@ app.post('/api/dvr/schedule/manual', requireAuth, requireDvrAccess, async (req, 
         status: 'scheduled',
         profileId: dvrSettings.activeRecordingProfileId,
         userAgentId: settings.activeUserAgentId,
-        preBufferMinutes: 0, // No buffer for manual
+        preBufferMinutes: 0,
         postBufferMinutes: 0
     };
     
@@ -1930,7 +1926,7 @@ app.put('/api/dvr/jobs/:id', requireAuth, requireDvrAccess, (req, res) => {
             if (err) return res.status(500).json({ error: 'Could not update job.' });
             
             const updatedJob = { ...job, startTime, endTime };
-            scheduleDvrJob(updatedJob); // Reschedule with new times
+            scheduleDvrJob(updatedJob);
             
             console.log(`[DVR_API] Updated and rescheduled job ${id}.`);
             res.json({ success: true, job: updatedJob });
@@ -1982,8 +1978,7 @@ app.listen(port, () => {
     notificationCheckInterval = setInterval(checkAndSendNotifications, 60000);
     console.log('[Push] Notification checker started.');
 
-    // NEW: Schedule daily storage cleanup
-    schedule.scheduleJob('0 2 * * *', autoDeleteOldRecordings); // Run at 2:00 AM every day
+    schedule.scheduleJob('0 2 * * *', autoDeleteOldRecordings);
     console.log('[DVR_STORAGE] Scheduled daily cleanup of old recordings.');
 });
 
