@@ -95,7 +95,6 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
             db.run(`CREATE TABLE IF NOT EXISTS notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, channelId TEXT NOT NULL, channelName TEXT NOT NULL, channelLogo TEXT, programTitle TEXT NOT NULL, programDesc TEXT, programStart TEXT NOT NULL, programStop TEXT NOT NULL, notificationTime TEXT NOT NULL, programId TEXT NOT NULL, status TEXT DEFAULT 'pending', triggeredAt TEXT, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)`);
             db.run(`CREATE TABLE IF NOT EXISTS push_subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, endpoint TEXT UNIQUE NOT NULL, p256dh TEXT NOT NULL, auth TEXT NOT NULL, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)`);
 
-            // --- **FIX 1: New table for per-device notification tracking** ---
             db.run(`CREATE TABLE IF NOT EXISTS notification_deliveries (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 notification_id INTEGER NOT NULL,
@@ -1184,7 +1183,6 @@ app.post('/api/notifications', requireAuth, (req, res) => {
             const notificationId = this.lastID;
             console.log(`[PUSH_API] Notification added successfully for program "${programTitle}" (DB ID: ${notificationId}) for user ${userId}.`);
             
-            // --- **FIX 2: Create a delivery record for each of the user's devices** ---
             db.all("SELECT id FROM push_subscriptions WHERE user_id = ?", [userId], (subErr, subs) => {
                 if (subErr) {
                     console.error(`[PUSH_API_ERROR] Could not fetch subscriptions for user ${userId} to create deliveries.`, subErr);
@@ -1206,28 +1204,47 @@ app.post('/api/notifications', requireAuth, (req, res) => {
     );
 });
 
+// --- **FIX: Modified `GET /api/notifications` to provide accurate, consolidated status** ---
 app.get('/api/notifications', requireAuth, (req, res) => {
     console.log(`[PUSH_API] Fetching notifications for user ${req.session.userId}.`);
-    db.all(`SELECT id, user_id, channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, notificationTime as scheduledTime, programId, status, triggeredAt
-            FROM notifications
-            WHERE user_id = ?
-            ORDER BY notificationTime DESC`,
-        [req.session.userId],
-        (err, rows) => {
-            if (err) {
-                console.error('[PUSH_API] Error fetching notifications from database:', err);
-                return res.status(500).json({ error: 'Could not retrieve notifications.' });
-            }
-            console.log(`[PUSH_API] Found ${rows.length} notifications for user ${req.session.userId}.`);
-            res.json(rows);
+    const query = `
+        SELECT
+            n.id,
+            n.user_id,
+            n.channelId,
+            n.channelName,
+            n.channelLogo,
+            n.programTitle,
+            n.programDesc,
+            n.programStart,
+            n.programStop,
+            n.notificationTime as scheduledTime,
+            n.programId,
+            -- Determine the overall status based on its deliveries
+            CASE
+                WHEN (SELECT COUNT(*) FROM notification_deliveries WHERE notification_id = n.id AND status = 'sent') > 0 THEN 'sent'
+                WHEN (SELECT COUNT(*) FROM notification_deliveries WHERE notification_id = n.id AND status = 'expired') > 0 THEN 'expired'
+                ELSE n.status
+            END as status,
+            -- Use the latest delivery update time as the triggeredAt time for consistency
+            (SELECT MAX(updatedAt) FROM notification_deliveries WHERE notification_id = n.id AND status = 'sent') as triggeredAt
+        FROM notifications n
+        WHERE n.user_id = ?
+        ORDER BY n.notificationTime DESC
+    `;
+    db.all(query, [req.session.userId], (err, rows) => {
+        if (err) {
+            console.error('[PUSH_API] Error fetching consolidated notifications from database:', err);
+            return res.status(500).json({ error: 'Could not retrieve notifications.' });
         }
-    );
+        console.log(`[PUSH_API] Found ${rows.length} consolidated notifications for user ${req.session.userId}.`);
+        res.json(rows);
+    });
 });
 
 app.delete('/api/notifications/:id', requireAuth, (req, res) => {
     const { id } = req.params;
     console.log(`[PUSH_API] Deleting notification ID: ${id} for user ${req.session.userId}.`);
-    // Deleting from the main `notifications` table will cascade and delete related `notification_deliveries`.
     db.run(`DELETE FROM notifications WHERE id = ? AND user_id = ?`,
         [id, req.session.userId],
         function (err) {
@@ -1414,18 +1431,14 @@ app.delete('/api/multiview/layouts/:id', requireAuth, (req, res) => {
 });
 
 
-// --- **FIX 3: Rewritten notification checker for multi-device delivery** ---
 async function checkAndSendNotifications() {
     console.log('[PUSH_CHECKER] Running scheduled notification check for all devices.');
     const now = new Date();
     const nowIso = now.toISOString();
     
-    // --- **FIX 4: 1-day timeout logic** ---
-    // Calculate the cutoff time (24 hours ago)
     const timeoutCutoff = new Date(now.getTime() - (24 * 60 * 60 * 1000)).toISOString();
 
     try {
-        // First, mark any pending deliveries for notifications older than 24 hours as 'expired'.
         db.run(`
             UPDATE notification_deliveries
             SET status = 'expired', updatedAt = ?
@@ -1440,7 +1453,6 @@ async function checkAndSendNotifications() {
             }
         });
 
-        // Fetch all pending deliveries that are due and not expired.
         const dueDeliveries = await new Promise((resolve, reject) => {
             const query = `
                 SELECT
@@ -1465,9 +1477,12 @@ async function checkAndSendNotifications() {
         if (dueDeliveries.length > 0) {
             console.log(`[PUSH_CHECKER] Found ${dueDeliveries.length} due notification deliveries to process.`);
         } else {
-            return; // No work to do
+            return;
         }
 
+        // --- **FIX: Decouple main notification status from delivery status** ---
+        // We will only update the `notification_deliveries` table. The main `notifications`
+        // table status will be derived on-the-fly when requested by the client.
         for (const delivery of dueDeliveries) {
             console.log(`[PUSH_CHECKER] Processing delivery ID ${delivery.delivery_id} for program "${delivery.programTitle}" to subscription ${delivery.subscription_id}.`);
             
@@ -1488,26 +1503,22 @@ async function checkAndSendNotifications() {
                 keys: { p256dh: delivery.p256dh, auth: delivery.auth }
             };
 
-            try {
-                await webpush.sendNotification(pushSubscription, payload);
-                console.log(`[PUSH_CHECKER] Successfully sent notification for delivery ID ${delivery.delivery_id}.`);
-                // Mark this specific delivery as 'sent'
-                db.run("UPDATE notification_deliveries SET status = 'sent', updatedAt = ? WHERE id = ?", [nowIso, delivery.delivery_id]);
-
-            } catch (error) {
-                console.error(`[PUSH_CHECKER] Error sending notification for delivery ID ${delivery.delivery_id}:`, error.statusCode, error.body || error.message);
-                
-                if (error.statusCode === 410 || error.statusCode === 404) {
-                    console.log(`[PUSH_CHECKER] Subscription ${delivery.subscription_id} is invalid (410/404). Deleting subscription and marking deliveries as failed.`);
-                    // Delete the invalid subscription
-                    db.run("DELETE FROM push_subscriptions WHERE id = ?", [delivery.subscription_id]);
-                    // Mark all pending deliveries for this subscription as failed to prevent retries
-                    db.run("UPDATE notification_deliveries SET status = 'failed', updatedAt = ? WHERE subscription_id = ? AND status = 'pending'", [nowIso, delivery.subscription_id]);
-                } else {
-                    // For other errors (e.g., network issues), just mark this attempt as failed. It will be retried.
-                    db.run("UPDATE notification_deliveries SET status = 'failed', updatedAt = ? WHERE id = ?", [nowIso, delivery.delivery_id]);
-                }
-            }
+            webpush.sendNotification(pushSubscription, payload)
+                .then(() => {
+                    console.log(`[PUSH_CHECKER] Successfully sent notification for delivery ID ${delivery.delivery_id}.`);
+                    db.run("UPDATE notification_deliveries SET status = 'sent', updatedAt = ? WHERE id = ?", [nowIso, delivery.delivery_id]);
+                })
+                .catch(error => {
+                    console.error(`[PUSH_CHECKER] Error sending notification for delivery ID ${delivery.delivery_id}:`, error.statusCode, error.body || error.message);
+                    
+                    if (error.statusCode === 410 || error.statusCode === 404) {
+                        console.log(`[PUSH_CHECKER] Subscription ${delivery.subscription_id} is invalid (410/404). Deleting subscription and failing deliveries.`);
+                        db.run("DELETE FROM push_subscriptions WHERE id = ?", [delivery.subscription_id]);
+                        db.run("UPDATE notification_deliveries SET status = 'failed', updatedAt = ? WHERE subscription_id = ? AND status = 'pending'", [nowIso, delivery.subscription_id]);
+                    } else {
+                        db.run("UPDATE notification_deliveries SET status = 'failed', updatedAt = ? WHERE id = ?", [nowIso, delivery.delivery_id]);
+                    }
+                });
         }
     } catch (error) {
         console.error('[PUSH_CHECKER] Unhandled error in checkAndSendNotifications:', error);
