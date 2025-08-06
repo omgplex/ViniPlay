@@ -350,7 +350,7 @@ export function finalizeGuideLoad(isFirstLoad = false) {
         includeScore: true,
     });
 
-    handleSearchAndFilter(isFirstLoad);
+    return handleSearchAndFilter(isFirstLoad);
 }
 
 // --- UI Rendering (REFACTORED FOR VIRTUALIZATION) ---
@@ -508,34 +508,78 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
             guideContainer.scrollTop = 0;
         }
         updateVisibleRows();
-        updateNowLine(guideStartUtc, resetScroll);
+        updateNowLine(); // No longer needs guideStartUtc, it will calculate it
 
         const nowBtn = UIElements.guideGrid.querySelector('#now-btn');
         if (nowBtn) nowBtn.onclick = () => {
             const now = new Date();
             if (guideState.currentDate.toDateString() !== now.toDateString()) {
                 guideState.currentDate = now;
-                finalizeGuideLoad(true);
+                // We return the promise here so the caller can wait
+                finalizeGuideLoad(true).then(() => {
+                    scrollToNow();
+                });
             } else {
-                const guideStart = new Date(guideState.currentDate);
-                guideStart.setHours(0, 0, 0, 0);
-                const guideStartUtc = new Date(Date.UTC(guideStart.getUTCFullYear(), guideStart.getUTCMonth(), guideStart.getUTCDate()));
-                updateNowLine(guideStartUtc, true);
+                scrollToNow();
             }
         };
 
+        // Resolve the promise after a short delay to allow the browser to paint
         setTimeout(() => resolve(true), 100);
     });
 };
 
 /**
- * Updates the position of the "now" line and program states (live, past).
- * @param {Date} guideStartUtc - The start time of the current guide view in UTC.
- * @param {boolean} shouldScroll - If true, scrolls the timeline to the now line.
+ * **NEW**: Scrolls the timeline to the current time.
+ * This is now a separate function to be called *after* the guide is rendered.
  */
-const updateNowLine = (guideStartUtc, shouldScroll = false) => {
+export function scrollToNow() {
+    console.log("[GUIDE] scrollToNow called.");
+    requestAnimationFrame(() => {
+        const guideStart = new Date(guideState.currentDate);
+        guideStart.setHours(0, 0, 0, 0);
+        const guideStartUtc = new Date(Date.UTC(guideStart.getUTCFullYear(), guideStart.getUTCMonth(), guideStart.getUTCDate()));
+        
+        const now = new Date();
+        const nowValue = now.getTime();
+        const guideEnd = new Date(guideStartUtc.getTime() + guideState.guideDurationHours * 3600 * 1000);
+        const channelInfoColWidth = guideState.settings.channelColumnWidth;
+
+        if (nowValue >= guideStartUtc.getTime() && nowValue <= guideEnd.getTime()) {
+            const leftOffsetInScrollableArea = ((nowValue - guideStartUtc.getTime()) / 3600000) * guideState.hourWidthPixels;
+            
+            const isMobile = window.innerWidth < 768; 
+            let scrollLeft;
+
+            if (isMobile) {
+                scrollLeft = (channelInfoColWidth + leftOffsetInScrollableArea) - (UIElements.guideContainer.clientWidth / 2);
+            } else {
+                scrollLeft = leftOffsetInScrollableArea - (UIElements.guideContainer.clientWidth / 4);
+            }
+            
+            UIElements.guideContainer.scrollTo({
+                left: Math.max(0, scrollLeft),
+                behavior: 'smooth'
+            });
+            console.log(`[GUIDE] Scrolling to position: ${scrollLeft}`);
+        } else {
+            console.log("[GUIDE] 'Now' is outside the current guide view. Not scrolling.");
+        }
+    });
+}
+
+
+/**
+ * Updates the position of the "now" line and program states (live, past).
+ * This function no longer handles scrolling.
+ */
+const updateNowLine = () => {
     const nowLineEl = document.getElementById('now-line');
     if (!nowLineEl) return;
+
+    const guideStart = new Date(guideState.currentDate);
+    guideStart.setHours(0, 0, 0, 0);
+    const guideStartUtc = new Date(Date.UTC(guideStart.getUTCFullYear(), guideStart.getUTCMonth(), guideStart.getUTCDate()));
 
     const now = new Date();
     const nowValue = now.getTime();
@@ -546,26 +590,6 @@ const updateNowLine = (guideStartUtc, shouldScroll = false) => {
         const leftOffsetInScrollableArea = ((nowValue - guideStartUtc.getTime()) / 3600000) * guideState.hourWidthPixels;
         nowLineEl.style.left = `${channelInfoColWidth + leftOffsetInScrollableArea}px`;
         nowLineEl.classList.remove('hidden');
-        if (shouldScroll) {
-            // **FIXED**: Replaced unreliable setTimeout with requestAnimationFrame
-            // This ensures the scroll action happens only after the browser has
-            // painted the guide, preventing the race condition.
-            requestAnimationFrame(() => {
-                const isMobile = window.innerWidth < 768; 
-                let scrollLeft;
-
-                if (isMobile) {
-                    scrollLeft = (channelInfoColWidth + leftOffsetInScrollableArea) - (UIElements.guideContainer.clientWidth / 2);
-                } else {
-                    scrollLeft = leftOffsetInScrollableArea - (UIElements.guideContainer.clientWidth / 4);
-                }
-                
-                UIElements.guideContainer.scrollTo({
-                    left: Math.max(0, scrollLeft),
-                    behavior: 'smooth'
-                });
-            });
-        }        
     } else {
         nowLineEl.classList.add('hidden');
     }
@@ -583,7 +607,7 @@ const updateNowLine = (guideStartUtc, shouldScroll = false) => {
         }
     });
 
-    setTimeout(() => updateNowLine(guideStartUtc, false), 60000);
+    setTimeout(updateNowLine, 60000);
 };
 
 // --- Filtering and Searching ---
