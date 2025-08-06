@@ -165,22 +165,28 @@ export const addOrRemoveNotification = async (programDetails) => {
             }
         }
         
-        // FIX for RangeError: Invalid time value
+        // --- **FIX 1: Robust lead time calculation** ---
         // Ensure notificationLeadTime is a valid number, default to 10 if not.
-        const notificationLeadTime = parseInt(guideState.settings.notificationLeadTime, 10) || 10;
+        const notificationLeadTime = parseInt(guideState.settings.notificationLeadTime, 10);
+        if (isNaN(notificationLeadTime)) {
+            console.warn(`[NOTIF] Invalid 'notificationLeadTime' in settings: ${guideState.settings.notificationLeadTime}. Defaulting to 10.`);
+            notificationLeadTime = 10;
+        }
+
         console.log('[NOTIF_DEBUG] Program Start:', programDetails.programStart);
         console.log('[NOTIF_DEBUG] Notification Lead Time (minutes):', notificationLeadTime);
 
         const programStartTime = new Date(programDetails.programStart);
-        const scheduledTime = new Date(programStartTime.getTime() - notificationLeadTime * 60 * 1000);
         
-        // Check if scheduledTime is a valid date before proceeding
-        if (isNaN(scheduledTime.getTime())) {
-            console.error('[NOTIF] Calculated scheduledTime is invalid. programStartTime:', programStartTime, 'notificationLeadTime:', notificationLeadTime);
-            showNotification(`Could not set notification: Invalid program start time or lead time.`, true);
+        // --- **FIX 2: Validate program start time** ---
+        if (isNaN(programStartTime.getTime())) {
+            console.error('[NOTIF_ERROR] The program start time is invalid.', programDetails.programStart);
+            showNotification('Cannot set notification due to an invalid program start time.', true);
             return;
         }
-
+        
+        const scheduledTime = new Date(programStartTime.getTime() - notificationLeadTime * 60 * 1000);
+        
         if (scheduledTime <= new Date()) {
              showNotification(`Cannot set notification for a program that has already started or passed.`, true);
              console.warn('[NOTIF] Attempted to set notification for a program already in progress or past.');
@@ -196,15 +202,16 @@ export const addOrRemoveNotification = async (programDetails) => {
             programStop: programDetails.programStop,
             programDesc: programDetails.programDesc,
             programId: programDetails.programId,
-            notificationLeadTime: notificationLeadTime, // Use the parsed value
             scheduledTime: scheduledTime.toISOString()
         };
 
         const addedNotification = await addProgramNotification(newNotificationData);
         if (addedNotification) {
-            // Notify other tabs via BroadcastChannel after a successful local action
             notificationChannel.postMessage({ type: 'refresh-notifications' });
-            guideState.userNotifications.push({ ...addedNotification, status: 'pending' });
+            // Manually add the lead time to the object for immediate correct rendering
+            const completeNotification = { ...addedNotification, status: 'pending', notificationLeadTime: notificationLeadTime };
+            guideState.userNotifications.push(completeNotification);
+
             renderNotifications();
             await handleSearchAndFilter(false);
             showNotification(`Notification set for "${addedNotification.programTitle}"!`);
@@ -223,8 +230,6 @@ export const addOrRemoveNotification = async (programDetails) => {
  * @returns {object|null} The notification object if found, otherwise null.
  */
 export const findNotificationForProgram = (program, channelId) => {
-    // MODIFIED: Removed the `n.status === 'pending'` check to make the indicator persistent
-    // for any notification associated with this program, regardless of its status.
     return guideState.userNotifications.find(n =>
         n.channelId === channelId &&
         n.programId === program.programId
@@ -240,24 +245,35 @@ export const renderNotifications = () => {
 
     const now = new Date();
     const upcomingNotifications = guideState.userNotifications
-        .filter(n => new Date(n.scheduledTime).getTime() > now.getTime() && n.status === 'pending')
+        .filter(n => n.status === 'pending' && new Date(n.scheduledTime).getTime() > now.getTime())
         .sort((a, b) => new Date(a.scheduledTime) - new Date(b.scheduledTime));
 
     UIElements.noNotificationsMessage.classList.toggle('hidden', upcomingNotifications.length > 0);
 
     notificationListEl.innerHTML = upcomingNotifications.map(notif => {
+        // --- **FIX 3: Robust rendering to prevent crashes and "undefined" bug** ---
         const programStartTime = new Date(notif.programStart);
         const notificationTime = new Date(notif.scheduledTime);
-        const formattedProgramTime = programStartTime.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-        const formattedNotificationTime = notificationTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        // If dates are invalid, skip rendering this item to prevent crashes.
+        if (isNaN(programStartTime.getTime()) || isNaN(notificationTime.getTime())) {
+            console.error('[NOTIF_RENDER] Skipping notification with invalid date:', notif);
+            return ''; 
+        }
+
+        // Calculate lead time directly from timestamps for accuracy.
+        const leadTimeMinutes = Math.round((programStartTime.getTime() - notificationTime.getTime()) / 60000);
+
+        const formattedProgramTime = programStartTime.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+        const formattedNotificationTime = notificationTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
         return `
             <div class="flex items-center p-4 border-b border-gray-700/50 hover:bg-gray-800 transition-colors rounded-md" data-notification-id="${notif.id}" data-status="${notif.status}">
                 <img src="${notif.channelLogo || 'https://placehold.co/48x48/1f2937/d1d5db?text=?;&font=Inter'}" onerror="this.onerror=null; this.src='https://placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-4 flex-shrink-0 rounded-md bg-gray-700">
                 <div class="flex-grow">
-                    <p class="font-semibold text-white text-md">${notif.programTitle}</p>
-                    <p class="text-gray-400 text-sm">${notif.channelName} • ${formattedProgramTime}</p>
-                    <p class="text-blue-400 text-xs mt-1">Will be notified at ${formattedNotificationTime} (${notif.notificationLeadTime} mins before)</p>
+                    <p class="font-semibold text-white text-md">${notif.programTitle || 'Untitled Program'}</p>
+                    <p class="text-gray-400 text-sm">${notif.channelName || 'Unknown Channel'} • ${formattedProgramTime}</p>
+                    <p class="text-blue-400 text-xs mt-1">Will be notified at ${formattedNotificationTime} (${leadTimeMinutes} mins before)</p>
                 </div>
                 <div class="flex items-center gap-2 flex-shrink-0 ml-4">
                     <button class="action-btn view-program-btn p-2 rounded-full hover:bg-gray-700" title="View in TV Guide" data-channel-id="${notif.channelId}" data-program-start="${notif.programStart}" data-program-id="${notif.programId}">
@@ -292,8 +308,13 @@ export const renderPastNotifications = () => {
     pastNotificationsListEl.innerHTML = pastNotifications.map(notif => {
         const programStartTime = new Date(notif.programStart);
         const notificationTriggerTime = new Date(notif.triggeredAt || notif.notificationTime);
-        const formattedProgramTime = programStartTime.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-        const formattedTriggerTime = notificationTriggerTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        
+        if (isNaN(programStartTime.getTime()) || isNaN(notificationTriggerTime.getTime())) {
+            return '';
+        }
+
+        const formattedProgramTime = programStartTime.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+        const formattedTriggerTime = notificationTriggerTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
         
         let statusText = '';
         if (notif.status === 'sent') {
@@ -306,8 +327,8 @@ export const renderPastNotifications = () => {
             <div class="flex items-center p-4 border-b border-gray-700/50 hover:bg-gray-800 transition-colors rounded-md opacity-70" data-notification-id="${notif.id}" data-status="${notif.status}">
                 <img src="${notif.channelLogo || 'https://placehold.co/48x48/1f2937/d1d5db?text=?;&font=Inter'}" onerror="this.onerror=null; this.src='https://placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-4 flex-shrink-0 rounded-md bg-gray-700">
                 <div class="flex-grow">
-                    <p class="font-semibold text-white text-md">${notif.programTitle}</p>
-                    <p class="text-gray-400 text-sm">${notif.channelName} • ${formattedProgramTime}</p>
+                    <p class="font-semibold text-white text-md">${notif.programTitle || 'Untitled Program'}</p>
+                    <p class="text-gray-400 text-sm">${notif.channelName || 'Unknown Channel'} • ${formattedProgramTime}</p>
                     <p class="text-xs mt-1 text-gray-500">${statusText}</p>
                 </div>
                 <div class="flex items-center gap-2 flex-shrink-0 ml-4">
