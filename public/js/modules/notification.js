@@ -32,7 +32,7 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 /**
- * Unsubscribes the user from the current push subscription, if one exists.
+ * Unsubscribes the user from the current push subscription on this device.
  * @returns {Promise<boolean>} - True if successful or already unsubscribed.
  */
 async function unsubscribeCurrentUser() {
@@ -43,9 +43,13 @@ async function unsubscribeCurrentUser() {
     try {
         const subscription = await appState.swRegistration.pushManager.getSubscription();
         if (subscription) {
-            await unsubscribeFromPush(subscription.endpoint); // Notify backend first
-            await subscription.unsubscribe();
-            console.log('[NOTIF] User unsubscribed successfully.');
+            // --- **FIX: Only notify the backend if we have a valid endpoint to send** ---
+            // This prevents the 400 error if the subscription is stale or malformed.
+            if (subscription.endpoint) {
+                await unsubscribeFromPush(subscription.endpoint); // Notify backend to delete this specific subscription.
+            }
+            await subscription.unsubscribe(); // This removes the subscription from the browser itself.
+            console.log('[NOTIF] User unsubscribed successfully from this device.');
         }
         isSubscribed = false;
         return true;
@@ -76,7 +80,7 @@ export async function subscribeUserToPush(force = false) {
         isSubscribed = (subscription !== null);
 
         if (isSubscribed) {
-            console.log('[NOTIF] User is already subscribed.');
+            console.log('[NOTIF] User is already subscribed on this device.');
             if (force) showNotification('Subscription refreshed successfully!');
         } else {
             console.log('[NOTIF] User is NOT subscribed. Attempting to subscribe...');
@@ -92,7 +96,7 @@ export async function subscribeUserToPush(force = false) {
                 applicationServerKey: applicationServerKey
             });
 
-            console.log('[NOTIF] New push subscription created:', newSubscription);
+            console.log('[NOTIF] New push subscription created for this device:', newSubscription);
             const success = await subscribeToPush(newSubscription);
             if (success) {
                 isSubscribed = true;
@@ -120,7 +124,7 @@ export const loadAndScheduleNotifications = async () => {
         guideState.userNotifications = notifications;
         console.log(`[NOTIF] Loaded ${notifications.length} scheduled notifications from server.`);
         
-        renderNotificationSettings(); // Render the settings/actions panel
+        renderNotificationSettings();
         renderNotifications();
         renderPastNotifications();
         await handleSearchAndFilter(false);
@@ -140,8 +144,11 @@ export const addOrRemoveNotification = async (programDetails) => {
             `Are you sure you want to remove the notification for "${programDetails.programTitle}"?`,
             async () => {
                 if (await deleteProgramNotification(existingNotification.id)) {
-                    notificationChannel.postMessage({ type: 'refresh-notifications' });
                     showNotification(`Notification for "${programDetails.programTitle}" removed.`);
+                    // --- **FIX: Refresh UI immediately** ---
+                    // Post message for other tabs, then call directly to refresh the current tab.
+                    notificationChannel.postMessage({ type: 'refresh-notifications' });
+                    loadAndScheduleNotifications();
                 }
             }
         );
@@ -196,8 +203,11 @@ export const addOrRemoveNotification = async (programDetails) => {
         };
 
         if (await addProgramNotification(newNotificationData)) {
-            notificationChannel.postMessage({ type: 'refresh-notifications' });
             showNotification(`Notification set for "${newNotificationData.programTitle}"!`);
+            // --- **FIX: Refresh UI immediately** ---
+            // Post message for other tabs, then call directly to refresh the current tab.
+            notificationChannel.postMessage({ type: 'refresh-notifications' });
+            loadAndScheduleNotifications();
         }
     }
 };
@@ -209,10 +219,6 @@ export const findNotificationForProgram = (program, channelId) => {
     );
 };
 
-/**
- * --- **FIX: New function to render the notification settings/actions** ---
- * This creates the UI for the "Re-subscribe" button.
- */
 export const renderNotificationSettings = () => {
     const settingsEl = UIElements.notificationSettings;
     if (!settingsEl) return;
@@ -345,6 +351,7 @@ const setupNotificationListEventListeners = () => {
                     async () => {
                         if (await deleteProgramNotification(notificationId)) {
                             notificationChannel.postMessage({ type: 'refresh-notifications' });
+                            loadAndScheduleNotifications();
                         }
                     }
                 );
