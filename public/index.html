@@ -215,12 +215,10 @@
                 width: 64px; 
             }
             .channel-details { display: none; }
-            /* .favorite-star { display: none; } This is now handled by the new modal structure */
             .sticky-corner { width: 64px; }
             .channel-resize-handle { display: none; }
         }
 
-        /* --- Scroll-driven header animations (FIXED) --- */
         #main-header, #unified-guide-header {
             transition: transform 0.3s ease-out, opacity 0.3s ease-out, height 0.3s ease-out, padding 0.3s ease-out;
             transform: translateY(0);
@@ -234,7 +232,7 @@
             z-index: 35; 
         }
         
-        #main-header { padding: 1rem; z-index: 40; } /* Higher z-index for main header */
+        #main-header { padding: 1rem; z-index: 40; }
         #unified-guide-header { padding: 0.5rem 1rem; }
 
         #app-container.header-collapsed #main-header,
@@ -254,30 +252,16 @@
             transition: padding-top 0.3s ease-out;
         }
 
-        /* Visual indicator for programs with notifications */
         .programme-item.has-notification {
             border-bottom: 3px solid #facc15;
         }
         
-        /* NEW: Visual indicators for programs with recordings */
-        .programme-item.has-recording.status-scheduled {
-            border-bottom: 3px solid #3b82f6; /* Blue for scheduled */
-        }
-        .programme-item.has-recording.status-recording {
-            border-bottom: 3px solid #ef4444; /* Red for recording */
-        }
-        .programme-item.has-recording.status-completed {
-            border-bottom: 3px solid #22c55e; /* Green for completed */
-        }
-        .programme-item.has-recording.status-error {
-            border-bottom: 3px solid #f97316; /* Orange for error */
-        }
-        .programme-item.has-recording.status-cancelled {
-            border-bottom: 3px solid #6b7280; /* Gray for cancelled */
-        }
+        .programme-item.has-recording.status-scheduled { border-bottom: 3px solid #3b82f6; }
+        .programme-item.has-recording.status-recording { border-bottom: 3px solid #ef4444; }
+        .programme-item.has-recording.status-completed { border-bottom: 3px solid #22c55e; }
+        .programme-item.has-recording.status-error { border-bottom: 3px solid #f97316; }
+        .programme-item.has-recording.status-cancelled { border-bottom: 3px solid #6b7280; }
 
-
-        /* --- Multi-View Styles --- */
         #page-multiview { background-color: #111827; }
         .grid-stack {
             background-color: #1f2937;
@@ -376,7 +360,6 @@
             color: #60a5fa;
         }
 
-        /* --- DVR Styles --- */
         .dvr-table th { @apply px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider; }
         .dvr-table td { @apply px-4 py-3 whitespace-nowrap text-sm text-gray-300; }
         .dvr-table tbody tr { @apply border-b border-gray-700/50; }
@@ -388,11 +371,11 @@
             padding: 3px 8px;
             border-radius: 9999px;
             text-transform: capitalize;
-            border: none; /* Add this if they are buttons */
-            cursor: default; /* Default cursor for spans */
+            border: none;
+            cursor: default;
         }
         .status-badge.view-error-btn {
-            cursor: pointer; /* Pointer cursor for clickable error badges */
+            cursor: pointer;
             text-decoration: underline;
         }
         .status-badge.recording { background-color: #ef4444; color: white; }
@@ -401,7 +384,6 @@
         .status-badge.error { background-color: #f97316; color: white; }
         .status-badge.cancelled { background-color: #6b7280; color: white; }
 
-
         #notification-modal-wrapper {
             position: fixed;
             top: 1.25rem; 
@@ -409,11 +391,7 @@
             z-index: 100;
             pointer-events: none;
         }
-
-        #notification-modal-wrapper.hidden {
-            display: none;
-        }
-        
+        #notification-modal-wrapper.hidden { display: none; }
         #notification-box {
             color: white;
             padding: 0.5rem 1rem;
@@ -427,24 +405,18 @@
             text-align: center;
             background-color: #ef4444; 
         }
-
         #notification-modal-wrapper:not(.hidden) #notification-box {
             opacity: 1;
             transform: translateY(0);
         }
-
         #notification-box.success-bg { background-color: #22c55e; }
         #notification-box.error-bg { background-color: #ef4444; }
-
     </style>
 </head>
 <body class="h-screen">
-
-    <!-- Auth Container: Covers the entire screen initially -->
     <div id="auth-container" class="fixed inset-0 bg-gray-900 z-[100] flex items-center justify-center p-4">
         <div class="w-full max-w-sm mx-auto">
              <img src="https://i.imgur.com/rwa8SjI.png" alt="VINI PLAY Logo" class="h-16 w-16 mx-auto mb-4">
-            <!-- Login Form -->
             <form id="login-form" class="hidden bg-gray-800 p-8 rounded-xl shadow-lg space-y-6">
                 <h2 class="text-2xl font-bold text-center text-white">Welcome Back</h2>
                 <div id="login-error" class="hidden bg-red-900/50 border border-red-700/50 text-red-300 px-4 py-2 rounded-md text-sm"></div>
@@ -458,8 +430,6 @@
                 </div>
                 <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition-colors">Login</button>
             </form>
-
-            <!-- Admin Setup Form -->
             <form id="setup-form" class="hidden bg-gray-800 p-8 rounded-xl shadow-lg space-y-6">
                 <h2 class="text-2xl font-bold text-center text-white">Create Admin Account</h2>
                 <p class="text-sm text-center text-gray-400">This is a one-time setup to secure your ViniPlay instance.</p>
@@ -474,21 +444,15 @@
                 </div>
                 <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition-colors">Create Admin & Login</button>
             </form>
-            
-            <!-- Loading Spinner -->
              <div id="auth-loader" class="text-center">
                  <div class="loader mx-auto"></div>
                  <p class="mt-4 text-gray-400">Checking authentication...</p>
              </div>
         </div>
     </div>
-
-    <!-- Main App Container -->
     <div id="app-container" class="hidden flex flex-col h-screen">
-        <!-- Header -->
         <header id="main-header" class="bg-gray-800 text-white p-4 shadow-md flex-shrink-0 flex items-center justify-between">
             <div class="flex items-center gap-3">
-                <!-- Hamburger menu icon for mobile -->
                 <button id="mobile-menu-toggle" class="lg:hidden text-gray-300 hover:text-white p-2 rounded-md transition-colors">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
@@ -497,10 +461,8 @@
                 <img src="https://i.imgur.com/rwa8SjI.png" alt="VINI PLAY Logo" class="h-8 w-8">
                 <h1 class="text-xl sm:text-2xl font-bold">VINI PLAY</h1>
             </div>
-            <!-- Combined user display, desktop tabs, and logout button -->
             <div class="flex items-center gap-4">
                  <span id="user-display" class="text-sm text-gray-400 hidden sm:block"></span>
-                <!-- Desktop Tabs -->
                 <div class="hidden lg:flex gap-2">
                     <button id="tab-guide" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 active rounded-md transition-colors">TV Guide</button>
                     <button id="tab-multiview" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Multi-View</button>
@@ -512,11 +474,8 @@
             </div>
         </header>
 
-        <!-- Main Content -->
         <main class="flex-grow flex flex-col overflow-hidden">
-            <!-- TV Guide Page -->
             <div id="page-guide" class="flex flex-grow flex-col overflow-hidden">
-                <!-- Unified Guide Header Bar -->
                 <div id="unified-guide-header" class="flex-shrink-0 bg-gray-800 p-2 sm:p-4 border-b border-gray-700 flex items-center justify-between">
                     <div class="flex items-center gap-2 sm:gap-3 date-nav-controls">
                         <span id="guide-date-display" class="text-base sm:text-lg font-semibold text-white"></span>
@@ -559,7 +518,6 @@
                 </div>
             </div>
 
-            <!-- Multi-View Page -->
             <div id="page-multiview" class="hidden flex-grow flex-col overflow-hidden">
                 <div id="multiview-header" class="flex-shrink-0 bg-gray-800 p-2 border-b border-gray-700 flex items-center justify-between flex-wrap gap-2 z-20">
                     <div class="flex items-center gap-2">
@@ -595,10 +553,8 @@
                 </div>
             </div>
 
-            <!-- DVR Page -->
             <div id="page-dvr" class="hidden flex-grow flex-col items-center p-4 overflow-y-auto custom-scrollbar">
                 <div class="w-full max-w-6xl mx-auto space-y-8 pb-16">
-                    <!-- Storage Usage Indicator -->
                     <div id="dvr-storage-bar-container" class="bg-gray-800 p-4 rounded-xl shadow-lg">
                         <div class="flex justify-between items-center mb-1 text-sm">
                             <span class="font-medium text-white">Storage Usage</span>
@@ -609,18 +565,15 @@
                         </div>
                     </div>
 
-                    <!-- Manual Recording Section -->
                     <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
                         <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Manual Recording</h2>
                         <form id="manual-recording-form" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                             <div class="md:col-span-2">
                                 <label class="block text-sm font-medium text-gray-400 mb-1">Channel</label>
-                                <!-- MODIFIED: Replaced select with a button and text display -->
                                 <div class="flex items-center gap-3">
                                     <button type="button" id="manual-rec-channel-select-btn" class="flex-shrink-0 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md transition-colors">Select Channel</button>
                                     <span id="manual-rec-selected-channel-name" class="text-gray-300 truncate">No channel selected</span>
                                 </div>
-                                <!-- MODIFIED: Added hidden inputs to store channel data -->
                                 <input type="hidden" id="manual-rec-channel-id" required>
                                 <input type="hidden" id="manual-rec-channel-name">
                             </div>
@@ -636,7 +589,6 @@
                         </form>
                     </div>
 
-                    <!-- Scheduled Recordings Section -->
                     <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
                         <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Scheduled Recordings</h2>
                         <div id="no-dvr-jobs-message" class="hidden text-center text-gray-500 p-4">
@@ -651,7 +603,6 @@
                                         <th>Start Time</th>
                                         <th>End Time</th>
                                         <th>Status</th>
-                                        <!-- NEW: Conflict Column -->
                                         <th>Conflict</th>
                                         <th class="text-right">Actions</th>
                                     </tr>
@@ -661,7 +612,6 @@
                         </div>
                     </div>
 
-                    <!-- Completed Recordings Section -->
                     <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
                         <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Completed Recordings</h2>
                         <div id="no-dvr-recordings-message" class="hidden text-center text-gray-500 p-4">
@@ -686,9 +636,11 @@
                 </div>
             </div>
 
-            <!-- Notifications Page -->
             <div id="page-notifications" class="hidden flex-grow flex-col items-center p-4 overflow-y-auto custom-scrollbar">
                 <div class="w-full max-w-4xl mx-auto space-y-6 pb-16">
+                    <!-- **FIX: Add a container for notification settings and actions** -->
+                    <div id="notification-settings-container" class="mb-6"></div>
+
                     <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Upcoming Notifications</h2>
                     <div id="no-notifications-message" class="hidden text-center text-gray-500 p-4">
                         <svg class="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
@@ -707,10 +659,8 @@
                 </div>
             </div>
 
-            <!-- Settings Page -->
             <div id="page-settings" class="hidden flex-grow flex-col items-center p-4 overflow-y-auto custom-scrollbar">
                 <div class="w-full max-w-6xl mx-auto space-y-8 pb-16">
-                    <!-- User Management Section (Admin Only) -->
                     <div id="user-management-section" class="hidden bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
                         <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">User Management</h2>
                         <div class="flex justify-end mb-4">
@@ -731,7 +681,6 @@
                         </div>
                     </div>
 
-                    <!-- Guide Data Section -->
                     <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
                         <div class="flex justify-between items-center mb-4 border-b border-gray-700 pb-2">
                             <h2 class="text-xl font-bold text-white">Guide Data Sources</h2>
@@ -774,7 +723,6 @@
                         </div>
                     </div>
 
-                    <!-- Player Settings Section -->
                     <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
                         <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Player Settings</h2>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8">
@@ -799,7 +747,6 @@
                         </div>
                     </div>
 
-                    <!-- DVR Settings Section -->
                     <div id="dvr-settings-section" class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
                         <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">DVR Settings</h2>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8">
@@ -822,7 +769,6 @@
                                     <input type="number" id="dvr-post-buffer-input" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white" min="0" value="2">
                                 </div>
                             </div>
-                            <!-- NEW: Max Concurrent Recordings -->
                             <div class="md:col-span-2">
                                 <label for="dvr-max-streams-input" class="block text-sm font-medium text-gray-400 mb-2">Maximum Simultaneous Recordings</label>
                                 <input type="number" id="dvr-max-streams-input" class="w-full md:w-1/2 bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white" min="1" value="1">
@@ -830,7 +776,6 @@
                         </div>
                     </div>
                     
-                    <!-- NEW: Storage Management Section -->
                     <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
                         <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Storage Management</h2>
                         <div class="space-y-4">
@@ -844,7 +789,6 @@
                         </div>
                     </div>
 
-                    <!-- App Settings Section -->
                     <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
                         <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">App Settings</h2>
                         <div class="space-y-4">
@@ -870,7 +814,6 @@
                         </div>
                     </div>
                 
-                    <!-- Danger Zone -->
                     <div class="bg-red-900/50 border border-red-700/50 p-4 sm:p-6 rounded-xl shadow-lg">
                         <h2 class="text-xl font-bold text-red-300 mb-4 border-b border-red-700/50 pb-2">Danger Zone</h2>
                         <p class="text-sm text-gray-400 mb-4">This permanently deletes all saved application data from the server and your browser cache. The page will reload.</p>
@@ -882,7 +825,6 @@
         
     </div>
 
-    <!-- Mobile Navigation Menu (Off-canvas/Overlay) -->
     <div id="mobile-nav-menu" class="hidden fixed inset-y-0 left-0 w-64 bg-gray-900 border-r border-gray-700 z-50 flex-col py-6 px-4 transform -translate-x-full transition-transform duration-300 ease-in-out">
         <div class="flex justify-between items-center mb-6">
             <h2 class="text-xl font-bold text-white">Navigation</h2>
@@ -910,10 +852,8 @@
         </div>
     </div>
 
-    <!-- Overlay for when mobile menu is open -->
     <div id="mobile-menu-overlay" class="hidden fixed inset-0 bg-black/50 z-40"></div>
 
-    <!-- Modals -->
     <div id="video-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
         <div id="video-modal-container" class="bg-gray-900 rounded-lg shadow-xl max-h-[90vh] flex flex-col" style="width: 896px; height: 504px;">
             <div class="flex justify-between items-center p-3 border-b border-gray-700 flex-shrink-0">
@@ -943,11 +883,8 @@
         </div>
     </div>
     
-    <!-- MODIFIED: Program Details Modal -->
     <div id="program-details-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-        <!-- Removed max-w-lg to allow free horizontal resizing. Added relative positioning. -->
         <div id="program-details-container" class="bg-gray-800 rounded-lg shadow-xl p-6 flex flex-col w-full relative" style="width: 512px;">
-            <!-- Absolute positioned container for top-right buttons -->
             <div class="absolute top-4 right-4 flex items-center gap-2 z-10">
                 <button id="details-favorite-btn" class="p-2 text-gray-500 hover:text-yellow-400 rounded-full hover:bg-gray-700 transition-colors">
                     <svg class="w-6 h-6 favorite-star" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10.868 2.884c.321-.772 1.415-.772 1.736 0l1.884 4.545a1.5 1.5 0 001.292.934l4.892.38c.787.061 1.1.99.444 1.527l-3.623 2.805a1.5 1.5 0 00-.48 1.644l1.449 4.493c.25.777-.606 1.378-1.292.934l-4.148-2.564a1.5 1.5 0 00-1.543 0l-4.148 2.564c-.686.444-1.542-.157-1.292-.934l1.449-4.493a1.5 1.5 0 00-.48-1.644L2.008 10.26c-.656-.537-.345-1.466.444-1.527l4.892-.38a1.5 1.5 0 001.292-.934l1.884-4.545z" clip-rule="evenodd" /></svg>
@@ -958,7 +895,6 @@
             </div>
     
             <div id="program-details-header" class="pb-3 border-b border-gray-700 mb-3 flex-shrink-0">
-                <!-- Added padding-right to title container to prevent overlap with absolute buttons -->
                 <div class="pr-20">
                     <h3 id="details-title" class="text-xl font-bold text-white"></h3>
                     <p id="details-time" class="text-sm text-gray-400"></p>
@@ -969,7 +905,6 @@
                 <button id="details-play-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Play Channel</button>
                 <button id="details-record-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md hidden">Record</button>
                 <button id="program-details-notify-btn" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-md hidden">Notify Me</button>
-                <!-- The old close button was here and has been removed -->
             </div>
             <div id="details-resize-handle" class="resize-handle"></div>
         </div>
@@ -990,7 +925,6 @@
         </div>
     </div>
 
-    <!-- Multi-View Channel Selector Modal -->
     <div id="multiview-channel-selector-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4">
         <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl flex flex-col" style="height: 70vh;">
             <div class="p-4 border-b border-gray-700 flex-shrink-0">
@@ -1011,7 +945,6 @@
         </div>
     </div>
 
-    <!-- Save Layout Modal -->
     <div id="save-layout-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-[70] p-4">
         <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-sm">
             <form id="save-layout-form">
@@ -1031,7 +964,6 @@
         </div>
     </div>
 
-    <!-- Source Editor Modal -->
     <div id="source-editor-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
         <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-lg">
             <form id="source-editor-form">
@@ -1084,8 +1016,6 @@
         </div>
     </div>
 
-
-    <!-- Editor Modal for User Agents and Stream Profiles -->
     <div id="editor-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
         <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-lg p-6">
             <h3 id="editor-title" class="text-xl font-bold text-white mb-4"></h3>
@@ -1153,7 +1083,6 @@
         </div>
     </div>
 
-    <!-- NEW: DVR Error Modal -->
     <div id="dvr-error-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4">
         <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl flex flex-col" style="max-height: 80vh;">
             <div class="p-4 border-b border-gray-700 flex-shrink-0">
@@ -1169,7 +1098,6 @@
         </div>
     </div>
 
-    <!-- NEW: DVR Edit Schedule Modal -->
     <div id="dvr-edit-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4">
         <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-lg">
             <form id="dvr-edit-form">
@@ -1195,8 +1123,6 @@
         </div>
     </div>
 
-
-    <!-- Main Application Script (Refactored) -->
     <script type="module" src="/js/main.js"></script>
 
 </body>
