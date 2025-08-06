@@ -34,7 +34,7 @@ The server-side backend resolves common CORS and browser compatibility issues by
  - 👤 **Multi-User Management**: Secure the application with a dedicated admin account. Create, edit, and manage standard user accounts.
  - 📺 **Modern TV Guide**: A high-performance, virtualized EPG grid that handles thousands of channels and programs smoothly. Features include advanced search, channel favoriting, and a "Recents" category.
  - 🖼️ **Multi-View**: Drag, drop, and resize players on a grid to watch multiple streams simultaneously. Save and load custom layouts.
- - 🛜 **Chromecast Support**: Cast your streams directly to any Google Cast-enabled device on your network. (This will only work if your source signal is strong and not correctly passed without package missing, due to Cast framework)
+ - 🛜 **Chromecast Support**: Cast your streams directly to any Google Cast-enabled device on your network. (This will only work if your source signal is strong and correctly passed without package missing, due to Cast framework)
  - 🔔 **Push Notifications**: Set reminders for upcoming programs and receive push notifications in your browser, even when the app is closed.
  - ⚙️ **Powerful Transcoding**: The backend uses FFMPEG to process streams, ensuring compatibility across all modern browsers and devices. Create custom stream profiles to tailor transcoding settings.
  - 📂 **Flexible Source Management**: Add M3U and EPG sources from either local files or remote URLs. Set automatic refresh intervals for URL-based sources to keep your guide data fresh.
@@ -158,29 +158,30 @@ The project is organized into a Node.js backend and a modular vanilla JavaScript
 
 ```
 /
-├── public/                  # Frontend static files
+├── public/                          # Frontend static files
 │   ├── js/
-│   │   ├── main.js          # Main application entry point
-│   │   └── modules/         # Modular JS components for each feature
-│   │       ├── api.js       # Backend API communication
-│   │       ├── auth.js      # Authentication flow
-│   │       ├── cast.js      # Google Cast logic
-│   │       ├── guide.js     # TV Guide logic & rendering
-│   │       ├── multiview.js # Multi-View grid and players
-│   │       ├── notification.js # Push notification management
-│   │       ├── player.js    # Video player (mpegts.js)
-│   │       ├── settings.js  # Settings page logic
-│   │       ├── state.js     # Shared application state
-│   │       ├── ui.js        # Global UI functions (modals, etc.)
-│   │       └── utils.js     # Utility functions (parsers)
-│   ├── sw.js                # Service Worker for push notifications
-│   └── index.html           # Main HTML file
+│   │   ├── main.js                  # Main application entry point
+│   │   └── modules/                 # Modular JS components for each feature
+│   │       ├── api.js               # Backend API communication
+│   │       ├── auth.js              # Authentication flow
+│   │       ├── cast.js              # Google Cast logic
+│   │       ├── dvr.js               # DVR logic
+│   │       ├── guide.js             # TV Guide logic & rendering
+│   │       ├── multiview.js         # Multi-View grid and players
+│   │       ├── notification.js      # Push notification management
+│   │       ├── player.js            # Video player (mpegts.js)
+│   │       ├── settings.js          # Settings page logic
+│   │       ├── state.js             # Shared application state
+│   │       ├── ui.js                # Global UI functions (modals, etc.)
+│   │       └── utils.js             # Utility functions (parsers)
+│   ├── sw.js                        # Service Worker for push notifications
+│   └── index.html                   # Main HTML file
 │
-├── server.js                # Node.js backend (Express.js)
-├── Dockerfile               # Docker build instructions
-├── docker-compose.yml       # Docker Compose configuration
-├── package.json             # Node.js dependencies
-└── .env                     # Environment variables (e.g., SESSION_SECRET)
+├── server.js                        # Node.js backend (Express.js)
+├── Dockerfile                       # Docker build instructions
+├── docker-compose.yml               # Docker Compose configuration
+├── package.json                     # Node.js dependencies
+└── .env                             # Environment variables (e.g., SESSION_SECRET)
 
 ```
 
