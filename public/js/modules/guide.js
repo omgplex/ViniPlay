@@ -222,7 +222,7 @@ export function openProgramDetails(progItem) {
  * @param {string} m3uContent - The M3U playlist content.
  * @param {object} epgContent - The parsed EPG JSON data.
  */
-export function handleGuideLoad(m3uContent, epgContent) {
+export async function handleGuideLoad(m3uContent, epgContent) {
     if (!m3uContent || m3uContent.trim() === '#EXTM3U') {
         guideState.channels = [];
         guideState.programs = {};
@@ -236,7 +236,7 @@ export function handleGuideLoad(m3uContent, epgContent) {
         appState.db.transaction(['guideData'], 'readwrite').objectStore('guideData').put(guideState.programs, 'programs');
     }
 
-    finalizeGuideLoad(true);
+    return finalizeGuideLoad(true);
 }
 
 /**
@@ -524,8 +524,14 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
             }
         };
 
-        // Resolve the promise after a short delay to allow the browser to paint
-        setTimeout(() => resolve(true), 100);
+        // **THE FIX**: Replace unreliable setTimeout with a double requestAnimationFrame.
+        // This ensures the browser has completed layout and paint before we resolve the promise,
+        // making the "ready" signal accurate.
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                resolve(true);
+            });
+        });
     });
 };
 
