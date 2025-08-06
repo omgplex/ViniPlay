@@ -514,6 +514,7 @@ const renderGuide = (channelsToRender, isFirstLoad = false) => {
         guideState.scrollHandler = throttle(updateVisibleRows, 16);
         guideContainer.addEventListener('scroll', guideState.scrollHandler);
 
+        // MODIFIED: Removed the problematic resetScroll() call
         if (resetScroll) {
             guideContainer.scrollTop = 0;
         }
