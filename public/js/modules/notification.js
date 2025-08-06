@@ -6,28 +6,20 @@
 
 import { showNotification, showConfirm, navigate, openModal, closeModal } from './ui.js';
 import { UIElements, guideState, appState } from './state.js';
-import { handleSearchAndFilter, scrollToChannel, openProgramDetails } from './guide.js'; // Import scrollToChannel & openProgramDetails
+import { handleSearchAndFilter, scrollToChannel, openProgramDetails } from './guide.js';
 import { getVapidKey, subscribeToPush, addProgramNotification, getProgramNotifications, deleteProgramNotification, unsubscribeFromPush } from './api.js';
 
 let isSubscribed = false;
 
-// NEW: Initialize BroadcastChannel for cross-page/SW communication
 const notificationChannel = new BroadcastChannel('viniplay-notifications');
 
-// NEW: Listener for messages from the Service Worker or other tabs
 notificationChannel.onmessage = (event) => {
     if (event.data && event.data.type === 'refresh-notifications') {
-        console.log('[NOTIF_CHANNEL] Received refresh signal from Service Worker/another tab. Reloading notifications.');
+        console.log('[NOTIF_CHANNEL] Received refresh signal. Reloading notifications.');
         loadAndScheduleNotifications();
     }
 };
 
-/**
- * Converts a URL-safe base64 string to a Uint8Array.
- * This is needed for the VAPID public key.
- * @param {string} base64String
- * @returns {Uint8Array}
- */
 function urlBase64ToUint8Array(base64String) {
     const padding = '='.repeat((4 - base64String.length % 4) % 4);
     const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -40,26 +32,56 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 /**
- * Subscribes the user to push notifications.
+ * Unsubscribes the user from the current push subscription, if one exists.
+ * @returns {Promise<boolean>} - True if successful or already unsubscribed.
  */
-export async function subscribeUserToPush() {
-    console.log('[NOTIF] Initiating push subscription process.');
+async function unsubscribeCurrentUser() {
+    if (!appState.swRegistration) {
+        console.warn('[NOTIF] Service worker not registered. Cannot unsubscribe.');
+        return false;
+    }
+    try {
+        const subscription = await appState.swRegistration.pushManager.getSubscription();
+        if (subscription) {
+            await unsubscribeFromPush(subscription.endpoint); // Notify backend first
+            await subscription.unsubscribe();
+            console.log('[NOTIF] User unsubscribed successfully.');
+        }
+        isSubscribed = false;
+        return true;
+    } catch (error) {
+        console.error('[NOTIF] Error during unsubscription:', error);
+        return false;
+    }
+}
+
+/**
+ * Subscribes the user to push notifications. Handles both initial subscription and re-subscription.
+ * @param {boolean} force - If true, will unsubscribe first before creating a new subscription.
+ */
+export async function subscribeUserToPush(force = false) {
+    console.log(`[NOTIF] Initiating push subscription process. Force mode: ${force}`);
     if (!appState.swRegistration) {
         console.warn('[NOTIF] Service worker not registered yet. Cannot subscribe.');
         return;
     }
 
+    if (force) {
+        showNotification('Refreshing subscription...', false, 2000);
+        await unsubscribeCurrentUser();
+    }
+
     try {
         const subscription = await appState.swRegistration.pushManager.getSubscription();
-        isSubscribed = !(subscription === null);
+        isSubscribed = (subscription !== null);
 
         if (isSubscribed) {
-            console.log('[NOTIF] User is already subscribed to push notifications.');
+            console.log('[NOTIF] User is already subscribed.');
+            if (force) showNotification('Subscription refreshed successfully!');
         } else {
             console.log('[NOTIF] User is NOT subscribed. Attempting to subscribe...');
             const vapidPublicKey = await getVapidKey();
             if (!vapidPublicKey) {
-                console.error('[NOTIF] Failed to get VAPID public key from server. Cannot subscribe.');
                 showNotification('Could not set up notifications: missing server key.', true);
                 return;
             }
@@ -74,16 +96,16 @@ export async function subscribeUserToPush() {
             const success = await subscribeToPush(newSubscription);
             if (success) {
                 isSubscribed = true;
-                showNotification('Notifications enabled successfully!');
+                showNotification(force ? 'Re-subscribed successfully!' : 'Notifications enabled successfully!');
             } else {
-                console.error('[NOTIF] Failed to send subscription to backend.');
                 isSubscribed = false;
+                showNotification('Failed to save subscription to server.', true);
             }
         }
     } catch (error) {
-        console.error('[NOTIF] Failed to subscribe the user to push notifications: ', error);
+        console.error('[NOTIF] Failed to subscribe user:', error);
         if (Notification.permission === 'denied') {
-            showNotification('Notifications are blocked by your browser settings. Please enable them manually.', true, 8000);
+            showNotification('Notifications are blocked by your browser. Please enable them manually.', true, 8000);
         } else {
             showNotification('Failed to set up notifications. Check browser console.', true);
         }
@@ -91,10 +113,6 @@ export async function subscribeUserToPush() {
     }
 }
 
-
-/**
- * Loads all active and past notifications from the backend to display in the UI.
- */
 export const loadAndScheduleNotifications = async () => {
     console.log('[NOTIF] Loading all scheduled notifications from backend.');
     try {
@@ -102,6 +120,7 @@ export const loadAndScheduleNotifications = async () => {
         guideState.userNotifications = notifications;
         console.log(`[NOTIF] Loaded ${notifications.length} scheduled notifications from server.`);
         
+        renderNotificationSettings(); // Render the settings/actions panel
         renderNotifications();
         renderPastNotifications();
         await handleSearchAndFilter(false);
@@ -111,72 +130,48 @@ export const loadAndScheduleNotifications = async () => {
     }
 };
 
-/**
- * Adds or removes a program notification by calling the backend.
- * @param {object} programDetails - Details of the program.
- */
 export const addOrRemoveNotification = async (programDetails) => {
-    console.log(`[NOTIF] Attempting to add/remove notification for: ${programDetails.programTitle}`);
+    console.log(`[NOTIF] Add/remove for: ${programDetails.programTitle}`);
     const existingNotification = findNotificationForProgram(programDetails, programDetails.channelId);
     
     if (existingNotification) {
-        console.log('[NOTIF] Existing notification found. Prompting to remove.');
         showConfirm(
             'Remove Notification?',
             `Are you sure you want to remove the notification for "${programDetails.programTitle}"?`,
             async () => {
-                const success = await deleteProgramNotification(existingNotification.id);
-                if (success) {
+                if (await deleteProgramNotification(existingNotification.id)) {
                     notificationChannel.postMessage({ type: 'refresh-notifications' });
-                    guideState.userNotifications = guideState.userNotifications.filter(n => n.id !== existingNotification.id);
-                    renderNotifications();
-                    renderPastNotifications();
-                    await handleSearchAndFilter(false);
                     showNotification(`Notification for "${programDetails.programTitle}" removed.`);
-                } else {
-                    console.error('[NOTIF] Failed to delete notification on backend.');
                 }
             }
         );
     } else {
-        console.log('[NOTIF] No existing notification found. Attempting to add new one.');
         if (Notification.permission === 'denied') {
-             showNotification('Notifications are blocked by your browser. Please enable them in site settings to receive alerts.', true, 8000);
-             console.warn('[NOTIF] Notification permission denied. Cannot add notification.');
+             showNotification('Notifications are blocked. Please enable them in site settings.', true, 8000);
              return;
         }
 
         if (Notification.permission !== 'granted') {
-            console.log('[NOTIF] Requesting notification permission.');
             const permission = await Notification.requestPermission();
             if (permission !== 'granted') {
-                showNotification('Notification permission denied. Cannot set alert.', true);
-                console.warn('[NOTIF] User denied notification permission. Cannot add notification.');
+                showNotification('Permission denied. Cannot set alert.', true);
                 return;
-            } else {
-                console.log('[NOTIF] Notification permission granted.');
-                await subscribeUserToPush();
-                if (!isSubscribed) {
-                    showNotification('Failed to subscribe to push notifications. Cannot set alert.', true);
-                    console.error('[NOTIF] Failed to subscribe to push after permission granted. Cannot add notification.');
-                    return;
-                }
             }
+        }
+        
+        await subscribeUserToPush();
+        if (!isSubscribed) {
+            showNotification('Could not subscribe to notifications. Cannot set alert.', true);
+            return;
         }
         
         let notificationLeadTime = parseInt(guideState.settings.notificationLeadTime, 10);
         if (isNaN(notificationLeadTime)) {
-            console.warn(`[NOTIF] Invalid 'notificationLeadTime' in settings: ${guideState.settings.notificationLeadTime}. Defaulting to 10.`);
             notificationLeadTime = 10;
         }
 
-        console.log('[NOTIF_DEBUG] Program Start:', programDetails.programStart);
-        console.log('[NOTIF_DEBUG] Notification Lead Time (minutes):', notificationLeadTime);
-
         const programStartTime = new Date(programDetails.programStart);
-        
         if (isNaN(programStartTime.getTime())) {
-            console.error('[NOTIF_ERROR] The program start time is invalid.', programDetails.programStart);
             showNotification('Cannot set notification due to an invalid program start time.', true);
             return;
         }
@@ -184,8 +179,7 @@ export const addOrRemoveNotification = async (programDetails) => {
         const scheduledTime = new Date(programStartTime.getTime() - notificationLeadTime * 60 * 1000);
         
         if (scheduledTime <= new Date()) {
-             showNotification(`Cannot set notification for a program that has already started or passed.`, true);
-             console.warn('[NOTIF] Attempted to set notification for a program already in progress or past.');
+             showNotification(`Cannot set notification for a program that has already started.`, true);
              return;
         }
 
@@ -201,28 +195,13 @@ export const addOrRemoveNotification = async (programDetails) => {
             scheduledTime: scheduledTime.toISOString()
         };
 
-        const addedNotification = await addProgramNotification(newNotificationData);
-        if (addedNotification) {
+        if (await addProgramNotification(newNotificationData)) {
             notificationChannel.postMessage({ type: 'refresh-notifications' });
-            const completeNotification = { ...addedNotification, status: 'pending' };
-            guideState.userNotifications.push(completeNotification);
-
-            renderNotifications();
-            await handleSearchAndFilter(false);
-            showNotification(`Notification set for "${addedNotification.programTitle}"!`);
-            console.log(`[NOTIF] Notification for "${addedNotification.programTitle}" added successfully.`);
-        } else {
-            console.error('[NOTIF] Failed to add notification via API.');
+            showNotification(`Notification set for "${newNotificationData.programTitle}"!`);
         }
     }
 };
 
-/**
- * Checks if a given program has ANY notification scheduled.
- * @param {object} program - The program object.
- * @param {string} channelId - The ID of the channel the program belongs to.
- * @returns {object|null} The notification object if found, otherwise null.
- */
 export const findNotificationForProgram = (program, channelId) => {
     return guideState.userNotifications.find(n =>
         n.channelId === channelId &&
@@ -231,8 +210,27 @@ export const findNotificationForProgram = (program, channelId) => {
 };
 
 /**
- * Renders the list of upcoming notifications in the Notification Center.
+ * --- **FIX: New function to render the notification settings/actions** ---
+ * This creates the UI for the "Re-subscribe" button.
  */
+export const renderNotificationSettings = () => {
+    const settingsEl = UIElements.notificationSettings;
+    if (!settingsEl) return;
+
+    settingsEl.innerHTML = `
+        <div class="p-4 bg-gray-800/50 rounded-lg border border-gray-700/50">
+            <h3 class="text-lg font-semibold text-white mb-2">Notification Actions</h3>
+            <p class="text-sm text-gray-400 mb-4">If you're not receiving notifications on this device, try re-subscribing.</p>
+            <button id="force-resubscribe-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition-colors">
+                Force Re-subscription on This Device
+            </button>
+        </div>
+    `;
+
+    const resubscribeBtn = document.getElementById('force-resubscribe-btn');
+    resubscribeBtn?.addEventListener('click', () => subscribeUserToPush(true));
+};
+
 export const renderNotifications = () => {
     const notificationListEl = UIElements.notificationsList;
     if (!notificationListEl) return;
@@ -249,17 +247,15 @@ export const renderNotifications = () => {
         const notificationTime = new Date(notif.scheduledTime);
 
         if (isNaN(programStartTime.getTime()) || isNaN(notificationTime.getTime())) {
-            console.error('[NOTIF_RENDER] Skipping notification with invalid date:', notif);
             return ''; 
         }
 
         const leadTimeMinutes = Math.round((programStartTime.getTime() - notificationTime.getTime()) / 60000);
-
         const formattedProgramTime = programStartTime.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
         const formattedNotificationTime = notificationTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
         return `
-            <div class="flex items-center p-4 border-b border-gray-700/50 hover:bg-gray-800 transition-colors rounded-md" data-notification-id="${notif.id}" data-status="${notif.status}">
+            <div class="flex items-center p-4 border-b border-gray-700/50 hover:bg-gray-800 transition-colors rounded-md" data-notification-id="${notif.id}">
                 <img src="${notif.channelLogo || 'https://placehold.co/48x48/1f2937/d1d5db?text=?;&font=Inter'}" onerror="this.onerror=null; this.src='https://placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-4 flex-shrink-0 rounded-md bg-gray-700">
                 <div class="flex-grow">
                     <p class="font-semibold text-white text-md">${notif.programTitle || 'Untitled Program'}</p>
@@ -281,28 +277,20 @@ export const renderNotifications = () => {
     setupNotificationListEventListeners();
 };
 
-/**
- * Renders the list of past/expired notifications.
- */
 export const renderPastNotifications = () => {
     const pastNotificationsListEl = UIElements.pastNotificationsList;
     if (!pastNotificationsListEl) return;
 
     const now = new Date();
-    
-    // --- **FIX: Correctly filter for past notifications based on the new server logic** ---
-    // A notification is considered "past" if its scheduled time is in the past,
-    // regardless of the master 'status', which is now derived on the server.
     const pastNotifications = guideState.userNotifications
         .filter(n => new Date(n.scheduledTime).getTime() <= now.getTime())
-        .sort((a, b) => new Date(b.scheduledTime) - new Date(a.scheduledTime)) // Sort by when it was supposed to trigger
-        .slice(0, 20); // Show a few more past notifications
+        .sort((a, b) => new Date(b.scheduledTime) - new Date(a.scheduledTime))
+        .slice(0, 20);
 
     UIElements.noPastNotificationsMessage.classList.toggle('hidden', pastNotifications.length > 0);
 
     pastNotificationsListEl.innerHTML = pastNotifications.map(notif => {
         const programStartTime = new Date(notif.programStart);
-        // Use the scheduledTime for display consistency, fallback to triggeredAt if needed.
         const notificationTriggerTime = new Date(notif.triggeredAt || notif.scheduledTime);
         
         if (isNaN(programStartTime.getTime()) || isNaN(notificationTriggerTime.getTime())) {
@@ -313,18 +301,16 @@ export const renderPastNotifications = () => {
         const formattedTriggerTime = notificationTriggerTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
         
         let statusText = '';
-        // The status from the server is now reliable for display.
         if (notif.status === 'sent') {
             statusText = `Notified at ${formattedTriggerTime}`;
         } else if (notif.status === 'expired') {
             statusText = `Expired at ${formattedTriggerTime}`;
         } else {
-            // This case handles notifications that were due but might not have a final status yet.
-            statusText = `Should have been notified at ${formattedTriggerTime}`;
+            statusText = `Scheduled for ${formattedTriggerTime}`;
         }
 
         return `
-            <div class="flex items-center p-4 border-b border-gray-700/50 hover:bg-gray-800 transition-colors rounded-md opacity-70" data-notification-id="${notif.id}" data-status="${notif.status}">
+            <div class="flex items-center p-4 border-b border-gray-700/50 hover:bg-gray-800 transition-colors rounded-md opacity-70" data-notification-id="${notif.id}">
                 <img src="${notif.channelLogo || 'https://placehold.co/48x48/1f2937/d1d5db?text=?;&font=Inter'}" onerror="this.onerror=null; this.src='https://placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-4 flex-shrink-0 rounded-md bg-gray-700">
                 <div class="flex-grow">
                     <p class="font-semibold text-white text-md">${notif.programTitle || 'Untitled Program'}</p>
@@ -344,9 +330,6 @@ export const renderPastNotifications = () => {
     }).join('');
 };
 
-/**
- * Sets up event listeners for the dynamically rendered notification lists.
- */
 const setupNotificationListEventListeners = () => {
     const handleClicks = (e) => {
         const deleteBtn = e.target.closest('.delete-notification-btn');
@@ -360,22 +343,14 @@ const setupNotificationListEventListeners = () => {
                     'Delete Notification?',
                     `Are you sure you want to delete the notification for "${notification.programTitle}"?`,
                     async () => {
-                        const success = await deleteProgramNotification(notificationId);
-                        if (success) {
+                        if (await deleteProgramNotification(notificationId)) {
                             notificationChannel.postMessage({ type: 'refresh-notifications' });
-                            guideState.userNotifications = guideState.userNotifications.filter(n => n.id != notificationId);
-                            renderNotifications();
-                            renderPastNotifications();
-                            await handleSearchAndFilter(false);
-                            showNotification(`Notification for "${notification.programTitle}" removed.`);
                         }
                     }
                 );
             }
         } else if (viewBtn) {
-            const channelId = viewBtn.dataset.channelId;
-            const programStart = viewBtn.dataset.programStart;
-            const programId = viewBtn.dataset.programId;
+            const { channelId, programStart, programId } = viewBtn.dataset;
             navigateToProgramInGuide(channelId, programStart, programId);
         }
     };
@@ -387,16 +362,9 @@ const setupNotificationListEventListeners = () => {
     UIElements.pastNotificationsList?.addEventListener('click', handleClicks);
 };
 
-/**
- * Navigates to the TV Guide, scrolls to the channel, and opens the program details.
- * @param {string} channelId - The full, dynamic channel ID from the notification.
- * @param {string} programStart - The ISO string of the program's start time.
- * @param {string} programId - The unique program ID (can be ignored as it's also dynamic).
- */
 export const navigateToProgramInGuide = async (channelId, programStart, programId) => {
-    console.log(`[NOTIF_NAV] Navigating to program. Original Channel ID: ${channelId}, Start: ${programStart}`);
+    console.log(`[NOTIF_NAV] Navigating to program. Channel: ${channelId}, Start: ${programStart}`);
     const stableChannelIdSuffix = channelId.includes('_') ? '_' + channelId.split('_').pop() : channelId;
-    console.log(`[NOTIF_NAV] Using stable channel ID suffix for matching: "${stableChannelIdSuffix}"`);
 
     navigate('/tvguide');
     await new Promise(resolve => setTimeout(resolve, 50));
@@ -406,23 +374,19 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
     currentGuideDate.setHours(0, 0, 0, 0);
 
     if (targetProgramStart.toDateString() !== currentGuideDate.toDateString()) {
-        console.log(`[NOTIF_NAV] Program is on a different day. Adjusting guide date.`);
         guideState.currentDate = targetProgramStart;
         await handleSearchAndFilter(true);
     }
 
-    console.log('[NOTIF_DEBUG] Awaiting scrollToChannel to confirm vertical scroll and render.');
     const channelScrolledAndRendered = await scrollToChannel(stableChannelIdSuffix);
     
     if (!channelScrolledAndRendered) {
-        showNotification("Could not find the channel in the guide. It might be filtered out.", false, 6000);
+        showNotification("Could not find the channel in the guide.", false, 6000);
         return;
     }
-    console.log('[NOTIF_DEBUG] scrollToChannel confirmed channel row is rendered.');
 
     const currentChannelElement = UIElements.guideGrid.querySelector(`.channel-info[data-id$="${stableChannelIdSuffix}"]`);
     if (!currentChannelElement) {
-        console.error(`[NOTIF_DEBUG] CRITICAL: Channel element with suffix ${stableChannelIdSuffix} not found after scrollToChannel resolved true.`);
         showNotification("An unexpected error occurred while locating the channel.", true);
         return;
     }
@@ -433,15 +397,11 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
     );
 
     if (!programElement) {
-        console.warn(`[NOTIF_DEBUG] Channel row found, but program element not found for start time ${programStart} and channel ${currentDynamicChannelId}. It may be out of view horizontally or data is missing.`);
         showNotification("Could not find the specific program in the guide's timeline.", false, 6000);
         return;
     }
 
-    console.log('[NOTIF_DEBUG] Program element found. Proceeding with centering and opening details.');
-
     const guideContainer = UIElements.guideContainer;
-    
     const programRect = programElement.getBoundingClientRect();
     const containerRect = guideContainer.getBoundingClientRect();
     
@@ -455,9 +415,7 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
     });
 
     setTimeout(() => {
-        console.log('[NOTIF_DEBUG] Calling openProgramDetails directly.');
         openProgramDetails(programElement);
-        
         programElement.classList.add('highlighted-search');
         setTimeout(() => { programElement.classList.remove('highlighted-search'); }, 2500);
     }, 300);
