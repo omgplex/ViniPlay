@@ -524,23 +524,36 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
             }
         };
 
-        // **THE FIX**: Replace unreliable setTimeout with a double requestAnimationFrame.
-        // This ensures the browser has completed layout and paint before we resolve the promise,
-        // making the "ready" signal accurate.
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                resolve(true);
+        // NEW: Use ResizeObserver to trigger scrollToNow when content is rendered
+        if (rowContainer) {
+            const observer = new ResizeObserver((entries) => {
+                for (let entry of entries) {
+                    if (entry.target === rowContainer) {
+                        // Check if the height has become non-zero, indicating content is rendered
+                        if (entry.contentRect.height > 0) {
+                            console.log('[GUIDE] ResizeObserver detected content rendered. Triggering scrollToNow.');
+                            scrollToNow();
+                            observer.disconnect(); // Disconnect after first successful scroll
+                            resolve(true); // Resolve the promise
+                        }
+                    }
+                }
             });
-        });
+            observer.observe(rowContainer);
+            console.log('[GUIDE] ResizeObserver attached to virtual-row-container.');
+        } else {
+            console.warn('[GUIDE] rowContainer not found for ResizeObserver. Resolving promise.');
+            resolve(true); // Resolve immediately if observer can't be attached
+        }
     });
 };
 
 /**
- * **NEW**: Scrolls the timeline to the current time.
- * This is now a separate function to be called *after* the guide is rendered.
+ * Scrolls the timeline to the current time.
  */
 export function scrollToNow() {
     console.log("[GUIDE] scrollToNow called.");
+    // Removed setTimeout, now triggered by ResizeObserver in renderGuide
     requestAnimationFrame(() => {
         const guideStart = new Date(guideState.currentDate);
         guideStart.setHours(0, 0, 0, 0);
@@ -549,7 +562,18 @@ export function scrollToNow() {
         const now = new Date();
         const nowValue = now.getTime();
         const guideEnd = new Date(guideStartUtc.getTime() + guideState.guideDurationHours * 3600 * 1000);
-        const channelInfoColWidth = guideState.settings.channelColumnWidth;
+        
+        // Ensure UIElements.guideGrid and UIElements.guideContainer are available and have dimensions
+        if (!UIElements.guideGrid || !UIElements.guideContainer) {
+            console.warn("[GUIDE] scrollToNow: Missing guideGrid or guideContainer elements. Cannot scroll.");
+            return;
+        }
+
+        // Dynamically get the channel column width
+        const channelInfoCol = UIElements.guideGrid.querySelector('.channel-info');
+        const channelInfoColWidth = channelInfoCol ? channelInfoCol.offsetWidth : (guideState.settings.channelColumnWidth || 180); // Fallback to setting or default
+        console.log(`[GUIDE] scrollToNow: channelInfoColWidth (measured): ${channelInfoColWidth}px`);
+        console.log(`[GUIDE] scrollToNow: guideContainer.clientWidth: ${UIElements.guideContainer.clientWidth}px`);
 
         if (nowValue >= guideStartUtc.getTime() && nowValue <= guideEnd.getTime()) {
             const leftOffsetInScrollableArea = ((nowValue - guideStartUtc.getTime()) / 3600000) * guideState.hourWidthPixels;
@@ -558,8 +582,10 @@ export function scrollToNow() {
             let scrollLeft;
 
             if (isMobile) {
+                // On mobile, center the 'now' line in the visible area
                 scrollLeft = (channelInfoColWidth + leftOffsetInScrollableArea) - (UIElements.guideContainer.clientWidth / 2);
             } else {
+                // On desktop, position 'now' line at approximately 1/4th of the visible width
                 scrollLeft = leftOffsetInScrollableArea - (UIElements.guideContainer.clientWidth / 4);
             }
             
@@ -590,7 +616,10 @@ const updateNowLine = () => {
     const now = new Date();
     const nowValue = now.getTime();
     const guideEnd = new Date(guideStartUtc.getTime() + guideState.guideDurationHours * 3600 * 1000);
-    const channelInfoColWidth = guideState.settings.channelColumnWidth;
+    
+    // Ensure UIElements.guideGrid is available for dynamic width calculation
+    const channelInfoCol = UIElements.guideGrid.querySelector('.channel-info');
+    const channelInfoColWidth = channelInfoCol ? channelInfoCol.offsetWidth : (guideState.settings.channelColumnWidth || 180);
 
     if (nowValue >= guideStartUtc.getTime() && nowValue <= guideEnd.getTime()) {
         const leftOffsetInScrollableArea = ((nowValue - guideStartUtc.getTime()) / 3600000) * guideState.hourWidthPixels;
