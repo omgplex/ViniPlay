@@ -18,10 +18,6 @@ import { addOrRemoveDvrJob, findDvrJobForProgram } from './dvr.js';
 const ROW_HEIGHT = 96; // Height in pixels of a single channel row (.channel-info + .timeline-row)
 const OVERSCAN_COUNT = 5; // Number of extra rows to render above and below the visible area for smooth scrolling
 
-// Global variable to hold the ResizeObserver instance for the virtual guide content.
-// This ensures we only have one observer active for the initial scroll.
-let guideContentResizeObserver = null;
-
 /**
  * NEW: Opens the program details modal. This is now a standalone, exportable function.
  * @param {HTMLElement} progItem - The program item element that was clicked.
@@ -226,7 +222,7 @@ export function openProgramDetails(progItem) {
  * @param {string} m3uContent - The M3U playlist content.
  * @param {object} epgContent - The parsed EPG JSON data.
  */
-export async function handleGuideLoad(m3uContent, epgContent) {
+export function handleGuideLoad(m3uContent, epgContent) {
     if (!m3uContent || m3uContent.trim() === '#EXTM3U') {
         guideState.channels = [];
         guideState.programs = {};
@@ -240,7 +236,7 @@ export async function handleGuideLoad(m3uContent, epgContent) {
         appState.db.transaction(['guideData'], 'readwrite').objectStore('guideData').put(guideState.programs, 'programs');
     }
 
-    return finalizeGuideLoad(true);
+    finalizeGuideLoad(true);
 }
 
 /**
@@ -354,7 +350,7 @@ export function finalizeGuideLoad(isFirstLoad = false) {
         includeScore: true,
     });
 
-    return handleSearchAndFilter(isFirstLoad);
+    handleSearchAndFilter(isFirstLoad);
 }
 
 // --- UI Rendering (REFACTORED FOR VIRTUALIZATION) ---
@@ -362,10 +358,10 @@ export function finalizeGuideLoad(isFirstLoad = false) {
 /**
  * Renders the guide using UI virtualization.
  * @param {Array<object>} channelsToRender - The filtered list of channels to display.
- * @param {boolean} isFirstLoad - If true, indicates this is the initial load, triggering specific scroll logic.
+ * @param {boolean} resetScroll - If true, scrolls the guide to the top-left.
  * @returns {Promise<boolean>} A promise that resolves when the initial render is complete.
  */
-const renderGuide = (channelsToRender, isFirstLoad = false) => {
+const renderGuide = (channelsToRender, resetScroll = false) => {
     return new Promise((resolve) => {
         guideState.visibleChannels = channelsToRender;
         const totalRows = channelsToRender.length;
@@ -377,12 +373,6 @@ const renderGuide = (channelsToRender, isFirstLoad = false) => {
         UIElements.guideGrid.classList.toggle('hidden', showNoData);
         if (showNoData) {
             UIElements.guideGrid.innerHTML = '';
-            // Disconnect any existing observer if no data is shown
-            if (guideContentResizeObserver) {
-                guideContentResizeObserver.disconnect();
-                guideContentResizeObserver = null;
-                console.log('[GUIDE] Disconnected ResizeObserver due to no data.');
-            }
             resolve(true);
             return;
         }
@@ -514,136 +504,65 @@ const renderGuide = (channelsToRender, isFirstLoad = false) => {
         guideState.scrollHandler = throttle(updateVisibleRows, 16);
         guideContainer.addEventListener('scroll', guideState.scrollHandler);
 
-        // MODIFIED: Removed the problematic resetScroll() call
         if (resetScroll) {
             guideContainer.scrollTop = 0;
         }
         updateVisibleRows();
-        updateNowLine(); // No longer needs guideStartUtc, it will calculate it
+        updateNowLine(guideStartUtc, resetScroll);
 
         const nowBtn = UIElements.guideGrid.querySelector('#now-btn');
         if (nowBtn) nowBtn.onclick = () => {
             const now = new Date();
             if (guideState.currentDate.toDateString() !== now.toDateString()) {
                 guideState.currentDate = now;
-                // We return the promise here so the caller can wait
-                finalizeGuideLoad(true).then(() => {
-                    scrollToNow();
-                });
+                finalizeGuideLoad(true);
             } else {
-                scrollToNow();
+                const guideStart = new Date(guideState.currentDate);
+                guideStart.setHours(0, 0, 0, 0);
+                const guideStartUtc = new Date(Date.UTC(guideStart.getUTCFullYear(), guideStart.getUTCMonth(), guideStart.getUTCDate()));
+                updateNowLine(guideStartUtc, true);
             }
         };
 
-        // NEW LOGIC FOR RESIZE OBSERVER
-        if (isFirstLoad) {
-            // Disconnect any previous observer if it exists from a prior load cycle
-            if (guideContentResizeObserver) {
-                guideContentResizeObserver.disconnect();
-                console.log('[GUIDE] Disconnecting previous ResizeObserver for initial load.');
-            }
-
-            guideContentResizeObserver = new ResizeObserver((entries) => {
-                for (let entry of entries) {
-                    if (entry.target === rowContainer) {
-                        // Check if the height has become non-zero, indicating content is rendered
-                        if (entry.contentRect.height > 0) {
-                            console.log('[GUIDE] ResizeObserver detected content rendered. Triggering scrollToNow.');
-                            scrollToNow();
-                            guideContentResizeObserver.disconnect(); // Disconnect after first successful scroll for this load
-                            guideContentResizeObserver = null; // Clear the reference
-                            resolve(true); // Resolve the promise
-                        }
-                    }
-                }
-            });
-            guideContentResizeObserver.observe(rowContainer);
-            console.log('[GUIDE] New ResizeObserver attached to virtual-row-container for initial load.');
-        } else {
-            // If not the first load (e.g., filter change), content is likely already rendered,
-            // so we can directly resolve the promise and ensure scroll if needed.
-            console.log('[GUIDE] Not first load, resolving renderGuide promise directly.');
-            resolve(true);
-        }
+        setTimeout(() => resolve(true), 100);
     });
 };
 
 /**
- * Scrolls the timeline to the current time.
- */
-export function scrollToNow() {
-    console.log("[GUIDE] scrollToNow called.");
-    requestAnimationFrame(() => {
-        const guideStart = new Date(guideState.currentDate);
-        guideStart.setHours(0, 0, 0, 0);
-        const guideStartUtc = new Date(Date.UTC(guideStart.getUTCFullYear(), guideStart.getUTCMonth(), guideStart.getUTCDate()));
-        
-        const now = new Date();
-        const nowValue = now.getTime();
-        const guideEnd = new Date(guideStartUtc.getTime() + guideState.guideDurationHours * 3600 * 1000);
-        
-        // Ensure UIElements.guideGrid and UIElements.guideContainer are available and have dimensions
-        if (!UIElements.guideGrid || !UIElements.guideContainer) {
-            console.warn("[GUIDE] scrollToNow: Missing guideGrid or guideContainer elements. Cannot scroll.");
-            return;
-        }
-
-        // Dynamically get the channel column width
-        const channelInfoCol = UIElements.guideGrid.querySelector('.channel-info');
-        const channelInfoColWidth = channelInfoCol ? channelInfoCol.offsetWidth : (guideState.settings.channelColumnWidth || 180); // Fallback to setting or default
-        console.log(`[GUIDE] scrollToNow: channelInfoColWidth (measured): ${channelInfoColWidth}px`);
-        console.log(`[GUIDE] scrollToNow: guideContainer.clientWidth: ${UIElements.guideContainer.clientWidth}px`);
-
-        if (nowValue >= guideStartUtc.getTime() && nowValue <= guideEnd.getTime()) {
-            const leftOffsetInScrollableArea = ((nowValue - guideStartUtc.getTime()) / 3600000) * guideState.hourWidthPixels;
-            
-            const isMobile = window.innerWidth < 768; 
-            let scrollLeft;
-
-            if (isMobile) {
-                // On mobile, center the 'now' line in the visible area
-                scrollLeft = (channelInfoColWidth + leftOffsetInScrollableArea) - (UIElements.guideContainer.clientWidth / 2);
-            } else {
-                // On desktop, position 'now' line at approximately 1/4th of the visible width
-                scrollLeft = leftOffsetInScrollableArea - (UIElements.guideContainer.clientWidth / 4);
-            }
-            
-            UIElements.guideContainer.scrollTo({
-                left: Math.max(0, scrollLeft),
-                behavior: 'smooth'
-            });
-            console.log(`[GUIDE] Scrolling to position: ${scrollLeft}`);
-        } else {
-            console.log("[GUIDE] 'Now' is outside the current guide view. Not scrolling.");
-        }
-    });
-}
-
-
-/**
  * Updates the position of the "now" line and program states (live, past).
- * This function no longer handles scrolling.
+ * @param {Date} guideStartUtc - The start time of the current guide view in UTC.
+ * @param {boolean} shouldScroll - If true, scrolls the timeline to the now line.
  */
-const updateNowLine = () => {
+const updateNowLine = (guideStartUtc, shouldScroll = false) => {
     const nowLineEl = document.getElementById('now-line');
     if (!nowLineEl) return;
-
-    const guideStart = new Date(guideState.currentDate);
-    guideStart.setHours(0, 0, 0, 0);
-    const guideStartUtc = new Date(Date.UTC(guideStart.getUTCFullYear(), guideStart.getUTCMonth(), guideStart.getUTCDate()));
 
     const now = new Date();
     const nowValue = now.getTime();
     const guideEnd = new Date(guideStartUtc.getTime() + guideState.guideDurationHours * 3600 * 1000);
-    
-    // Ensure UIElements.guideGrid is available for dynamic width calculation
-    const channelInfoCol = UIElements.guideGrid.querySelector('.channel-info');
-    const channelInfoColWidth = channelInfoCol ? channelInfoCol.offsetWidth : (guideState.settings.channelColumnWidth || 180);
+    const channelInfoColWidth = guideState.settings.channelColumnWidth;
 
     if (nowValue >= guideStartUtc.getTime() && nowValue <= guideEnd.getTime()) {
         const leftOffsetInScrollableArea = ((nowValue - guideStartUtc.getTime()) / 3600000) * guideState.hourWidthPixels;
         nowLineEl.style.left = `${channelInfoColWidth + leftOffsetInScrollableArea}px`;
         nowLineEl.classList.remove('hidden');
+        if (shouldScroll) {
+            setTimeout(() => {
+                const isMobile = window.innerWidth < 768; 
+                let scrollLeft;
+
+                if (isMobile) {
+                    scrollLeft = (channelInfoColWidth + leftOffsetInScrollableArea) - (UIElements.guideContainer.clientWidth / 2);
+                } else {
+                    scrollLeft = leftOffsetInScrollableArea - (UIElements.guideContainer.clientWidth / 4);
+                }
+                
+                UIElements.guideContainer.scrollTo({
+                    left: Math.max(0, scrollLeft),
+                    behavior: 'smooth'
+                });
+            }, 500);
+        }        
     } else {
         nowLineEl.classList.add('hidden');
     }
@@ -661,7 +580,7 @@ const updateNowLine = () => {
         }
     });
 
-    setTimeout(updateNowLine, 60000);
+    setTimeout(() => updateNowLine(guideStartUtc, false), 60000);
 };
 
 // --- Filtering and Searching ---
@@ -997,3 +916,4 @@ export function setupGuideEventListeners() {
         UIElements.guideContainer.addEventListener('scroll', handleScrollHeader);
     }
 }
+
