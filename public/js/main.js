@@ -8,7 +8,7 @@
 import { appState, guideState, UIElements } from './modules/state.js';
 import { apiFetch, fetchConfig } from './modules/api.js'; // IMPORTED fetchConfig
 import { checkAuthStatus, setupAuthEventListeners } from './modules/auth.js';
-import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './modules/guide.js';
+import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners, scrollToNow } from './modules/guide.js';
 import { setupPlayerEventListeners } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
 import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu, showNotification } from './modules/ui.js';
@@ -75,10 +75,12 @@ export async function initMainApp() {
             console.log('[MAIN] Loaded guide data from cache. Finalizing guide load.');
             guideState.channels = cachedChannels;
             guideState.programs = cachedPrograms;
-            finalizeGuideLoad(true); // true indicates first load
+            await finalizeGuideLoad(true); // MODIFIED: Wait for guide to finish rendering
+            scrollToNow(); // MODIFIED: Scroll only after rendering is complete
         } else if (config.m3uContent) {
             console.log('[MAIN] No cached data or incomplete cache. Processing guide data from server config.');
-            handleGuideLoad(config.m3uContent, config.epgContent);
+            await handleGuideLoad(config.m3uContent, config.epgContent); // MODIFIED: Wait for guide to finish rendering
+            scrollToNow(); // MODIFIED: Scroll only after rendering is complete
         } else {
             console.log('[MAIN] No M3U content from server or cache. Displaying no data message.');
             UIElements.initialLoadingIndicator.classList.add('hidden');
