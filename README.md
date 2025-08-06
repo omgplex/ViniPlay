@@ -41,7 +41,7 @@ The server-side backend resolves common CORS and browser compatibility issues by
  - 🚀 **High Performance UI**: The frontend is built with performance in mind, using UI virtualization for the guide and efficient state management to ensure a fast and responsive experience.
  - 🐳 **Dockerized Deployment**: The entire application is packaged in a single Docker container for simple, one-command deployment using Docker or Docker Compose.
  - ▶️ **Picture-in-Picture**: Pop out the player to keep watching while you work on other things.
-
+ - 🎥 **DVR**: Record programs using FFMPEG. Schedule recording via the TV Guide, or set specific channels and time with ease.
 
 ---
 
