@@ -76,11 +76,11 @@ export async function initMainApp() {
             guideState.channels = cachedChannels;
             guideState.programs = cachedPrograms;
             await finalizeGuideLoad(true); // MODIFIED: Wait for guide to finish rendering
-            scrollToNow(); // MODIFIED: Scroll only after rendering is complete
+            // Removed setTimeout, scrollToNow will be called by ResizeObserver in guide.js
         } else if (config.m3uContent) {
             console.log('[MAIN] No cached data or incomplete cache. Processing guide data from server config.');
             await handleGuideLoad(config.m3uContent, config.epgContent); // MODIFIED: Wait for guide to finish rendering
-            scrollToNow(); // MODIFIED: Scroll only after rendering is complete
+            // Removed setTimeout, scrollToNow will be called by ResizeObserver in guide.js
         } else {
             console.log('[MAIN] No M3U content from server or cache. Displaying no data message.');
             UIElements.initialLoadingIndicator.classList.add('hidden');
