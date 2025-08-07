@@ -57,7 +57,11 @@ try {
         fs.writeFileSync(VAPID_KEYS_PATH, JSON.stringify(vapidKeys, null, 2));
         console.log('[Push] New VAPID keys generated and saved.');
     }
-    webpush.setVapidDetails('mailto:example@example.com', vapidKeys.publicKey, vapidKeys.privateKey);
+    // MODIFIED: Use a configurable email from .env for VAPID details.
+    // This is required by push services and helps prevent rejection errors.
+    const vapidContactEmail = process.env.VAPID_CONTACT_EMAIL || 'mailto:admin@example.com';
+    console.log(`[Push] Setting VAPID contact to: ${vapidContactEmail}`);
+    webpush.setVapidDetails(vapidContactEmail, vapidKeys.publicKey, vapidKeys.privateKey);
 } catch (error) {
     console.error('[Push] FATAL: Could not load or generate VAPID keys.', error);
 }
@@ -1486,9 +1490,9 @@ async function checkAndSendNotifications() {
         for (const delivery of dueDeliveries) {
             console.log(`[PUSH_CHECKER] Processing delivery ID ${delivery.delivery_id} for program "${delivery.programTitle}" to subscription ${delivery.subscription_id}.`);
             
+            // MODIFIED: Simplified the payload to only include necessary data for the service worker.
             const payload = JSON.stringify({
                 type: 'program_reminder',
-                title: `Reminder: ${delivery.programTitle}`,
                 data: {
                     programTitle: delivery.programTitle,
                     programStart: delivery.programStart,
@@ -1502,8 +1506,14 @@ async function checkAndSendNotifications() {
                 endpoint: delivery.endpoint,
                 keys: { p256dh: delivery.p256dh, auth: delivery.auth }
             };
+            
+            // MODIFIED: Added a TTL (Time-To-Live) to the push options.
+            // This tells the push service to discard the notification after 24 hours if the device is offline.
+            const pushOptions = {
+                TTL: 86400 // 24 hours in seconds
+            };
 
-            webpush.sendNotification(pushSubscription, payload)
+            webpush.sendNotification(pushSubscription, payload, pushOptions)
                 .then(() => {
                     console.log(`[PUSH_CHECKER] Successfully sent notification for delivery ID ${delivery.delivery_id}.`);
                     db.run("UPDATE notification_deliveries SET status = 'sent', updatedAt = ? WHERE id = ?", [nowIso, delivery.delivery_id]);
