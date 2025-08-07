@@ -43,11 +43,10 @@ async function unsubscribeCurrentUser() {
     try {
         const subscription = await appState.swRegistration.pushManager.getSubscription();
         if (subscription) {
-            // --- **FIX: Only notify the backend if we have a valid endpoint to send** ---
-            // This prevents the 400 error if the subscription is stale or malformed.
-            if (subscription.endpoint) {
-                await unsubscribeFromPush(subscription.endpoint); // Notify backend to delete this specific subscription.
-            }
+            // MODIFIED: Pass the entire subscription object to the API wrapper.
+            // The API function (unsubscribeFromPush) is responsible for extracting the endpoint.
+            // This fixes a bug where `undefined` was being sent to the server.
+            await unsubscribeFromPush(subscription); // Notify backend to delete this specific subscription.
             await subscription.unsubscribe(); // This removes the subscription from the browser itself.
             console.log('[NOTIF] User unsubscribed successfully from this device.');
         }
