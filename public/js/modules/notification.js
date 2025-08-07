@@ -20,6 +20,21 @@ notificationChannel.onmessage = (event) => {
     }
 };
 
+// NEW: Listen for direct messages from the service worker
+navigator.serviceWorker.addEventListener('message', event => {
+    if (event.data && event.data.type === 'navigate-to-program') {
+        console.log('[NOTIF] Received navigate-to-program message from SW.');
+        const { channelId, programStart, programId } = event.data.data;
+        if (channelId && programStart) {
+            // A short delay can help ensure the UI is ready, especially if the app was just opened.
+            setTimeout(() => {
+                navigateToProgramInGuide(channelId, programStart, programId);
+            }, 500);
+        }
+    }
+});
+
+
 function urlBase64ToUint8Array(base64String) {
     const padding = '='.repeat((4 - base64String.length % 4) % 4);
     const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -371,18 +386,23 @@ const setupNotificationListEventListeners = () => {
 
 export const navigateToProgramInGuide = async (channelId, programStart, programId) => {
     console.log(`[NOTIF_NAV] Navigating to program. Channel: ${channelId}, Start: ${programStart}`);
-    const stableChannelIdSuffix = channelId.includes('_') ? '_' + channelId.split('_').pop() : channelId;
+    
+    // Fallback for potentially incomplete channelId from older notifications
+    const stableChannelIdSuffix = channelId.includes('_') ? channelId.split('_').pop() : channelId;
 
     navigate('/tvguide');
-    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // Give the UI a moment to switch tabs and render the guide structure
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     const targetProgramStart = new Date(programStart);
     const currentGuideDate = new Date(guideState.currentDate);
     currentGuideDate.setHours(0, 0, 0, 0);
 
+    // If the program is not on the currently displayed date, switch the date and reload the guide
     if (targetProgramStart.toDateString() !== currentGuideDate.toDateString()) {
         guideState.currentDate = targetProgramStart;
-        await handleSearchAndFilter(true);
+        await handleSearchAndFilter(true); // `true` forces a full reload and scroll reset
     }
 
     const channelScrolledAndRendered = await scrollToChannel(stableChannelIdSuffix);
@@ -392,13 +412,15 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
         return;
     }
 
+    // Now that the channel is visible, find its full dynamic ID
     const currentChannelElement = UIElements.guideGrid.querySelector(`.channel-info[data-id$="${stableChannelIdSuffix}"]`);
     if (!currentChannelElement) {
-        showNotification("An unexpected error occurred while locating the channel.", true);
+        showNotification("An unexpected error occurred while locating the channel element.", true);
         return;
     }
     const currentDynamicChannelId = currentChannelElement.dataset.id;
 
+    // Finally, find the specific program element
     const programElement = UIElements.guideGrid.querySelector(
         `.programme-item[data-prog-start="${programStart}"][data-channel-id="${currentDynamicChannelId}"]`
     );
@@ -412,6 +434,7 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
     const programRect = programElement.getBoundingClientRect();
     const containerRect = guideContainer.getBoundingClientRect();
     
+    // Calculate the desired scroll position to center the program both vertically and horizontally
     const desiredScrollTop = guideContainer.scrollTop + programRect.top - containerRect.top - (containerRect.height / 2) + (programRect.height / 2);
     const desiredScrollLeft = guideContainer.scrollLeft + programRect.left - containerRect.left - (containerRect.width / 2) + (programRect.width / 2);
 
@@ -421,9 +444,10 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
         behavior: 'smooth'
     });
 
+    // Use a timeout to ensure scrolling is complete before opening details and highlighting
     setTimeout(() => {
         openProgramDetails(programElement);
         programElement.classList.add('highlighted-search');
         setTimeout(() => { programElement.classList.remove('highlighted-search'); }, 2500);
-    }, 300);
+    }, 350);
 };
