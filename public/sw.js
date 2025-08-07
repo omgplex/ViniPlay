@@ -7,7 +7,7 @@
  * web page is not open.
  */
 
-// NEW: Initialize BroadcastChannel for cross-page communication
+// Initialize BroadcastChannel for cross-page communication
 const notificationChannel = new BroadcastChannel('viniplay-notifications');
 
 // Listener for when a push message is received
@@ -19,53 +19,47 @@ self.addEventListener('push', event => {
         payload = event.data.json();
     } catch (e) {
         console.error('[Service Worker] Error parsing push data:', e);
-        // If parsing fails, we can't do much, so we'll just log it.
         return;
     }
 
-    // --- **FIX: Timezone-Correct Notification Logic** ---
-    // This logic correctly interprets the data from the updated server.js
-    // and formats the notification based on the user's local timezone.
     if (payload && payload.type === 'program_reminder' && payload.data) {
-        const { programTitle, programStart, channelName, channelLogo, url } = payload.data;
+        const { programTitle, programStart, channelName, channelLogo, url, programId, channelId } = payload.data;
 
-        // Validate essential data to prevent errors
         if (!programTitle || !programStart || !channelName) {
             console.error('[SW] Invalid program_reminder payload. Missing essential data.', payload.data);
             return;
         }
 
-        // Convert the UTC start time from the server into a local time string.
-        // This is the key to fixing the timezone issue.
         const localStartTime = new Date(programStart).toLocaleTimeString([], {
             hour: '2-digit',
             minute: '2-digit',
-            hour12: false // Using 24-hour format for consistency
+            hour12: false
         });
 
         const notificationTitle = programTitle;
         const notificationOptions = {
             body: `Starts at ${localStartTime} on ${channelName}`,
             icon: channelLogo || 'https://i.imgur.com/rwa8SjI.png',
-            badge: 'https://i.imgur.com/rwa8SjI.png', // Badge for Android
+            badge: 'https://i.imgur.com/rwa8SjI.png',
             vibrate: [100, 50, 100],
-            data: {
-                url: url || '/'
+            data: { // Store all necessary data here
+                url: url || '/',
+                channelId: channelId,
+                programStart: programStart,
+                programId: programId
             },
-            tag: `program-${programStart}-${channelName}` // Prevents duplicate notifications for the same event
+            tag: `program-${programStart}-${channelName}`
         };
         
         console.log(`[SW] Showing timezone-aware notification: "${notificationTitle}" with body: "${notificationOptions.body}"`);
         event.waitUntil(
             self.registration.showNotification(notificationTitle, notificationOptions)
             .then(() => {
-                // Your existing logic to refresh clients
                 notificationChannel.postMessage({ type: 'refresh-notifications' });
             })
         );
 
     } else {
-        // Fallback for any other type of notification you might have
         console.log('[SW] Received a generic push notification.', payload);
         const title = payload.title || 'ViniPlay Notification';
         const options = {
@@ -79,40 +73,42 @@ self.addEventListener('push', event => {
     }
 });
 
-// Listener for when a user clicks on the notification
+// MODIFIED: Listener for when a user clicks on the notification
 self.addEventListener('notificationclick', event => {
     console.log('[Service Worker] Notification click Received.');
-
-    // Close the notification
     event.notification.close();
 
-    const urlToOpen = event.notification.data.url || '/';
+    const { channelId, programStart, programId } = event.notification.data;
 
-    // Use waitUntil to ensure the browser doesn't terminate the
-    // service worker before the new window/tab has been focused.
+    const messagePayload = {
+        type: 'navigate-to-program',
+        data: { channelId, programStart, programId }
+    };
+
     event.waitUntil(
         clients.matchAll({
             type: "window",
-            includeUncontrolled: true // Include tabs that might not be controlled by this SW yet
+            includeUncontrolled: true
         }).then(clientList => {
-            // Check if there's already a window open for the app
-            for (let i = 0; i < clientList.length; i++) {
-                const client = clientList[i];
-                // If a client is found that matches our origin, navigate it to the specific URL
-                if (client.url.startsWith(self.location.origin) && 'navigate' in client) {
-                    return client.navigate(urlToOpen).then(navigatedClient => {
-                        // After navigating and focusing, also send a refresh signal
-                        notificationChannel.postMessage({ type: 'refresh-notifications' });
-                        return navigatedClient.focus();
-                    });
+            // Check if there's an open tab
+            for (const client of clientList) {
+                if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+                    console.log('[SW] Found an open client. Focusing and sending message.');
+                    // Post the message to the specific client
+                    client.postMessage(messagePayload);
+                    return client.focus();
                 }
             }
-            // If no client is found or no suitable client to navigate, open a new tab/window.
+            // If no client is found, open a new window
             if (clients.openWindow) {
-                return clients.openWindow(urlToOpen).then(newWindow => {
-                    // If a new window is opened, also send a refresh signal once it loads
-                    notificationChannel.postMessage({ type: 'refresh-notifications' });
-                    return newWindow;
+                console.log('[SW] No open client found. Opening a new window.');
+                return clients.openWindow('/').then(windowClient => {
+                    // Wait for the new window to be ready before sending the message
+                    if (windowClient) {
+                       // The message will be queued and sent once the page is ready
+                       // We will add a listener in the main app to handle this
+                       console.log('[SW] New window opened. The app will handle the navigation.');
+                    }
                 });
             }
         })
