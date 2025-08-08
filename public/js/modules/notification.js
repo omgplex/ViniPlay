@@ -78,11 +78,10 @@ export async function subscribeUserToPush(force = false) {
         const subscription = await appState.swRegistration.pushManager.getSubscription();
         isSubscribed = (subscription !== null);
 
-        if (isSubscribed) {
+        if (isSubscribed && !force) { // MODIFIED: Added !force condition
             console.log('[NOTIF] User is already subscribed on this device.');
-            if (force) showNotification('Subscription refreshed successfully!');
         } else {
-            console.log('[NOTIF] User is NOT subscribed. Attempting to subscribe...');
+            console.log('[NOTIF] User is NOT subscribed or re-subscription is forced. Attempting to subscribe...');
             const vapidPublicKey = await getVapidKey();
             if (!vapidPublicKey) {
                 showNotification('Could not set up notifications: missing server key.', true);
@@ -219,7 +218,7 @@ export const findNotificationForProgram = (program, channelId) => {
 };
 
 export const renderNotificationSettings = () => {
-    const settingsEl = UIElements.notificationSettings;
+    const settingsEl = UIElements.notificationSettingsContainer; // Corrected element ID from UIElements
     if (!settingsEl) return;
 
     settingsEl.innerHTML = `
