@@ -64,7 +64,7 @@ export function openProgramDetails(progItem) {
     const detailsDesc = programDetailsModal.querySelector('#details-desc');
     const detailsPlayBtn = programDetailsModal.querySelector('#details-play-btn');
     const programDetailsNotifyBtn = programDetailsModal.querySelector('#program-details-notify-btn');
-    const programDetailsRecordBtn = programDetailsModal.querySelector('#details-record-btn');
+    const programDetailsRecordBtn = programDetailsModal.querySelector('#program-details-record-btn');
     const detailsCloseBtn = programDetailsModal.querySelector('#details-close-btn');
     const detailsFavoriteBtn = programDetailsModal.querySelector('#details-favorite-btn');
 
@@ -222,7 +222,7 @@ export function openProgramDetails(progItem) {
  * @param {string} m3uContent - The M3U playlist content.
  * @param {object} epgContent - The parsed EPG JSON data.
  */
-export function handleGuideLoad(m3uContent, epgContent) {
+export async function handleGuideLoad(m3uContent, epgContent) {
     if (!m3uContent || m3uContent.trim() === '#EXTM3U') {
         guideState.channels = [];
         guideState.programs = {};
@@ -232,11 +232,11 @@ export function handleGuideLoad(m3uContent, epgContent) {
     }
 
     if (appState.db) {
-        appState.db.transaction(['guideData'], 'readwrite').objectStore('guideData').put(guideState.channels, 'channels');
-        appState.db.transaction(['guideData'], 'readwrite').objectStore('guideData').put(guideState.programs, 'programs');
+        await appState.db.transaction(['guideData'], 'readwrite').objectStore('guideData').put(guideState.channels, 'channels');
+        await appState.db.transaction(['guideData'], 'readwrite').objectStore('guideData').put(guideState.programs, 'programs');
     }
 
-    finalizeGuideLoad(true);
+    return finalizeGuideLoad(true);
 }
 
 /**
@@ -350,7 +350,7 @@ export function finalizeGuideLoad(isFirstLoad = false) {
         includeScore: true,
     });
 
-    handleSearchAndFilter(isFirstLoad);
+    return handleSearchAndFilter(isFirstLoad);
 }
 
 // --- UI Rendering (REFACTORED FOR VIRTUALIZATION) ---
@@ -750,23 +750,24 @@ export const scrollToChannel = (channelId) => {
         const targetScrollTop = channelIndex * ROW_HEIGHT;
         UIElements.guideContainer.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
 
-        let attempts = 0;
-        const maxAttempts = 100; // 5 second timeout
-        const checkInterval = setInterval(() => {
-            const channelElement = UIElements.guideGrid.querySelector(`.channel-info[data-id="${foundChannel.id}"]`);
+        // MODIFICATION: Use requestAnimationFrame for a more robust check.
+        let startTime = null;
+        const checkRender = (timestamp) => {
+            if (!startTime) startTime = timestamp;
+            const elapsedTime = timestamp - startTime;
 
+            const channelElement = UIElements.guideGrid.querySelector(`.channel-info[data-id="${foundChannel.id}"]`);
             if (channelElement) {
-                clearInterval(checkInterval);
+                console.log(`[GUIDE_SCROLL_SUCCESS] Channel element "${foundChannel.id}" found and rendered.`);
                 resolve(true);
+            } else if (elapsedTime < 5000) { // 5-second timeout
+                requestAnimationFrame(checkRender);
             } else {
-                attempts++;
-                if (attempts >= maxAttempts) {
-                    clearInterval(checkInterval);
-                    console.warn(`[GUIDE_SCROLL_FAIL] Max attempts reached waiting for channel element "${foundChannel.id}" to be rendered.`);
-                    resolve(false);
-                }
+                console.warn(`[GUIDE_SCROLL_FAIL] Timeout waiting for channel element "${foundChannel.id}" to be rendered.`);
+                resolve(false);
             }
-        }, 50);
+        };
+        requestAnimationFrame(checkRender);
     });
 };
 
@@ -916,4 +917,3 @@ export function setupGuideEventListeners() {
         UIElements.guideContainer.addEventListener('scroll', handleScrollHeader);
     }
 }
-
