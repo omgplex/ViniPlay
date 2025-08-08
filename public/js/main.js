@@ -20,8 +20,9 @@ import { handleMultiViewChannelClick, populateChannelSelector } from './modules/
 // The initializeCastApi function is no longer called directly from here,
 // but the cast.js module will handle its own initialization via the window callback.
 
-// NEW: Store deep link info from URL if present on load.
-let deepLinkInfo = null;
+// NEW: Global variable to hold navigation target from a notification click
+let notificationTarget = null;
+
 
 /**
  * NEW: Connects to the server for real-time events using Server-Sent Events (SSE).
@@ -112,10 +113,10 @@ export async function initMainApp() {
             console.log('[MAIN] Loaded guide data from cache. Finalizing guide load.');
             guideState.channels = cachedChannels;
             guideState.programs = cachedPrograms;
-            await finalizeGuideLoad(true); // true indicates first load
+            finalizeGuideLoad(true); // true indicates first load
         } else if (config.m3uContent) {
             console.log('[MAIN] No cached data or incomplete cache. Processing guide data from server config.');
-            await handleGuideLoad(config.m3uContent, config.epgContent);
+            handleGuideLoad(config.m3uContent, config.epgContent);
         } else {
             console.log('[MAIN] No M3U content from server or cache. Displaying no data message.');
             UIElements.initialLoadingIndicator.classList.add('hidden');
@@ -139,17 +140,18 @@ export async function initMainApp() {
         initializeSse();
         console.log('[MAIN] Server-Sent Events listener initialized.');
 
-        // MODIFIED: After everything is loaded, check if we need to navigate to a specific program.
-        if (deepLinkInfo) {
-            console.log('[MAIN] Deep link info found. Navigating to program:', deepLinkInfo);
-            // The guide is already loaded, so we can now safely call the navigation function.
-            await navigateToProgramInGuide(deepLinkInfo.channelId, deepLinkInfo.programStart, deepLinkInfo.programId);
-            // Clear the deep link info so it doesn't re-trigger on simple reloads.
-            // Also, clean the URL in the address bar.
-            window.history.replaceState({}, document.title, window.location.pathname);
-            deepLinkInfo = null;
+        // NEW: After everything is loaded, check if we need to navigate from a notification.
+        if (notificationTarget) {
+            console.log('[MAIN] App initialized. Executing deferred navigation to notification target.');
+            // Use a timeout to ensure the UI has a moment to settle after the final render.
+            setTimeout(() => {
+                navigateToProgramInGuide(notificationTarget.channelId, notificationTarget.programStart, notificationTarget.programId);
+                // Clean up to prevent re-triggering on refresh
+                notificationTarget = null; 
+                // Clean the URL
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }, 500); // 500ms delay for safety
         }
-
 
     } catch (e) {
         console.error('[MAIN] Application initialization failed:', e);
@@ -366,16 +368,15 @@ function setupCoreEventListeners() {
 
 // --- App Start ---
 document.addEventListener('DOMContentLoaded', () => {
-    // MODIFIED: Check for deep link parameters from a notification click before doing anything else.
+    // NEW: Check for notification deep link parameters on initial load.
     const urlParams = new URLSearchParams(window.location.search);
     const channelId = urlParams.get('channelId');
     const programId = urlParams.get('programId');
-    const programStart = urlParams.get('programStart'); // Added to ensure we have the start time
+    const programStart = urlParams.get('programStart');
 
     if (channelId && programId && programStart) {
-        console.log('[APP_START] Deep link parameters found in URL.');
-        deepLinkInfo = { channelId, programId, programStart };
-        // The actual navigation will happen in initMainApp after data is loaded.
+        console.log('[MAIN] Notification deep link detected. Storing target:', { channelId, programId, programStart });
+        notificationTarget = { channelId, programId, programStart };
     }
 
     // Register Service Worker
@@ -400,3 +401,4 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('[APP_START] Checking authentication status...');
     checkAuthStatus(); // This initiates the main app flow
 });
+
