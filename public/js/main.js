@@ -113,10 +113,10 @@ export async function initMainApp() {
             console.log('[MAIN] Loaded guide data from cache. Finalizing guide load.');
             guideState.channels = cachedChannels;
             guideState.programs = cachedPrograms;
-            finalizeGuideLoad(true); // true indicates first load
+            await finalizeGuideLoad(true); // true indicates first load
         } else if (config.m3uContent) {
             console.log('[MAIN] No cached data or incomplete cache. Processing guide data from server config.');
-            handleGuideLoad(config.m3uContent, config.epgContent);
+            await handleGuideLoad(config.m3uContent, config.epgContent);
         } else {
             console.log('[MAIN] No M3U content from server or cache. Displaying no data message.');
             UIElements.initialLoadingIndicator.classList.add('hidden');
@@ -132,26 +132,24 @@ export async function initMainApp() {
         await subscribeUserToPush();
         console.log('[MAIN] Push notification subscription process initiated.');
 
-        // Handle initial route based on URL
-        console.log('[MAIN] Handling initial route change.');
-        handleRouteChange();
+        // MODIFICATION: If we have a notification target, navigate to it now that the guide is loaded.
+        // Otherwise, handle the regular route change.
+        if (notificationTarget) {
+            console.log('[MAIN] App initialized. Executing deferred navigation to notification target.');
+            await navigateToProgramInGuide(notificationTarget.channelId, notificationTarget.programStart, notificationTarget.programId);
+            // Clean up to prevent re-triggering on refresh
+            notificationTarget = null;
+            // Clean the URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+        } else {
+            // Handle initial route based on URL
+            console.log('[MAIN] Handling initial route change.');
+            handleRouteChange();
+        }
 
         // NEW: Connect to the server for real-time events like notification updates.
         initializeSse();
         console.log('[MAIN] Server-Sent Events listener initialized.');
-
-        // NEW: After everything is loaded, check if we need to navigate from a notification.
-        if (notificationTarget) {
-            console.log('[MAIN] App initialized. Executing deferred navigation to notification target.');
-            // Use a timeout to ensure the UI has a moment to settle after the final render.
-            setTimeout(() => {
-                navigateToProgramInGuide(notificationTarget.channelId, notificationTarget.programStart, notificationTarget.programId);
-                // Clean up to prevent re-triggering on refresh
-                notificationTarget = null; 
-                // Clean the URL
-                window.history.replaceState({}, document.title, window.location.pathname);
-            }, 500); // 500ms delay for safety
-        }
 
     } catch (e) {
         console.error('[MAIN] Application initialization failed:', e);
@@ -401,4 +399,3 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('[APP_START] Checking authentication status...');
     checkAuthStatus(); // This initiates the main app flow
 });
-
