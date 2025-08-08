@@ -20,6 +20,39 @@ import { handleMultiViewChannelClick, populateChannelSelector } from './modules/
 // but the cast.js module will handle its own initialization via the window callback.
 
 /**
+ * NEW: Connects to the server for real-time events using Server-Sent Events (SSE).
+ * This allows the server to push updates to the client, such as invalidating a push subscription.
+ */
+function initializeSse() {
+    console.log('[SSE] Initializing Server-Sent Events connection...');
+    const eventSource = new EventSource('/api/events');
+
+    eventSource.onopen = () => {
+        console.log('[SSE] Connection to server opened.');
+    };
+
+    eventSource.onerror = (error) => {
+        console.error('[SSE] EventSource failed:', error);
+        // The browser will automatically try to reconnect on its own.
+    };
+
+    // Listen for our custom 'subscription-invalidated' event from the server.
+    eventSource.addEventListener('subscription-invalidated', (event) => {
+        console.warn('[SSE] Received "subscription-invalidated" event from server.');
+        const data = JSON.parse(event.data);
+        console.log('[SSE] Invalid subscription details:', data);
+
+        // Show a non-error notification to the user that we are fixing things automatically.
+        showNotification('Notification subscription expired. Re-subscribing automatically...', false, 5000);
+        
+        // Automatically trigger the re-subscription process. The `true` flag forces it to
+        // first unsubscribe the bad subscription from the browser before creating a new one.
+        subscribeUserToPush(true); 
+    });
+}
+
+
+/**
  * Initializes the main application after successful authentication.
  */
 export async function initMainApp() {
@@ -97,6 +130,11 @@ export async function initMainApp() {
         // Handle initial route based on URL
         console.log('[MAIN] Handling initial route change.');
         handleRouteChange();
+
+        // NEW: Connect to the server for real-time events like notification updates.
+        initializeSse();
+        console.log('[MAIN] Server-Sent Events listener initialized.');
+
 
     } catch (e) {
         console.error('[MAIN] Application initialization failed:', e);
