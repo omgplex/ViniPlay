@@ -64,7 +64,7 @@ export function openProgramDetails(progItem) {
     const detailsDesc = programDetailsModal.querySelector('#details-desc');
     const detailsPlayBtn = programDetailsModal.querySelector('#details-play-btn');
     const programDetailsNotifyBtn = programDetailsModal.querySelector('#program-details-notify-btn');
-    const programDetailsRecordBtn = programDetailsModal.querySelector('#program-details-record-btn');
+    const programDetailsRecordBtn = programDetailsModal.querySelector('#details-record-btn');
     const detailsCloseBtn = programDetailsModal.querySelector('#details-close-btn');
     const detailsFavoriteBtn = programDetailsModal.querySelector('#details-favorite-btn');
 
