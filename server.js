@@ -28,6 +28,9 @@ const saltRounds = 10;
 let notificationCheckInterval = null;
 const sourceRefreshTimers = new Map(); // FIXED: Initialize sourceRefreshTimers here
 
+// --- NEW: For Server-Sent Events (SSE) ---
+const sseClients = new Map(); 
+
 // --- NEW: DVR State ---
 const activeDvrJobs = new Map(); // Stores active node-schedule jobs
 const runningFFmpegProcesses = new Map(); // Stores PIDs of running ffmpeg recordings
@@ -184,6 +187,10 @@ app.use(
 );
 
 app.use((req, res, next) => {
+    // Exclude SSE endpoint from logging to avoid clutter
+    if (req.path === '/api/events') {
+        return next();
+    }
     const user_info = req.session.userId ? `User ID: ${req.session.userId}, Admin: ${req.session.isAdmin}, DVR: ${req.session.canUseDvr}` : 'No session';
     console.log(`[HTTP_TRACE] ${req.method} ${req.originalUrl} - Session: [${user_info}]`);
     next();
@@ -206,6 +213,17 @@ const requireDvrAccess = (req, res, next) => {
 app.use('/dvr', requireAuth, requireDvrAccess, express.static(DVR_DIR));
 
 // --- Helper Functions ---
+
+// --- NEW: Function to send Server-Sent Events to a specific user ---
+function sendSseEvent(userId, eventName, data) {
+    const clients = sseClients.get(userId);
+    if (clients && clients.length > 0) {
+        console.log(`[SSE] Sending event '${eventName}' to ${clients.length} client(s) for user ID ${userId}.`);
+        const message = `event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`;
+        clients.forEach(client => client.res.write(message));
+    }
+}
+
 function getSettings() {
     if (!fs.existsSync(SETTINGS_PATH)) {
         console.log('[SETTINGS] settings.json not found, creating default settings.');
@@ -1484,13 +1502,9 @@ async function checkAndSendNotifications() {
             return;
         }
 
-        // --- **FIX: Decouple main notification status from delivery status** ---
-        // We will only update the `notification_deliveries` table. The main `notifications`
-        // table status will be derived on-the-fly when requested by the client.
         for (const delivery of dueDeliveries) {
             console.log(`[PUSH_CHECKER] Processing delivery ID ${delivery.delivery_id} for program "${delivery.programTitle}" to subscription ${delivery.subscription_id}.`);
             
-            // MODIFIED: Simplified the payload to only include necessary data for the service worker.
             const payload = JSON.stringify({
                 type: 'program_reminder',
                 data: {
@@ -1507,8 +1521,6 @@ async function checkAndSendNotifications() {
                 keys: { p256dh: delivery.p256dh, auth: delivery.auth }
             };
             
-            // MODIFIED: Added a TTL (Time-To-Live) to the push options.
-            // This tells the push service to discard the notification after 24 hours if the device is offline.
             const pushOptions = {
                 TTL: 86400 // 24 hours in seconds
             };
@@ -1523,6 +1535,13 @@ async function checkAndSendNotifications() {
                     
                     if (error.statusCode === 410 || error.statusCode === 404) {
                         console.log(`[PUSH_CHECKER] Subscription ${delivery.subscription_id} is invalid (410/404). Deleting subscription and failing deliveries.`);
+                        
+                        // --- NEW: Notify connected clients about the invalid subscription ---
+                        sendSseEvent(delivery.user_id, 'subscription-invalidated', {
+                            endpoint: delivery.endpoint,
+                            reason: `Push service returned status ${error.statusCode}.`
+                        });
+
                         db.run("DELETE FROM push_subscriptions WHERE id = ?", [delivery.subscription_id]);
                         db.run("UPDATE notification_deliveries SET status = 'failed', updatedAt = ? WHERE subscription_id = ? AND status = 'pending'", [nowIso, delivery.subscription_id]);
                     } else {
@@ -1969,6 +1988,44 @@ app.delete('/api/dvr/jobs/:id/history', requireAuth, requireDvrAccess, (req, res
             });
         } else {
             return res.status(400).json({ error: 'Only completed, cancelled, or error jobs can be removed from history.' });
+        }
+    });
+});
+
+
+// --- NEW: Server-Sent Events endpoint for real-time updates ---
+app.get('/api/events', requireAuth, (req, res) => {
+    const userId = req.session.userId;
+    const clientId = Date.now(); // A unique ID for this specific connection
+    
+    // Set headers for SSE
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+    
+    if (!sseClients.has(userId)) {
+        sseClients.set(userId, []);
+    }
+    
+    const clients = sseClients.get(userId);
+    clients.push({ id: clientId, res });
+    console.log(`[SSE] Client ${clientId} connected for user ID ${userId}. Total clients for user: ${clients.length}.`);
+
+    // Send a connected message to confirm connection
+    res.write(`event: connected\ndata: ${JSON.stringify({ message: "Connection established" })}\n\n`);
+
+    req.on('close', () => {
+        const userClients = sseClients.get(userId);
+        if (userClients) {
+            const index = userClients.findIndex(c => c.id === clientId);
+            if (index !== -1) {
+                userClients.splice(index, 1);
+                console.log(`[SSE] Client ${clientId} disconnected for user ID ${userId}. Remaining clients for user: ${userClients.length}.`);
+                if (userClients.length === 0) {
+                    sseClients.delete(userId);
+                }
+            }
         }
     });
 });
