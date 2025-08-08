@@ -414,11 +414,13 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
     }
 
     const targetProgramStart = new Date(programStart);
-    const currentGuideDate = new Date(guideState.currentDate);
-    currentGuideDate.setHours(0, 0, 0, 0);
+
+    // MODIFICATION: Create a new date object for comparison that ignores time, respecting timezone.
+    const targetProgramDate = new Date(targetProgramStart.getFullYear(), targetProgramStart.getMonth(), targetProgramStart.getDate());
+    const currentGuideDate = new Date(guideState.currentDate.getFullYear(), guideState.currentDate.getMonth(), guideState.currentDate.getDate());
 
     // If the program is on a different day, switch to that day first
-    if (targetProgramStart.toDateString() !== currentGuideDate.toDateString()) {
+    if (targetProgramDate.getTime() !== currentGuideDate.getTime()) {
         console.log(`[NOTIF_NAV] Program is on a different day. Switching guide date to ${targetProgramStart.toDateString()}`);
         guideState.currentDate = targetProgramStart;
         // This will re-render the guide for the correct day
