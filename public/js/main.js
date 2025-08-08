@@ -12,12 +12,16 @@ import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './
 import { setupPlayerEventListeners } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
 import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu, showNotification } from './modules/ui.js';
-import { loadAndScheduleNotifications, subscribeUserToPush } from './modules/notification.js';
+// MODIFIED: Import navigateToProgramInGuide to handle deep links from notifications.
+import { loadAndScheduleNotifications, subscribeUserToPush, navigateToProgramInGuide } from './modules/notification.js';
 import { setupDvrEventListeners, handleDvrChannelClick } from './modules/dvr.js';
 import { handleMultiViewChannelClick, populateChannelSelector } from './modules/multiview.js';
 
 // The initializeCastApi function is no longer called directly from here,
 // but the cast.js module will handle its own initialization via the window callback.
+
+// NEW: Store deep link info from URL if present on load.
+let deepLinkInfo = null;
 
 /**
  * NEW: Connects to the server for real-time events using Server-Sent Events (SSE).
@@ -108,10 +112,10 @@ export async function initMainApp() {
             console.log('[MAIN] Loaded guide data from cache. Finalizing guide load.');
             guideState.channels = cachedChannels;
             guideState.programs = cachedPrograms;
-            finalizeGuideLoad(true); // true indicates first load
+            await finalizeGuideLoad(true); // true indicates first load
         } else if (config.m3uContent) {
             console.log('[MAIN] No cached data or incomplete cache. Processing guide data from server config.');
-            handleGuideLoad(config.m3uContent, config.epgContent);
+            await handleGuideLoad(config.m3uContent, config.epgContent);
         } else {
             console.log('[MAIN] No M3U content from server or cache. Displaying no data message.');
             UIElements.initialLoadingIndicator.classList.add('hidden');
@@ -134,6 +138,17 @@ export async function initMainApp() {
         // NEW: Connect to the server for real-time events like notification updates.
         initializeSse();
         console.log('[MAIN] Server-Sent Events listener initialized.');
+
+        // MODIFIED: After everything is loaded, check if we need to navigate to a specific program.
+        if (deepLinkInfo) {
+            console.log('[MAIN] Deep link info found. Navigating to program:', deepLinkInfo);
+            // The guide is already loaded, so we can now safely call the navigation function.
+            await navigateToProgramInGuide(deepLinkInfo.channelId, deepLinkInfo.programStart, deepLinkInfo.programId);
+            // Clear the deep link info so it doesn't re-trigger on simple reloads.
+            // Also, clean the URL in the address bar.
+            window.history.replaceState({}, document.title, window.location.pathname);
+            deepLinkInfo = null;
+        }
 
 
     } catch (e) {
@@ -351,6 +366,18 @@ function setupCoreEventListeners() {
 
 // --- App Start ---
 document.addEventListener('DOMContentLoaded', () => {
+    // MODIFIED: Check for deep link parameters from a notification click before doing anything else.
+    const urlParams = new URLSearchParams(window.location.search);
+    const channelId = urlParams.get('channelId');
+    const programId = urlParams.get('programId');
+    const programStart = urlParams.get('programStart'); // Added to ensure we have the start time
+
+    if (channelId && programId && programStart) {
+        console.log('[APP_START] Deep link parameters found in URL.');
+        deepLinkInfo = { channelId, programId, programStart };
+        // The actual navigation will happen in initMainApp after data is loaded.
+    }
+
     // Register Service Worker
     if ('serviceWorker' in navigator && 'PushManager' in window) {
         console.log('[APP_START] Service Worker and Push API are supported by browser.');
