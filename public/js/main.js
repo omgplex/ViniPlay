@@ -16,6 +16,7 @@ import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeM
 import { loadAndScheduleNotifications, subscribeUserToPush, navigateToProgramInGuide } from './modules/notification.js';
 import { setupDvrEventListeners, handleDvrChannelClick } from './modules/dvr.js';
 import { handleMultiViewChannelClick, populateChannelSelector } from './modules/multiview.js';
+import { setupDirectPlayerEventListeners } from './modules/player_direct.js';
 
 // The initializeCastApi function is no longer called directly from here,
 // but the cast.js module will handle its own initialization via the window callback.
@@ -78,6 +79,7 @@ export async function initMainApp() {
     setupPlayerEventListeners();
     setupSettingsEventListeners();
     setupDvrEventListeners(); // NEW: Setup DVR event listeners
+    setupDirectPlayerEventListeners(); // NEW: Setup Direct Player event listeners
     // REMOVED: The direct call to initializeCastApi() is no longer needed here.
     // The cast.js module will now be initialized automatically by the Google Cast SDK callback.
     console.log('[MAIN] All event listeners set up.');
@@ -255,6 +257,7 @@ function setupCoreEventListeners() {
     console.log('[MAIN] Setting up core event listeners.');
     UIElements.tabGuide?.addEventListener('click', () => { console.log('[NAV] Desktop Guide tab clicked.'); switchTab('guide'); });
     UIElements.tabMultiview?.addEventListener('click', () => { console.log('[NAV] Desktop Multi-View tab clicked.'); switchTab('multiview'); });
+    UIElements.tabPlayer?.addEventListener('click', () => { console.log('[NAV] Desktop Player tab clicked.'); switchTab('player'); });
     UIElements.tabDvr?.addEventListener('click', () => { console.log('[NAV] Desktop DVR tab clicked.'); switchTab('dvr'); }); // NEW: DVR Tab
     UIElements.tabNotifications?.addEventListener('click', () => { console.log('[NAV] Desktop Notifications tab clicked.'); switchTab('notifications'); });
     UIElements.tabSettings?.addEventListener('click', () => { console.log('[NAV] Desktop Settings tab clicked.'); switchTab('settings'); });
@@ -264,6 +267,7 @@ function setupCoreEventListeners() {
     UIElements.mobileMenuOverlay?.addEventListener('click', () => { console.log('[NAV] Mobile menu overlay clicked (to close).'); closeMobileMenu(); });
     UIElements.mobileNavGuide?.addEventListener('click', () => { console.log('[NAV] Mobile Guide nav clicked.'); switchTab('guide'); });
     UIElements.mobileNavMultiview?.addEventListener('click', () => { console.log('[NAV] Mobile Multi-View nav clicked.'); switchTab('multiview'); });
+    UIElements.mobileNavPlayer?.addEventListener('click', () => { console.log('[NAV] Mobile Player nav clicked.'); switchTab('player'); });
     UIElements.mobileNavDvr?.addEventListener('click', () => { console.log('[NAV] Mobile DVR nav clicked.'); switchTab('dvr'); }); // NEW: Mobile DVR Nav
     UIElements.mobileNavNotifications?.addEventListener('click', () => { console.log('[NAV] Mobile Notifications nav clicked.'); switchTab('notifications'); });
     UIElements.mobileNavSettings?.addEventListener('click', () => { console.log('[NAV] Mobile Settings nav clicked.'); switchTab('settings'); });
