@@ -11,6 +11,7 @@ import { initMultiView, isMultiViewActive, cleanupMultiView } from './multiview.
 import { initDvrPage } from './dvr.js';
 // MODIFIED: Import stopAndCleanupPlayer to allow this module to terminate streams.
 import { stopAndCleanupPlayer } from './player.js';
+import { initDirectPlayer } from './player_direct.js';
 
 let confirmCallback = null;
 let currentPage = '/';
@@ -320,6 +321,7 @@ export const handleRouteChange = () => {
 function proceedWithRouteChange(path) {
     const isGuide = path.startsWith('/tvguide') || path === '/';
     const isMultiView = path.startsWith('/multiview');
+    const isPlayer = path.startsWith('/player');
     const isDvr = path.startsWith('/dvr');
     const isNotifications = path.startsWith('/notifications');
     const isSettings = path.startsWith('/settings');
@@ -332,6 +334,7 @@ function proceedWithRouteChange(path) {
     // Toggle active state for desktop navigation buttons
     UIElements.tabGuide?.classList.toggle('active', isGuide);
     UIElements.tabMultiview?.classList.toggle('active', isMultiView);
+    UIElements.tabPlayer?.classList.toggle('active', isPlayer);
     if (UIElements.tabDvr) {
         UIElements.tabDvr.classList.toggle('active', isDvr && hasDvrAccess);
         UIElements.tabDvr.classList.toggle('hidden', !hasDvrAccess);
@@ -342,6 +345,7 @@ function proceedWithRouteChange(path) {
     // Toggle active state for mobile navigation buttons
     UIElements.mobileNavGuide?.classList.toggle('active', isGuide);
     UIElements.mobileNavMultiview?.classList.toggle('active', isMultiView);
+    UIElements.mobileNavPlayer?.classList.toggle('active', isPlayer);
     if (UIElements.mobileNavDvr) {
         UIElements.mobileNavDvr.classList.toggle('active', isDvr && hasDvrAccess);
         UIElements.mobileNavDvr.classList.toggle('hidden', !hasDvrAccess);
@@ -354,6 +358,8 @@ function proceedWithRouteChange(path) {
     UIElements.pageGuide.classList.toggle('flex', isGuide);
     UIElements.pageMultiview.classList.toggle('hidden', !isMultiView);
     UIElements.pageMultiview.classList.toggle('flex', isMultiView);
+    UIElements.pagePlayer.classList.toggle('hidden', !isPlayer);
+    UIElements.pagePlayer.classList.toggle('flex', isPlayer);
     UIElements.pageDvr.classList.toggle('hidden', !isDvr || !hasDvrAccess); 
     UIElements.pageDvr.classList.toggle('flex', isDvr && hasDvrAccess);
     UIElements.pageNotifications.classList.toggle('hidden', !isNotifications);
@@ -386,6 +392,8 @@ function proceedWithRouteChange(path) {
             renderNotifications();
         } else if (isMultiView) {
             initMultiView();
+        } else if (isPlayer) {
+            initDirectPlayer();
         } else if (isDvr && hasDvrAccess) {
             initDvrPage();
         }
@@ -416,6 +424,8 @@ export const switchTab = (activeTab) => {
         newPath = '/tvguide';
     } else if (activeTab === 'multiview') {
         newPath = '/multiview';
+    } else if (activeTab === 'player') {
+        newPath = '/player';
     } else if (activeTab === 'dvr') { 
         newPath = '/dvr';
     } else if (activeTab === 'notifications') {
@@ -425,4 +435,3 @@ export const switchTab = (activeTab) => {
     }
     navigate(newPath);
 };
-
