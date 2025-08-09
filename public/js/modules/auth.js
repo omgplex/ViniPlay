@@ -87,6 +87,16 @@ const initializeUIElements = () => {
     UIElements.saveLayoutName = document.getElementById('save-layout-name');
     UIElements.saveLayoutCancelBtn = document.getElementById('save-layout-cancel-btn');
     UIElements.multiviewChannelFilter = document.getElementById('multiview-channel-filter');
+
+    // NEW: Player Page Elements
+    UIElements.pagePlayer = document.getElementById('page-player');
+    UIElements.tabPlayer = document.getElementById('tab-player');
+    UIElements.mobileNavPlayer = document.getElementById('mobile-nav-player');
+    UIElements.directPlayerForm = document.getElementById('direct-player-form');
+    UIElements.directStreamUrl = document.getElementById('direct-stream-url');
+    UIElements.directPlayBtn = document.getElementById('direct-play-btn');
+    UIElements.directPlayerContainer = document.getElementById('direct-player-container');
+    UIElements.directVideoElement = document.getElementById('direct-video-element');
     
     // DVR Elements
     UIElements.pageDvr = document.getElementById('page-dvr');
@@ -339,4 +349,3 @@ export function setupAuthEventListeners() {
         }
     });
 }
-
