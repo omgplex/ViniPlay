@@ -3,7 +3,7 @@
  * * Manages the functionality for the direct stream player page.
  */
 
-import { UIElements } from './state.js';
+import { UIElements, guideState } from './state.js';
 import { showNotification } from './ui.js';
 
 let directPlayer = null; // To hold the mpegts.js instance
@@ -80,14 +80,34 @@ function playDirectStream(url) {
     // Stop any existing player before starting a new one
     stopAndCleanupDirectPlayer();
 
+    // Get the active stream profile and user agent from the global state
+    const profileId = guideState.settings.activeStreamProfileId;
+    const userAgentId = guideState.settings.activeUserAgentId;
+
+    if (!profileId || !userAgentId) {
+        showNotification("Active stream profile or user agent not set. Please check settings.", true);
+        return;
+    }
+
+    const profile = (guideState.settings.streamProfiles || []).find(p => p.id === profileId);
+    if (!profile) {
+        showNotification("Active stream profile could not be found.", true);
+        return;
+    }
+
+    // Construct the URL to use the server-side proxy to bypass browser restrictions
+    const streamUrlToPlay = profile.command === 'redirect'
+        ? url
+        : `/stream?url=${encodeURIComponent(url)}&profileId=${profileId}&userAgentId=${userAgentId}`;
+
     if (mpegts.isSupported()) {
-        console.log(`[DirectPlayer] Attempting to play stream: ${url}`);
+        console.log(`[DirectPlayer] Attempting to play proxied stream: ${streamUrlToPlay}`);
         
         // Create the player instance
         directPlayer = mpegts.createPlayer({
-            type: 'mse', // mpegts.js can often handle HLS (.m3u8) via MSE as well
+            type: 'mse',
             isLive: true,
-            url: url
+            url: streamUrlToPlay
         });
 
         // Show the player and attach the video element
@@ -98,7 +118,7 @@ function playDirectStream(url) {
         directPlayer.load();
         directPlayer.play().catch((err) => {
             console.error("[DirectPlayer] MPEGTS Player Error:", err);
-            showNotification("Could not play the stream. Check the URL and browser console for errors.", true);
+            showNotification("Could not play the stream. Check the URL, server logs, and browser console.", true);
             stopAndCleanupDirectPlayer(); // Clean up on failure
         });
 
@@ -106,4 +126,3 @@ function playDirectStream(url) {
         showNotification('Your browser does not support the necessary technology to play this stream (Media Source Extensions).', true);
     }
 }
-
