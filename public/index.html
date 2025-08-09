@@ -411,17 +411,6 @@
         }
         #notification-box.success-bg { background-color: #22c55e; }
         #notification-box.error-bg { background-color: #ef4444; }
-
-        /* NEW: Styles for the direct player page */
-        #direct-player-container {
-            width: 100%;
-            max-width: 960px; 
-            aspect-ratio: 16 / 9;
-            background-color: #000;
-            border-radius: 0.5rem;
-            overflow: hidden;
-            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-        }
     </style>
 </head>
 <body class="h-screen">
@@ -477,6 +466,7 @@
                 <div class="hidden lg:flex gap-2">
                     <button id="tab-guide" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 active rounded-md transition-colors">TV Guide</button>
                     <button id="tab-multiview" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Multi-View</button>
+                    <!-- NEW: Player Tab -->
                     <button id="tab-player" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Player</button>
                     <button id="tab-dvr" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">DVR</button>
                     <button id="tab-notifications" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Notifications</button>
@@ -564,26 +554,28 @@
                     <div id="multiview-grid" class="grid-stack"></div>
                 </div>
             </div>
-
+            
+            <!-- NEW: Player Page Structure -->
             <div id="page-player" class="hidden flex-grow flex-col items-center p-4 overflow-y-auto custom-scrollbar">
-                <div class="w-full max-w-4xl mx-auto space-y-6">
+                <div class="w-full max-w-4xl mx-auto space-y-8">
                     <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
                         <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Direct Stream Player</h2>
-                        <p class="text-sm text-gray-400 mb-4">Enter a direct URL to a `.ts` or `.m3u8` stream to play it here.</p>
-                        <form id="direct-player-form" class="flex flex-col sm:flex-row items-end gap-3">
-                            <div class="flex-grow w-full">
-                                <label for="direct-stream-url" class="block text-sm font-medium text-gray-400 mb-1">Stream URL</label>
-                                <input type="url" id="direct-stream-url" placeholder="https://example.com/stream.m3u8" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" required>
+                        <form id="direct-player-form" class="space-y-4">
+                            <div>
+                                <label for="direct-stream-url" class="block text-sm font-medium text-gray-400 mb-1">Stream URL (.ts, .m3u8)</label>
+                                <input type="url" id="direct-stream-url" placeholder="http://example.com/stream.ts" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" required>
                             </div>
-                            <button type="submit" id="direct-play-btn" class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition-colors flex items-center justify-center gap-2">
-                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"></path></svg>
-                                Play
-                            </button>
+                            <!-- NEW: Proxy Checkbox -->
+                            <div class="flex items-center">
+                                <input id="direct-use-proxy" type="checkbox" class="h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500">
+                                <label for="direct-use-proxy" class="ml-2 block text-sm text-gray-300">Use Server Proxy (fixes HTTPS/CORS issues)</label>
+                            </div>
+                            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition-colors">Play Stream</button>
                         </form>
                     </div>
 
-                    <div id="direct-player-container" class="bg-black rounded-lg shadow-xl w-full">
-                         <video id="direct-video-element" controls autoplay class="w-full h-full"></video>
+                    <div id="direct-player-container" class="hidden bg-black rounded-xl shadow-lg overflow-hidden">
+                        <video id="direct-video-element" controls autoplay class="w-full h-auto" style="max-height: 70vh;"></video>
                     </div>
                 </div>
             </div>
@@ -872,8 +864,9 @@
             <button id="mobile-nav-multiview" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors">
                 <span class="flex items-center gap-2"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12h16M12 4v16"></path></svg> Multi-View</span>
             </button>
+            <!-- NEW: Player Mobile Nav -->
             <button id="mobile-nav-player" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors">
-                <span class="flex items-center gap-2"><svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8.118v3.764a1 1 0 001.555.832l3.197-1.882a1 1 0 000-1.664l-3.197-1.882z" clip-rule="evenodd"></path></svg> Player</span>
+                <span class="flex items-center gap-2"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Player</span>
             </button>
             <button id="mobile-nav-dvr" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors">
                 <span class="flex items-center gap-2"><svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M7 3.5A1.5 1.5 0 018.5 2h3A1.5 1.5 0 0113 3.5v1.259a.25.25 0 00.25.25h1.5a.25.25 0 00.25-.25V3.5A1.5 1.5 0 0116.5 2h3A1.5 1.5 0 0121 3.5v13A1.5 1.5 0 0119.5 18h-16A1.5 1.5 0 012 16.5v-13A1.5 1.5 0 013.5 2h3A1.5 1.5 0 018 3.5v1.259a.25.25 0 00.25.25h1.5a.25.25 0 00.25-.25V3.5zM8.5 4a.5.5 0 00-.5.5v1a.25.25 0 00.25.25h3.5a.25.25 0 00.25-.25v-1a.5.5 0 00-.5.5h-3z"></path><path d="M12.5 13a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"></path></svg> DVR</span>
