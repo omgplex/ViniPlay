@@ -3,8 +3,8 @@
  * * Manages the functionality for the direct stream player page.
  */
 
-import { UIElements } from './modules/state.js';
-import { showNotification } from './modules/ui.js';
+import { UIElements } from './state.js';
+import { showNotification } from './ui.js';
 
 let directPlayer = null; // To hold the mpegts.js instance
 
@@ -106,3 +106,4 @@ function playDirectStream(url) {
         showNotification('Your browser does not support the necessary technology to play this stream (Media Source Extensions).', true);
     }
 }
+
