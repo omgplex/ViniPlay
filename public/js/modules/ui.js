@@ -6,13 +6,18 @@
 
 import { UIElements, appState, guideState } from './state.js';
 import { refreshUserList, updateUIFromSettings } from './settings.js';
-import { renderNotifications } from './notification.js'; // NEW: Import renderNotifications
+import { loadAndScheduleNotifications, renderNotifications } from './notification.js';
 import { initMultiView, isMultiViewActive, cleanupMultiView } from './multiview.js';
 import { initDvrPage } from './dvr.js';
 // MODIFIED: Import stopAndCleanupPlayer to allow this module to terminate streams.
 import { stopAndCleanupPlayer } from './player.js';
 // MODIFIED: Import functions from player_direct.js for cleanup and state checking.
 import { initDirectPlayer, isDirectPlayerActive, cleanupDirectPlayer } from './player_direct.js';
+// MODIFIED: Import finalizeGuideLoad to allow re-rendering the guide with fresh settings
+import { finalizeGuideLoad } from './guide.js';
+// MODIFIED: Import fetchConfig to get latest settings for the guide
+import { fetchConfig } from './api.js';
+
 
 let confirmCallback = null;
 let currentPage = '/';
@@ -339,7 +344,7 @@ export const handleRouteChange = () => {
  * The core logic for switching pages after any checks have passed.
  * @param {string} path - The new path to render.
  */
-function proceedWithRouteChange(path) {
+async function proceedWithRouteChange(path) {
     const isGuide = path.startsWith('/tvguide') || path === '/';
     const isMultiView = path.startsWith('/multiview');
     const isPlayer = path.startsWith('/player');
@@ -399,6 +404,14 @@ function proceedWithRouteChange(path) {
         if (UIElements.guideContainer) {
             UIElements.guideContainer.scrollTop = 0;
         }
+        // ADDED: Soft refresh logic for TV Guide
+        console.log('[UI] Refreshing TV Guide data...');
+        const config = await fetchConfig();
+        if (config) {
+            Object.assign(guideState.settings, config.settings || {});
+            finalizeGuideLoad(false); // false means it's not the very first load
+        }
+
     } else {
         if (appContainer) {
             appContainer.classList.remove('header-collapsed');
@@ -410,13 +423,17 @@ function proceedWithRouteChange(path) {
                 refreshUserList();
             }
         } else if (isNotifications) {
-            renderNotifications();
+            // MODIFIED: Changed from renderNotifications to the full data fetch
+            console.log('[UI] Refreshing Notifications data...');
+            await loadAndScheduleNotifications();
         } else if (isMultiView) {
             initMultiView();
         } else if (isPlayer) {
             initDirectPlayer();
         } else if (isDvr && hasDvrAccess) {
-            initDvrPage();
+            // MODIFIED: Changed from initDvrPage to an async call to ensure it completes
+            console.log('[UI] Refreshing DVR data...');
+            await initDvrPage();
         }
     }
     currentPage = path;
@@ -456,3 +473,4 @@ export const switchTab = (activeTab) => {
     }
     navigate(newPath);
 };
+
