@@ -11,7 +11,8 @@ import { initMultiView, isMultiViewActive, cleanupMultiView } from './multiview.
 import { initDvrPage } from './dvr.js';
 // MODIFIED: Import stopAndCleanupPlayer to allow this module to terminate streams.
 import { stopAndCleanupPlayer } from './player.js';
-import { initDirectPlayer } from './player_direct.js';
+// MODIFIED: Import functions from player_direct.js for cleanup and state checking.
+import { initDirectPlayer, isDirectPlayerActive, cleanupDirectPlayer } from './player_direct.js';
 
 let confirmCallback = null;
 let currentPage = '/';
@@ -289,6 +290,7 @@ export const closeMobileMenu = () => {
  */
 export const handleRouteChange = () => {
     const wasMultiView = currentPage.startsWith('/multiview');
+    const wasPlayer = currentPage.startsWith('/player'); // NEW: Check if the previous page was the Player
     const path = window.location.pathname;
     
     // If leaving multiview and players are active, ask for confirmation.
@@ -308,6 +310,25 @@ export const handleRouteChange = () => {
         } else {
             // If no players are active, just clean up without asking.
             cleanupMultiView();
+        }
+    }
+
+    // NEW: If leaving the direct player and a stream is active, ask for confirmation.
+    if (wasPlayer && !path.startsWith('/player')) {
+        if (isDirectPlayerActive()) {
+            showConfirm(
+                'Leave Player?',
+                'Leaving this page will stop the current stream. Are you sure?',
+                () => {
+                    cleanupDirectPlayer();
+                    proceedWithRouteChange(path);
+                }
+            );
+            // Stop navigation until user confirms
+            window.history.pushState({}, currentPage, window.location.origin + currentPage);
+            return;
+        } else {
+            cleanupDirectPlayer();
         }
     }
 
