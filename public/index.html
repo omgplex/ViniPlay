@@ -64,11 +64,11 @@
             letter-spacing: 0.05em;
             border-bottom: 1px solid #4b5563; /* gray-600 */
         }
-        .sources-table th { @apply px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider; }
-        .sources-table td { @apply px-4 py-3 whitespace-nowrap text-sm text-gray-300; }
-        .sources-table tbody tr { @apply border-b border-gray-700/50; }
-        .sources-table tbody tr:last-child { @apply border-none; }
-        .sources-table .action-btn { @apply text-gray-400 hover:text-white transition-colors; }
+        .sources-table th, .dvr-table th { @apply px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider; }
+        .sources-table td, .dvr-table td { @apply px-4 py-3 whitespace-nowrap text-sm text-gray-300; }
+        .sources-table tbody tr, .dvr-table tbody tr { @apply border-b border-gray-700/50; }
+        .sources-table tbody tr:last-child, .dvr-table tbody tr:last-child { @apply border-none; }
+        .sources-table .action-btn, .dvr-table .action-btn { @apply text-gray-400 hover:text-white transition-colors; }
 
         /* Custom Switch */
         .switch { position: relative; display: inline-block; width: 38px; height: 22px; }
@@ -360,14 +360,6 @@
             color: #60a5fa;
         }
 
-        .dvr-table th, .recent-links-table th { @apply px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider; }
-        .dvr-table td, .recent-links-table td { @apply px-4 py-3 whitespace-nowrap text-sm text-gray-300; }
-        .dvr-table tbody tr, .recent-links-table tbody tr { @apply border-b border-gray-700/50; }
-        .dvr-table tbody tr:last-child, .recent-links-table tbody tr:last-child { @apply border-none; }
-        .dvr-table .action-btn, .recent-links-table .action-btn { @apply text-gray-400 hover:text-white transition-colors; }
-        .recent-links-table .replay-link { cursor: pointer; }
-        .recent-links-table .replay-link:hover { color: #60a5fa; text-decoration: underline; }
-
         .status-badge {
             font-size: 0.7rem;
             font-weight: 600;
@@ -415,7 +407,7 @@
         #notification-box.success-bg { background-color: #22c55e; }
         #notification-box.error-bg { background-color: #ef4444; }
 
-        /* NEW: Styles for the direct player page */
+        /* Styles for the direct player page */
         #direct-player-container {
             width: 100%;
             max-width: 960px; 
@@ -425,6 +417,7 @@
             overflow: hidden;
             box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
         }
+        
         #direct-player-console {
             background-color: #1f2937;
             border: 1px solid #374151;
@@ -439,7 +432,6 @@
     </style>
 </head>
 <body class="h-screen">
-    <!-- Authentication Container -->
     <div id="auth-container" class="fixed inset-0 bg-gray-900 z-[100] flex items-center justify-center p-4">
         <div class="w-full max-w-sm mx-auto">
              <img src="https://i.imgur.com/rwa8SjI.png" alt="VINI PLAY Logo" class="h-16 w-16 mx-auto mb-4">
@@ -476,8 +468,6 @@
              </div>
         </div>
     </div>
-
-    <!-- Main Application Container -->
     <div id="app-container" class="hidden flex flex-col h-screen">
         <header id="main-header" class="bg-gray-800 text-white p-4 shadow-md flex-shrink-0 flex items-center justify-between">
             <div class="flex items-center gap-3">
@@ -503,10 +493,7 @@
             </div>
         </header>
 
-        <!-- Main Content Area -->
         <main class="flex-grow flex flex-col overflow-hidden">
-            
-            <!-- TV Guide Page -->
             <div id="page-guide" class="flex flex-grow flex-col overflow-hidden">
                 <div id="unified-guide-header" class="flex-shrink-0 bg-gray-800 p-2 sm:p-4 border-b border-gray-700 flex items-center justify-between">
                     <div class="flex items-center gap-2 sm:gap-3 date-nav-controls">
@@ -550,7 +537,6 @@
                 </div>
             </div>
 
-            <!-- Multi-View Page -->
             <div id="page-multiview" class="hidden flex-grow flex-col overflow-hidden">
                 <div id="multiview-header" class="flex-shrink-0 bg-gray-800 p-2 border-b border-gray-700 flex items-center justify-between flex-wrap gap-2 z-20">
                     <div class="flex items-center gap-2">
@@ -586,70 +572,70 @@
                 </div>
             </div>
 
-            <!-- Direct Player Page -->
             <div id="page-player" class="hidden flex-grow flex-col items-center p-4 overflow-y-auto custom-scrollbar">
                 <div class="w-full max-w-4xl mx-auto space-y-6">
-                    <!-- Player Form -->
+                    <!-- Input Form -->
                     <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
                         <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Direct Stream Player</h2>
-                        <p class="text-sm text-gray-400 mb-4">Enter a direct URL to a `.ts` or `.m3u8` stream. Uncheck "Direct Play" to use the server's FFMPEG proxy.</p>
+                        <p class="text-sm text-gray-400 mb-4">Enter a direct URL to a `.ts` or `.m3u8` stream to play it here.</p>
                         <form id="direct-player-form" class="space-y-4">
-                            <div>
-                                <label for="direct-stream-url" class="block text-sm font-medium text-gray-400 mb-1">Stream URL</label>
-                                <input type="url" id="direct-stream-url" placeholder="https://example.com/stream.m3u8" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" required>
+                            <div class="flex flex-col sm:flex-row items-end gap-3">
+                                <div class="flex-grow w-full">
+                                    <label for="direct-stream-url" class="block text-sm font-medium text-gray-400 mb-1">Stream URL</label>
+                                    <input type="url" id="direct-stream-url" placeholder="https://example.com/stream.m3u8" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" required>
+                                </div>
+                                <button type="submit" id="direct-play-btn" class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition-colors flex items-center justify-center gap-2">
+                                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"></path></svg>
+                                    Play
+                                </button>
+                                <button type="button" id="direct-stop-btn" class="hidden w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md transition-colors flex items-center justify-center gap-2">
+                                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M2 10a8 8 0 1116 0 8 8 0 01-16 0zM7 8a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1z" clip-rule="evenodd"></path></svg>
+                                    Stop
+                                </button>
                             </div>
-                            <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
-                                <div class="flex items-center">
-                                    <input id="direct-play-checkbox" type="checkbox" checked class="h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500">
-                                    <label for="direct-play-checkbox" class="ml-2 block text-sm text-gray-300">Direct Play (no server processing)</label>
-                                </div>
-                                <div class="flex items-center gap-3 w-full sm:w-auto">
-                                    <button type="submit" id="direct-play-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition-colors flex items-center justify-center gap-2">
-                                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"></path></svg>
-                                        Play
-                                    </button>
-                                    <button type="button" id="direct-stop-btn" class="w-full hidden bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md transition-colors flex items-center justify-center gap-2">
-                                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2H5z"></path></svg>
-                                        Stop
-                                    </button>
-                                </div>
+                            <div class="flex items-center space-x-2 pt-2">
+                                <input id="direct-play-checkbox" type="checkbox" class="h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500">
+                                <label for="direct-play-checkbox" class="text-sm text-gray-400">Direct Play (Bypass server proxy/ffmpeg)</label>
                             </div>
                         </form>
                     </div>
-
-                    <!-- Player Video Element -->
+            
+                    <!-- Player Container -->
                     <div id="direct-player-container" class="hidden bg-black rounded-lg shadow-xl w-full">
                          <video id="direct-video-element" controls autoplay class="w-full h-full"></video>
                     </div>
-                    
-                    <!-- Player Console -->
+            
+                    <!-- Console for Logs -->
                     <div id="direct-player-console-container" class="hidden w-full">
-                        <h3 class="text-md font-semibold text-gray-400 mb-2">Player Log</h3>
-                        <div id="direct-player-console" class="custom-scrollbar"></div>
-                    </div>
-                    
-                    <!-- Recent Links Table -->
-                    <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
-                        <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Recent Links</h2>
-                        <div id="no-recent-links-message" class="hidden text-center text-gray-500 p-4">
-                            <p class="text-sm">Played stream links will appear here for quick access.</p>
+                        <div class="bg-gray-800 p-4 rounded-xl shadow-lg">
+                            <h3 class="text-md font-semibold text-white mb-2">Stream Log</h3>
+                            <div id="direct-player-console" class="bg-gray-900/50 rounded-md p-3 h-32 overflow-y-auto custom-scrollbar text-xs font-mono"></div>
                         </div>
-                        <div id="recent-links-table-container" class="overflow-x-auto">
-                            <table class="min-w-full recent-links-table">
-                                <thead>
-                                    <tr>
-                                        <th>Stream URL</th>
-                                        <th class="text-right">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="recent-links-tbody"></tbody>
-                            </table>
+                    </div>
+            
+                    <!-- Recent Links Table -->
+                    <div id="recent-links-table-container" class="hidden w-full">
+                        <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
+                            <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Recent Links</h2>
+                            <div id="no-recent-links-message" class="text-center text-gray-500 p-4">
+                                <p class="mt-1 text-sm">No recent links. Played streams will appear here.</p>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full dvr-table">
+                                    <thead>
+                                        <tr>
+                                            <th>URL</th>
+                                            <th class="text-right">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="recent-links-tbody"></tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- DVR Page -->
             <div id="page-dvr" class="hidden flex-grow flex-col items-center p-4 overflow-y-auto custom-scrollbar">
                 <div class="w-full max-w-6xl mx-auto space-y-8 pb-16">
                     <div id="dvr-storage-bar-container" class="bg-gray-800 p-4 rounded-xl shadow-lg">
@@ -732,8 +718,7 @@
                     </div>
                 </div>
             </div>
-            
-            <!-- Notifications Page -->
+
             <div id="page-notifications" class="hidden flex-grow flex-col items-center p-4 overflow-y-auto custom-scrollbar">
                 <div class="w-full max-w-4xl mx-auto space-y-6 pb-16">
                     <!-- **FIX: Add a container for notification settings and actions** -->
@@ -757,7 +742,6 @@
                 </div>
             </div>
 
-            <!-- Settings Page -->
             <div id="page-settings" class="hidden flex-grow flex-col items-center p-4 overflow-y-auto custom-scrollbar">
                 <div class="w-full max-w-6xl mx-auto space-y-8 pb-16">
                     <div id="user-management-section" class="hidden bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
@@ -924,7 +908,6 @@
         
     </div>
 
-    <!-- Mobile Navigation -->
     <div id="mobile-nav-menu" class="hidden fixed inset-y-0 left-0 w-64 bg-gray-900 border-r border-gray-700 z-50 flex-col py-6 px-4 transform -translate-x-full transition-transform duration-300 ease-in-out">
         <div class="flex justify-between items-center mb-6">
             <h2 class="text-xl font-bold text-white">Navigation</h2>
@@ -954,9 +937,9 @@
             <button id="mobile-nav-logout-btn" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-md transition-colors">Logout</button>
         </div>
     </div>
+
     <div id="mobile-menu-overlay" class="hidden fixed inset-0 bg-black/50 z-40"></div>
 
-    <!-- Modals -->
     <div id="video-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
         <div id="video-modal-container" class="bg-gray-900 rounded-lg shadow-xl max-h-[90vh] flex flex-col" style="width: 896px; height: 504px;">
             <div class="flex justify-between items-center p-3 border-b border-gray-700 flex-shrink-0">
@@ -1230,4 +1213,3 @@
 
 </body>
 </html>
-
