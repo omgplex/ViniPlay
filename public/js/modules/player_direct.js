@@ -5,12 +5,15 @@
  * and a logging console for better error feedback.
  */
 
+// MODIFIED: Import guideState and saveUserSetting to manage server-side settings.
 import { UIElements, guideState } from './state.js';
 import { showNotification } from './ui.js';
+import { saveUserSetting } from './api.js';
 
 let directPlayer = null; // To hold the mpegts.js instance
-const RECENT_LINKS_KEY = 'viniplay_recent_direct_links';
-const DIRECT_PLAY_KEY = 'vini-direct-play-enabled'; // Key for saving checkbox state
+// REMOVED: localStorage keys are no longer needed as data is now stored on the server.
+// const RECENT_LINKS_KEY = 'viniplay_recent_direct_links';
+// const DIRECT_PLAY_KEY = 'vini-direct-play-enabled';
 const MAX_RECENT_LINKS = 10;
 
 // --- Helper Functions ---
@@ -33,29 +36,24 @@ function logToPlayerConsole(message, isError = false) {
 }
 
 /**
- * Retrieves the list of recent links from localStorage.
+ * MODIFIED: Retrieves the list of recent links from the central guideState object,
+ * which is populated from the server on login.
  * @returns {Array<string>} An array of URLs.
  */
 function getRecentLinks() {
-    try {
-        const links = localStorage.getItem(RECENT_LINKS_KEY);
-        return links ? JSON.parse(links) : [];
-    } catch (e) {
-        console.error('[DirectPlayer] Could not parse recent links from localStorage:', e);
-        return [];
-    }
+    // Read from the central guideState, providing a default empty array if the setting doesn't exist.
+    return guideState.settings.recentDirectLinks || [];
 }
 
 /**
- * Saves the list of recent links to localStorage.
+ * MODIFIED: Saves the list of recent links to the server via the API.
  * @param {Array<string>} links - The array of URLs to save.
  */
 function saveRecentLinks(links) {
-    try {
-        localStorage.setItem(RECENT_LINKS_KEY, JSON.stringify(links));
-    } catch (e) {
-        console.error('[DirectPlayer] Could not save recent links to localStorage:', e);
-    }
+    // Update the local state immediately for UI responsiveness.
+    guideState.settings.recentDirectLinks = links;
+    // Asynchronously save the setting to the user's profile on the server.
+    saveUserSetting('recentDirectLinks', links);
 }
 
 /**
@@ -116,8 +114,9 @@ export function initDirectPlayer() {
         UIElements.directPlayerForm.reset();
     }
     
-    // Restore the 'Direct Play' checkbox state from localStorage
-    const savedDirectPlayState = localStorage.getItem(DIRECT_PLAY_KEY) === 'true';
+    // MODIFIED: Restore the 'Direct Play' checkbox state from the central settings object.
+    // Defaults to false if the setting has not been saved by the user yet.
+    const savedDirectPlayState = guideState.settings.directPlayEnabled === true;
     UIElements.directPlayCheckbox.checked = savedDirectPlayState;
 
     renderRecentLinks();
@@ -255,10 +254,14 @@ export function setupDirectPlayerEventListeners() {
 
     UIElements.directStopBtn.addEventListener('click', stopAndCleanupDirectPlayer);
     
-    // Save the checkbox state whenever it changes
+    // MODIFIED: Save the checkbox state to the server whenever it changes.
     UIElements.directPlayCheckbox.addEventListener('change', () => {
-        localStorage.setItem(DIRECT_PLAY_KEY, UIElements.directPlayCheckbox.checked);
-        showNotification(`Direct Play ${UIElements.directPlayCheckbox.checked ? 'enabled' : 'disabled'}.`, false, 2000);
+        const isEnabled = UIElements.directPlayCheckbox.checked;
+        // Update the local state object.
+        guideState.settings.directPlayEnabled = isEnabled;
+        // Save the setting to the server for the current user.
+        saveUserSetting('directPlayEnabled', isEnabled);
+        showNotification(`Direct Play ${isEnabled ? 'enabled' : 'disabled'}.`, false, 2000);
     });
 
     // Use event delegation for recent links table
@@ -275,10 +278,10 @@ export function setupDirectPlayerEventListeners() {
             const urlToDelete = deleteBtn.dataset.url;
             let links = getRecentLinks();
             links = links.filter(link => link !== urlToDelete);
+            // MODIFIED: saveRecentLinks now saves to the server.
             saveRecentLinks(links);
             renderRecentLinks();
             showNotification('Link removed from recents.');
         }
     });
 }
-
