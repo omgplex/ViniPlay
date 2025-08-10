@@ -14,9 +14,9 @@ import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSett
 import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu, showNotification } from './modules/ui.js';
 // MODIFIED: Import navigateToProgramInGuide to handle deep links from notifications.
 import { loadAndScheduleNotifications, subscribeUserToPush, navigateToProgramInGuide } from './modules/notification.js';
-import { setupDvrEventListeners, handleDvrChannelClick } from './modules/dvr.js';
-import { handleMultiViewChannelClick, populateChannelSelector } from './modules/multiview.js';
-import { setupDirectPlayerEventListeners } from './modules/player_direct.js';
+import { setupDvrEventListeners, handleDvrChannelClick, initDvrPage } from './modules/dvr.js';
+import { handleMultiViewChannelClick, populateChannelSelector, initMultiView } from './modules/multiview.js';
+import { setupDirectPlayerEventListeners, initDirectPlayer } from './modules/player_direct.js';
 
 // The initializeCastApi function is no longer called directly from here,
 // but the cast.js module will handle its own initialization via the window callback.
@@ -255,115 +255,112 @@ function restoreDimensions() {
  */
 function setupCoreEventListeners() {
     console.log('[MAIN] Setting up core event listeners.');
-    UIElements.tabGuide?.addEventListener('click', () => { console.log('[NAV] Desktop Guide tab clicked.'); switchTab('guide'); });
-    UIElements.tabMultiview?.addEventListener('click', () => { console.log('[NAV] Desktop Multi-View tab clicked.'); switchTab('multiview'); });
-    UIElements.tabPlayer?.addEventListener('click', () => { console.log('[NAV] Desktop Player tab clicked.'); switchTab('player'); });
-    UIElements.tabDvr?.addEventListener('click', () => { console.log('[NAV] Desktop DVR tab clicked.'); switchTab('dvr'); }); // NEW: DVR Tab
-    UIElements.tabNotifications?.addEventListener('click', () => { console.log('[NAV] Desktop Notifications tab clicked.'); switchTab('notifications'); });
-    UIElements.tabSettings?.addEventListener('click', () => { console.log('[NAV] Desktop Settings tab clicked.'); switchTab('settings'); });
 
-    UIElements.mobileMenuToggle?.addEventListener('click', () => { console.log('[NAV] Mobile menu toggle clicked.'); openMobileMenu(); });
-    UIElements.mobileMenuClose?.addEventListener('click', () => { console.log('[NAV] Mobile menu close clicked.'); closeMobileMenu(); });
-    UIElements.mobileMenuOverlay?.addEventListener('click', () => { console.log('[NAV] Mobile menu overlay clicked (to close).'); closeMobileMenu(); });
-    UIElements.mobileNavGuide?.addEventListener('click', () => { console.log('[NAV] Mobile Guide nav clicked.'); switchTab('guide'); });
-    UIElements.mobileNavMultiview?.addEventListener('click', () => { console.log('[NAV] Mobile Multi-View nav clicked.'); switchTab('multiview'); });
-    UIElements.mobileNavPlayer?.addEventListener('click', () => { console.log('[NAV] Mobile Player nav clicked.'); switchTab('player'); });
-    UIElements.mobileNavDvr?.addEventListener('click', () => { console.log('[NAV] Mobile DVR nav clicked.'); switchTab('dvr'); }); // NEW: Mobile DVR Nav
-    UIElements.mobileNavNotifications?.addEventListener('click', () => { console.log('[NAV] Mobile Notifications nav clicked.'); switchTab('notifications'); });
-    UIElements.mobileNavSettings?.addEventListener('click', () => { console.log('[NAV] Mobile Settings nav clicked.'); switchTab('settings'); });
+    // --- Tab Navigation and Refresh Logic ---
+    const setupTabListener = (tabElement, tabName, refreshFunction) => {
+        if (!tabElement) return;
+        tabElement.addEventListener('click', () => {
+            if (tabElement.classList.contains('active')) {
+                console.log(`[NAV] Refreshing ${tabName} tab data.`);
+                if (refreshFunction) refreshFunction();
+            } else {
+                console.log(`[NAV] Switching to ${tabName} tab.`);
+                switchTab(tabName);
+            }
+        });
+    };
+
+    // Desktop Tabs
+    setupTabListener(UIElements.tabGuide, 'guide');
+    setupTabListener(UIElements.tabMultiview, 'multiview', initMultiView);
+    setupTabListener(UIElements.tabPlayer, 'player', initDirectPlayer);
+    setupTabListener(UIElements.tabDvr, 'dvr', initDvrPage);
+    setupTabListener(UIElements.tabNotifications, 'notifications', loadAndScheduleNotifications);
+    setupTabListener(UIElements.tabSettings, 'settings');
+    
+    // Mobile Navigation
+    UIElements.mobileMenuToggle?.addEventListener('click', openMobileMenu);
+    UIElements.mobileMenuClose?.addEventListener('click', closeMobileMenu);
+    UIElements.mobileMenuOverlay?.addEventListener('click', closeMobileMenu);
+    
+    UIElements.mobileNavGuide?.addEventListener('click', () => switchTab('guide'));
+    UIElements.mobileNavMultiview?.addEventListener('click', () => switchTab('multiview'));
+    UIElements.mobileNavPlayer?.addEventListener('click', () => switchTab('player'));
+    UIElements.mobileNavDvr?.addEventListener('click', () => switchTab('dvr'));
+    UIElements.mobileNavNotifications?.addEventListener('click', () => switchTab('notifications'));
+    UIElements.mobileNavSettings?.addEventListener('click', () => switchTab('settings'));
+
     UIElements.mobileNavLogoutBtn?.addEventListener('click', () => {
-        console.log('[NAV] Mobile Logout nav clicked.');
-        const logoutButton = document.getElementById('logout-btn'); // Trigger desktop logout
+        const logoutButton = document.getElementById('logout-btn');
         if (logoutButton) logoutButton.click();
         closeMobileMenu();
     });
 
+    // --- Browser and Document Listeners ---
     window.addEventListener('popstate', () => { console.log('[NAV] Popstate event (browser back/forward).'); handleRouteChange(); });
-
-    UIElements.confirmCancelBtn?.addEventListener('click', () => { console.log('[UI] Confirm modal canceled.'); closeModal(UIElements.confirmModal); });
-    UIElements.confirmOkBtn?.addEventListener('click', () => { console.log('[UI] Confirm modal confirmed.'); handleConfirm(); });
-    UIElements.detailsCloseBtn?.addEventListener('click', () => { console.log('[UI] Program details modal closed.'); closeModal(UIElements.programDetailsModal); });
-
-    // --- NEW: Centralized Channel Selector Modal Listeners ---
-    console.log('[MAIN] Setting up shared channel selector modal listeners.');
     
-    // Listener for the filter dropdown (All, Favorites, Recents)
-    UIElements.multiviewChannelFilter?.addEventListener('change', () => {
-        populateChannelSelector();
+    // NEW: Refresh data when tab becomes visible again
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            console.log('[MAIN] Tab is visible again, refreshing data for current page.');
+            const currentPage = window.location.pathname;
+            if (currentPage.startsWith('/dvr')) {
+                initDvrPage();
+            } else if (currentPage.startsWith('/notifications')) {
+                loadAndScheduleNotifications();
+            }
+        }
     });
 
-    // Listener for the search input
+    // --- Modal Listeners ---
+    UIElements.confirmCancelBtn?.addEventListener('click', () => closeModal(UIElements.confirmModal));
+    UIElements.confirmOkBtn?.addEventListener('click', handleConfirm);
+    UIElements.detailsCloseBtn?.addEventListener('click', () => closeModal(UIElements.programDetailsModal));
+    
+    // --- Centralized Channel Selector Modal Listeners ---
+    UIElements.multiviewChannelFilter?.addEventListener('change', () => populateChannelSelector());
     UIElements.channelSelectorSearch?.addEventListener('input', () => {
-        // Debounce search to avoid excessive re-renders on every keystroke
         clearTimeout(appState.searchDebounceTimer);
         appState.searchDebounceTimer = setTimeout(() => populateChannelSelector(), 250);
     });
     
-    // Central listener for clicks within the channel list
     UIElements.channelSelectorList?.addEventListener('click', (e) => {
         const channelItem = e.target.closest('.channel-item');
         if (!channelItem) return;
-
-        // Check the context to decide which module handles the click
         if (document.body.dataset.channelSelectorContext === 'dvr') {
-            console.log('[MAIN_MODAL] Channel selected in DVR context.');
             handleDvrChannelClick(channelItem);
         } else {
-            console.log('[MAIN_MODAL] Channel selected in Multi-View context.');
             handleMultiViewChannelClick(channelItem);
         }
-        
-        // Always clean up the context flag after a selection is made
         delete document.body.dataset.channelSelectorContext;
     });
     
-    // Central listener for the modal's cancel button
     UIElements.channelSelectorCancelBtn?.addEventListener('click', () => {
-        console.log('[MAIN_MODAL] Channel selector cancelled.');
-        // Clean up the context flag on cancel
-        if (document.body.dataset.channelSelectorContext) {
-            delete document.body.dataset.channelSelectorContext;
-        }
+        delete document.body.dataset.channelSelectorContext;
         closeModal(UIElements.multiviewChannelSelectorModal);
     });
-    // --- END: Centralized Listeners ---
 
-    // Make modals resizable
+    // --- Resizable Elements ---
     if (UIElements.videoResizeHandle && UIElements.videoModalContainer) {
         makeModalResizable(UIElements.videoResizeHandle, UIElements.videoModalContainer, 400, 300, 'playerDimensions');
-        console.log('[MAIN] Video modal made resizable.');
     }
     if (UIElements.detailsResizeHandle && UIElements.programDetailsContainer) {
         makeModalResizable(UIElements.detailsResizeHandle, UIElements.programDetailsContainer, 320, 250, 'programDetailsDimensions');
-        console.log('[MAIN] Program details modal made resizable.');
     }
-
-    // Make channel column resizable (desktop only)
     if (UIElements.channelColumnResizeHandle && UIElements.guideGrid && window.innerWidth >= 768) {
-        makeColumnResizable(
-            UIElements.channelColumnResizeHandle,
-            UIElements.guideGrid,
-            100, // Minimum width for the channel column
-            'channelColumnWidth',
-            '--channel-col-width'
-        );
-        console.log('[MAIN] Channel column made resizable.');
-    } else {
-        console.log('[MAIN] Channel column resize handle not applied (mobile or elements not found).');
+        makeColumnResizable(UIElements.channelColumnResizeHandle, UIElements.guideGrid, 100, 'channelColumnWidth', '--channel-col-width');
     }
-
-    // NEW: Use ResizeObserver to update CSS variable for sticky header positioning
+    
+    // --- Header Resize Observer ---
     if (UIElements.mainHeader && UIElements.unifiedGuideHeader) {
         const mainHeaderObserver = new ResizeObserver(entries => {
             for (let entry of entries) {
                 if (entry.target === UIElements.mainHeader) {
                     document.documentElement.style.setProperty('--main-header-height', `${entry.contentRect.height}px`);
-                    console.log(`[MAIN] Main header height updated to: ${entry.contentRect.height}px`);
                 }
             }
         });
         mainHeaderObserver.observe(UIElements.mainHeader);
-        console.log('[MAIN] ResizeObserver attached to main-header.');
     }
 }
 
