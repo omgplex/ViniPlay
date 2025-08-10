@@ -10,6 +10,7 @@ import { showNotification } from './ui.js';
 
 let directPlayer = null; // To hold the mpegts.js instance
 const RECENT_LINKS_KEY = 'viniplay_recent_direct_links';
+const DIRECT_PLAY_KEY = 'vini-direct-play-enabled'; // Key for saving checkbox state
 const MAX_RECENT_LINKS = 10;
 
 // --- Helper Functions ---
@@ -89,7 +90,7 @@ function renderRecentLinks() {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td class="max-w-md truncate" title="${link}">
-                <a href="#" class="replay-link" data-url="${link}">${link}</a>
+                <a href="#" class="replay-link text-blue-400 hover:underline" data-url="${link}">${link}</a>
             </td>
             <td class="text-right">
                 <button class="action-btn delete-recent-link-btn p-1" title="Delete Link" data-url="${link}">
@@ -114,6 +115,11 @@ export function initDirectPlayer() {
     if (UIElements.directPlayerForm) {
         UIElements.directPlayerForm.reset();
     }
+    
+    // Restore the 'Direct Play' checkbox state from localStorage
+    const savedDirectPlayState = localStorage.getItem(DIRECT_PLAY_KEY) === 'true';
+    UIElements.directPlayCheckbox.checked = savedDirectPlayState;
+
     renderRecentLinks();
 }
 
@@ -248,6 +254,12 @@ export function setupDirectPlayerEventListeners() {
     });
 
     UIElements.directStopBtn.addEventListener('click', stopAndCleanupDirectPlayer);
+    
+    // Save the checkbox state whenever it changes
+    UIElements.directPlayCheckbox.addEventListener('change', () => {
+        localStorage.setItem(DIRECT_PLAY_KEY, UIElements.directPlayCheckbox.checked);
+        showNotification(`Direct Play ${UIElements.directPlayCheckbox.checked ? 'enabled' : 'disabled'}.`, false, 2000);
+    });
 
     // Use event delegation for recent links table
     UIElements.recentLinksTbody.addEventListener('click', (e) => {
@@ -269,3 +281,4 @@ export function setupDirectPlayerEventListeners() {
         }
     });
 }
+
