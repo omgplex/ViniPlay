@@ -13,6 +13,7 @@ import { playChannel } from './player.js';
 import { showNotification, openModal, closeModal } from './ui.js';
 import { addOrRemoveNotification, findNotificationForProgram } from './notification.js';
 import { addOrRemoveDvrJob, findDvrJobForProgram } from './dvr.js';
+import { ICONS } from './icons.js'; // MODIFIED: Import the new icon library
 
 // --- Virtualization Constants ---
 const ROW_HEIGHT = 96; // Height in pixels of a single channel row (.channel-info + .timeline-row)
@@ -443,7 +444,12 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
                 const sourceBadgeHTML = guideState.channelSources.size > 1 ? `<span class="source-badge ${sourceBadgeColor} text-white">${channel.source}</span>` : '';
                 const chnoBadgeHTML = channel.chno ? `<span class="chno-badge">${channel.chno}</span>` : '';
 
-                // MODIFIED: Wrapped the favorite star in a div with responsive classes
+                // MODIFIED: Replaced hardcoded SVG with icon from the library
+                const starIconHTML = ICONS.star.replace(
+                    'class="w-5 h-5"',
+                    `data-channel-id="${channel.id}" class="w-6 h-6 text-gray-500 hover:text-yellow-400 favorite-star cursor-pointer ${channel.isFavorite ? 'favorited' : ''}"`
+                );
+
                 const channelInfoHTML = `
                     <div class="channel-info p-2 flex items-center justify-between cursor-pointer" data-url="${channel.url}" data-name="${channelName}" data-id="${channel.id}" data-channel-index="${i}">
                         <div class="flex items-center overflow-hidden flex-grow min-w-0">
@@ -457,7 +463,7 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
                             </div>
                         </div>
                         <div class="hidden md:flex items-center justify-center ml-2 flex-shrink-0">
-                            <svg data-channel-id="${channel.id}" class="w-6 h-6 text-gray-500 hover:text-yellow-400 favorite-star cursor-pointer ${channel.isFavorite ? 'favorited' : ''}" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10.868 2.884c.321-.772 1.415-.772 1.736 0l1.884 4.545a1.5 1.5 0 001.292.934l4.892.38c.787.061 1.1.99.444 1.527l-3.623 2.805a1.5 1.5 0 00-.48 1.644l1.449 4.493c.25.777-.606 1.378-1.292.934l-4.148-2.564a1.5 1.5 0 00-1.543 0l-4.148 2.564c-.686.444-1.542-.157-1.292-.934l1.449-4.493a1.5 1.5 0 00-.48-1.644L2.008 10.26c-.656-.537-.345-1.466.444-1.527l4.892-.38a1.5 1.5 0 001.292-.934l1.884-4.545z" clip-rule="evenodd" /></svg>
+                            ${starIconHTML}
                         </div>
                     </div>
                 `;
