@@ -409,7 +409,8 @@ async function proceedWithRouteChange(path) {
         const config = await fetchConfig();
         if (config) {
             Object.assign(guideState.settings, config.settings || {});
-            finalizeGuideLoad(false); // false means it's not the very first load
+            // FIX: Change 'false' to 'true' to force the "scroll to now" behavior on tab switch.
+            finalizeGuideLoad(true);
         }
 
     } else {
@@ -473,4 +474,3 @@ export const switchTab = (activeTab) => {
     }
     navigate(newPath);
 };
-
