@@ -1300,43 +1300,77 @@ app.delete('/api/notifications/:id', requireAuth, (req, res) => {
     });
 });
 
+// NEW: Endpoint to clear all past notifications
+app.delete('/api/notifications/past', requireAuth, (req, res) => {
+    const userId = req.session.userId;
+    const now = new Date().toISOString();
+    console.log(`[PUSH_API] Clearing all past notifications for user ${userId}.`);
+    
+    // This query deletes notifications whose scheduled trigger time is in the past.
+    db.run(`DELETE FROM notifications WHERE user_id = ? AND notificationTime <= ?`,
+        [userId, now],
+        function(err) {
+            if (err) {
+                console.error(`[PUSH_API] Error deleting past notifications for user ${userId}:`, err.message);
+                return res.status(500).json({ error: 'Could not clear past notifications.' });
+            }
+            console.log(`[PUSH_API] Cleared ${this.changes} past notifications for user ${userId}.`);
+            res.json({ success: true, deletedCount: this.changes });
+        }
+    );
+});
 
-app.delete('/api/data', requireAuth, (req, res) => {
-    console.log(`[API] Received request to /api/data (clear all data) for user ${req.session.userId}.`);
+// MODIFIED: This endpoint is now admin-only and performs a full hard reset.
+app.delete('/api/data', requireAuth, requireAdmin, (req, res) => {
+    console.log(`[API_RESET] ADMIN ACTION: Received request to /api/data (HARD RESET) from admin ${req.session.username}.`);
     try {
-        [MERGED_M3U_PATH, MERGED_EPG_JSON_PATH, SETTINGS_PATH].forEach(file => {
-            if (fs.existsSync(file)) {
-                fs.unlinkSync(file);
-                console.log(`[API] Deleted file: ${file}`);
+        // Stop all timers
+        console.log('[API_RESET] Stopping all scheduled tasks...');
+        if (notificationCheckInterval) clearInterval(notificationCheckInterval);
+        for (const timer of sourceRefreshTimers.values()) clearTimeout(timer);
+        sourceRefreshTimers.clear();
+        for (const job of activeDvrJobs.values()) job.cancel();
+        activeDvrJobs.clear();
+        for (const pid of runningFFmpegProcesses.values()) {
+            try { process.kill(pid, 'SIGKILL'); } catch (e) {}
+        }
+        runningFFmpegProcesses.clear();
+
+        // Wipe files
+        console.log('[API_RESET] Wiping all data files...');
+        const filesToDelete = [MERGED_M3U_PATH, MERGED_EPG_JSON_PATH, SETTINGS_PATH, VAPID_KEYS_PATH];
+        filesToDelete.forEach(file => {
+            if (fs.existsSync(file)) fs.unlinkSync(file);
+        });
+        
+        // Wipe directories
+        [SOURCES_DIR, DVR_DIR].forEach(dir => {
+            if(fs.existsSync(dir)) {
+                fs.rmSync(dir, { recursive: true, force: true });
+                fs.mkdirSync(dir, { recursive: true });
             }
         });
-        if(fs.existsSync(SOURCES_DIR)) {
-            fs.rmSync(SOURCES_DIR, { recursive: true, force: true });
-            console.log(`[API] Removed sources directory: ${SOURCES_DIR}`);
-            fs.mkdirSync(SOURCES_DIR, { recursive: true });
-            console.log(`[API] Recreated empty sources directory: ${SOURCES_DIR}`);
-        }
         
-        db.run(`DELETE FROM user_settings WHERE user_id = ?`, [req.session.userId], (err) => {
-            if (err) console.error(`[API] Error clearing user settings for user ${req.session.userId}:`, err.message);
-            else console.log(`[API] Cleared user settings for user ${req.session.userId}.`);
-        });
-        db.run(`DELETE FROM notifications WHERE user_id = ?`, [req.session.userId], (err) => {
-            if (err) console.error(`[API] Error clearing notifications for user ${req.session.userId}:`, err.message);
-            else console.log(`[API] Cleared notifications for user ${req.session.userId}.`);
-        });
-        db.run(`DELETE FROM push_subscriptions WHERE user_id = ?`, [req.session.userId], (err) => {
-            if (err) console.error(`[API] Error clearing push subscriptions for user ${req.session.userId}:`, err.message);
-            else console.log(`[API] Cleared push subscriptions for user ${req.session.userId}.`);
+        // Wipe database tables
+        console.log('[API_RESET] Wiping all database tables...');
+        const tables = ['dvr_recordings', 'dvr_jobs', 'notification_deliveries', 'notifications', 'push_subscriptions', 'multiview_layouts', 'user_settings', 'users', 'sessions'];
+        db.serialize(() => {
+            tables.forEach(table => {
+                db.run(`DELETE FROM ${table}`, (err) => {
+                    if (err) console.error(`[API_RESET] Error clearing table ${table}:`, err.message);
+                });
+            });
         });
 
-        console.log(`[API] All data cleared for user ${req.session.userId}.`);
-        res.json({ success: true, message: 'All data has been cleared.' });
+        console.log('[API_RESET] Hard reset complete. The application is now in a fresh-install state.');
+        res.json({ success: true, message: 'All application data has been cleared.' });
+
     } catch (error) {
-        console.error("[API] Error clearing data:", error);
-        res.status(500).json({ error: "Failed to clear data." });
+        console.error("[API_RESET] Critical error during hard reset:", error);
+        res.status(500).json({ error: "Failed to reset application data." });
     }
 });
+
 
 app.get('/stream', requireAuth, (req, res) => {
     const { url: streamUrl, profileId, userAgentId } = req.query;
