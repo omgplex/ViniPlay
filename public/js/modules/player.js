@@ -8,11 +8,23 @@ import { saveUserSetting } from './api.js';
 import { showNotification, openModal, closeModal } from './ui.js';
 import { castState, loadMedia, setLocalPlayerState } from './cast.js';
 
+let streamInfoInterval = null; // NEW: Interval to update stream stats
+
 /**
  * Stops the current local stream, cleans up the mpegts.js player instance, and closes the modal.
  * This does NOT affect an active Google Cast session.
  */
 export const stopAndCleanupPlayer = () => {
+    // NEW: Clear the stream info update interval
+    if (streamInfoInterval) {
+        clearInterval(streamInfoInterval);
+        streamInfoInterval = null;
+    }
+    // NEW: Hide the stream info overlay on close
+    if (UIElements.streamInfoOverlay) {
+        UIElements.streamInfoOverlay.classList.add('hidden');
+    }
+
     // If we are casting, the modal might be showing the "Now Casting" screen.
     // In this case, we just want to close the modal, not stop the remote playback.
     if (castState.isCasting) {
@@ -41,6 +53,27 @@ export const stopAndCleanupPlayer = () => {
     }
     closeModal(UIElements.videoModal);
 };
+
+/**
+ * NEW: Updates the stream info overlay with the latest stats from mpegts.js.
+ */
+function updateStreamInfo() {
+    if (!appState.player || !appState.player.statisticsInfo) return;
+
+    const stats = appState.player.statisticsInfo;
+    const video = UIElements.videoElement;
+
+    const resolution = (video.videoWidth && video.videoHeight) ? `${video.videoWidth}x${video.videoHeight}` : 'N/A';
+    const speed = `${(stats.speed / 1024).toFixed(2)} KB/s`;
+    const fps = stats.decodedFrames > 0 ? stats.fps.toFixed(2) : '0.00';
+    const buffer = video.buffered.length > 0 ? `${(video.buffered.end(0) - video.currentTime).toFixed(2)}s` : '0.00s';
+
+    UIElements.streamInfoResolution.textContent = `Resolution: ${resolution}`;
+    UIElements.streamInfoBandwidth.textContent = `Bandwidth: ${speed}`;
+    UIElements.streamInfoFps.textContent = `FPS: ${fps}`;
+    UIElements.streamInfoBuffer.textContent = `Buffer: ${buffer}`;
+}
+
 
 /**
  * Initializes and starts playing a channel stream, either locally or on a Cast device.
@@ -92,6 +125,11 @@ export const playChannel = (url, name, channelId) => {
         appState.player.destroy();
         appState.player = null;
     }
+    // NEW: Clear any existing info interval before starting a new player
+    if (streamInfoInterval) {
+        clearInterval(streamInfoInterval);
+        streamInfoInterval = null;
+    }
 
     if (mpegts.isSupported()) {
         appState.player = mpegts.createPlayer({
@@ -112,6 +150,10 @@ export const playChannel = (url, name, channelId) => {
             showNotification("Could not play stream. Check browser console & server logs.", true);
             stopAndCleanupPlayer();
         });
+
+        // NEW: Start the stream info interval
+        streamInfoInterval = setInterval(updateStreamInfo, 2000); // Update every 2 seconds
+
     } else {
         showNotification('Your browser does not support Media Source Extensions (MSE).', true);
     }
@@ -127,6 +169,11 @@ export function setupPlayerEventListeners() {
         if (document.pictureInPictureEnabled && UIElements.videoElement.readyState >= 3) {
             UIElements.videoElement.requestPictureInPicture().catch(() => showNotification("Could not enter Picture-in-Picture.", true));
         }
+    });
+
+    // NEW: Stream Info Toggle Listener
+    UIElements.streamInfoToggleBtn.addEventListener('click', () => {
+        UIElements.streamInfoOverlay.classList.toggle('hidden');
     });
 
     // --- FINAL FIX ---
