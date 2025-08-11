@@ -71,10 +71,17 @@ async function loadStorageInfo() {
  * Renders the table of scheduled and in-progress recording jobs.
  */
 function renderScheduledJobs() {
-    const tbody = UIElements.dvrJobsTbody;
     const jobs = dvrState.scheduledJobs || [];
+    const hasJobs = jobs.length > 0;
 
-    UIElements.noDvrJobsMessage.classList.toggle('hidden', jobs.length === 0);
+    // FIX: Toggle visibility of the entire table container vs the message
+    UIElements.noDvrJobsMessage.classList.toggle('hidden', hasJobs);
+    UIElements.dvrJobsTableContainer.classList.toggle('hidden', !hasJobs);
+    
+    // FIX: Show/hide the "Clear All" button
+    UIElements.clearScheduledDvrBtn.classList.toggle('hidden', !hasJobs);
+
+    const tbody = UIElements.dvrJobsTbody;
     tbody.innerHTML = '';
 
     jobs.forEach(job => {
@@ -85,7 +92,6 @@ function renderScheduledJobs() {
             ? `<button class="status-badge ${job.status} view-error-btn" data-job-id="${job.id}">${job.status}</button>`
             : `<span class="status-badge ${job.status}">${job.status}</span>`;
 
-        // NEW: Conflict Icon
         const conflictIcon = job.isConflicting ? 
             `<svg class="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20" title="This recording conflicts with another scheduled recording."><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1.75-5.25a.75.75 0 00-1.5 0v3.5a.75.75 0 001.5 0v-3.5z" clip-rule="evenodd" /></svg>` : '';
 
@@ -97,7 +103,6 @@ function renderScheduledJobs() {
             <td>${startTime}</td>
             <td>${endTime}</td>
             <td>${statusHTML}</td>
-            <!-- NEW: Conflict Cell -->
             <td class="text-center">${conflictIcon}</td>
             <td class="text-right">
                 <div class="flex items-center justify-end gap-3">
@@ -124,14 +129,22 @@ function renderScheduledJobs() {
     });
 }
 
+
 /**
  * Renders the table of completed recordings.
  */
 function renderCompletedRecordings() {
-    const tbody = UIElements.dvrRecordingsTbody;
     const recordings = dvrState.completedRecordings || [];
+    const hasRecordings = recordings.length > 0;
 
-    UIElements.noDvrRecordingsMessage.classList.toggle('hidden', recordings.length === 0);
+    // FIX: Toggle visibility of the entire table container vs the message
+    UIElements.noDvrRecordingsMessage.classList.toggle('hidden', hasRecordings);
+    UIElements.dvrRecordingsTableContainer.classList.toggle('hidden', !hasRecordings);
+    
+    // FIX: Show/hide the "Clear All" button
+    UIElements.clearCompletedDvrBtn.classList.toggle('hidden', !hasRecordings);
+    
+    const tbody = UIElements.dvrRecordingsTbody;
     tbody.innerHTML = '';
 
     recordings.forEach(rec => {
@@ -158,6 +171,7 @@ function renderCompletedRecordings() {
         tbody.appendChild(tr);
     });
 }
+
 
 /**
  * NEW: Renders the storage usage bar.
@@ -315,10 +329,8 @@ export function setupDvrEventListeners() {
         }
     });
 
-    // NEW: Manual Recording Form Handler
     UIElements.manualRecordingForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        // MODIFIED: Read channel info from hidden inputs
         const channelId = UIElements.manualRecChannelId.value;
         const channelName = UIElements.manualRecChannelName.value;
         const startTime = UIElements.manualRecStart.value;
@@ -348,7 +360,6 @@ export function setupDvrEventListeners() {
             if (res.ok) {
                 showNotification('Manual recording scheduled successfully.');
                 UIElements.manualRecordingForm.reset();
-                // MODIFIED: Reset the channel display text and hidden inputs
                 UIElements.manualRecSelectedChannelName.textContent = 'No channel selected';
                 UIElements.manualRecChannelId.value = '';
                 UIElements.manualRecChannelName.value = '';
@@ -360,18 +371,42 @@ export function setupDvrEventListeners() {
         }
     });
 
-    // MODIFIED: Add event listener for the new "Select Channel" button
     if (UIElements.manualRecChannelSelectBtn) {
         UIElements.manualRecChannelSelectBtn.addEventListener('click', () => {
-            // Use a data attribute to signal that the modal is opened for DVR
             document.body.dataset.channelSelectorContext = 'dvr';
-            populateChannelSelector(); // Populate the modal with channels
+            populateChannelSelector();
             openModal(UIElements.multiviewChannelSelectorModal);
         });
     }
 
-    // MODIFIED: The specific listeners for the channel selector modal list and cancel button
-    // have been removed from this file. They will be handled by the central listener in main.js.
+    // NEW: Event listeners for the "Clear All" buttons
+    UIElements.clearScheduledDvrBtn.addEventListener('click', () => {
+        showConfirm(
+            'Clear All Jobs?',
+            'This will delete all scheduled, completed, and error jobs from your history. This action cannot be undone and will not delete recorded files.',
+            async () => {
+                const res = await apiFetch('/api/dvr/jobs/all', { method: 'DELETE' });
+                if (res && res.ok) {
+                    showNotification('All scheduled jobs have been cleared.');
+                    await loadScheduledJobs();
+                }
+            }
+        );
+    });
+
+    UIElements.clearCompletedDvrBtn.addEventListener('click', () => {
+        showConfirm(
+            'Clear All Recordings?',
+            'This will permanently delete all completed recording files and remove them from your history. This action cannot be undone.',
+            async () => {
+                const res = await apiFetch('/api/dvr/recordings/all', { method: 'DELETE' });
+                if (res && res.ok) {
+                    showNotification('All completed recordings have been deleted.');
+                    await loadCompletedRecordings();
+                }
+            }
+        );
+    });
 }
 
 export function findDvrJobForProgram(program) {
