@@ -16,6 +16,7 @@ export const appState = {
     fusePrograms: null, // Fuse.js instance for programs
     currentSourceTypeForEditor: 'url',
     swRegistration: null, // To hold the service worker registration
+    isNavigating: false, // NEW: Flag to prevent race conditions during navigation
 };
 
 // State specific to the TV Guide
