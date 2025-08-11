@@ -589,15 +589,23 @@ const updateNowLine = (guideStartUtc, shouldScroll = false) => {
  * Populates the "group" filter dropdown.
  */
 const populateGroupFilter = () => {
-    const currentVal = UIElements.groupFilter.value;
+    const savedFilter = guideState.settings.activeGroupFilter;
     UIElements.groupFilter.innerHTML = `<option value="all">All Groups</option><option value="recents">Recents</option><option value="favorites">Favorites</option>`;
     [...guideState.channelGroups].sort((a, b) => a.localeCompare(b)).forEach(group => {
         const cleanGroup = group.replace(/"/g, '&quot;');
         UIElements.groupFilter.innerHTML += `<option value="${cleanGroup}">${group}</option>`;
     });
-    UIElements.groupFilter.value = currentVal && UIElements.groupFilter.querySelector(`option[value="${currentVal.replace(/"/g, '&quot;')}}"]`) ? currentVal : 'all';
+    
+    // Set the value based on saved setting, falling back to 'all'
+    if (savedFilter && UIElements.groupFilter.querySelector(`option[value="${savedFilter.replace(/"/g, '&quot;')}"]`)) {
+        UIElements.groupFilter.value = savedFilter;
+    } else {
+        UIElements.groupFilter.value = 'all';
+    }
+    
     UIElements.groupFilter.classList.remove('hidden');
 };
+
 
 /**
  * Populates the "source" filter dropdown.
@@ -777,7 +785,14 @@ export const scrollToChannel = (channelId) => {
  * Sets up all event listeners for the guide page.
  */
 export function setupGuideEventListeners() {
-    UIElements.groupFilter.addEventListener('change', () => handleSearchAndFilter());
+    UIElements.groupFilter.addEventListener('change', () => {
+        const selectedGroup = UIElements.groupFilter.value;
+        // Save the setting for the user
+        saveUserSetting('activeGroupFilter', selectedGroup);
+        // Update local state immediately for responsiveness
+        guideState.settings.activeGroupFilter = selectedGroup;
+        handleSearchAndFilter();
+    });
     UIElements.sourceFilter.addEventListener('change', () => handleSearchAndFilter());
     UIElements.searchInput.addEventListener('input', () => {
         clearTimeout(appState.searchDebounceTimer);
