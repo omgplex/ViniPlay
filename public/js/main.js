@@ -106,23 +106,45 @@ export async function initMainApp() {
         UIElements.initialLoadingIndicator.classList.remove('hidden');
         UIElements.guidePlaceholder.classList.remove('hidden');
 
-        // Attempt to load cached data first
-        console.log('[MAIN] Attempting to load guide data from IndexedDB cache...');
-        const cachedChannels = await loadDataFromDB('channels');
-        const cachedPrograms = await loadDataFromDB('programs');
+        // FIX: Cache Validation Logic
+        const serverTimestamp = config.settings.sourcesLastUpdated;
+        const localTimestamp = await loadDataFromDB('sourcesLastUpdated');
+        let useCache = false;
 
-        if (cachedChannels?.length > 0 && cachedPrograms) {
-            console.log('[MAIN] Loaded guide data from cache. Finalizing guide load.');
-            guideState.channels = cachedChannels;
-            guideState.programs = cachedPrograms;
-            await finalizeGuideLoad(true); // true indicates first load
-        } else if (config.m3uContent) {
-            console.log('[MAIN] No cached data or incomplete cache. Processing guide data from server config.');
-            await handleGuideLoad(config.m3uContent, config.epgContent);
+        if (serverTimestamp && localTimestamp && serverTimestamp === localTimestamp) {
+            console.log('[MAIN_CACHE] Server and local timestamps match. Using local cache.');
+            useCache = true;
         } else {
-            console.log('[MAIN] No M3U content from server or cache. Displaying no data message.');
-            UIElements.initialLoadingIndicator.classList.add('hidden');
-            UIElements.noDataMessage.classList.remove('hidden');
+            console.log(`[MAIN_CACHE] Timestamps differ or are missing. Server: ${serverTimestamp}, Local: ${localTimestamp}. Fetching fresh data.`);
+            useCache = false;
+        }
+
+        let loadedFromCache = false;
+        if (useCache) {
+            const cachedChannels = await loadDataFromDB('channels');
+            const cachedPrograms = await loadDataFromDB('programs');
+            if (cachedChannels?.length > 0 && cachedPrograms) {
+                console.log('[MAIN] Loaded guide data from cache. Finalizing guide load.');
+                guideState.channels = cachedChannels;
+                guideState.programs = cachedPrograms;
+                await finalizeGuideLoad(true); // true indicates first load
+                loadedFromCache = true;
+            }
+        }
+        
+        // If we didn't use the cache or the cache was incomplete, load from server config.
+        if (!loadedFromCache) {
+            if (config.m3uContent) {
+                console.log('[MAIN] Processing guide data from server config.');
+                await handleGuideLoad(config.m3uContent, config.epgContent);
+                // After successfully loading from server, update the local timestamp.
+                await saveDataToDB('sourcesLastUpdated', serverTimestamp);
+                console.log('[MAIN_CACHE] Updated local timestamp to match server.');
+            } else {
+                 console.log('[MAIN] No M3U content from server or cache. Displaying no data message.');
+                 UIElements.initialLoadingIndicator.classList.add('hidden');
+                 UIElements.noDataMessage.classList.remove('hidden');
+            }
         }
         
         // Load the list of scheduled notifications for the UI
@@ -221,6 +243,31 @@ async function loadDataFromDB(key) {
     });
 }
 
+// FIX: New function to save data to IndexedDB
+async function saveDataToDB(key, value) {
+    if (!appState.db) {
+        console.warn('[IndexedDB] Cannot save data: DB instance is null.');
+        return false;
+    }
+    return new Promise((resolve, reject) => {
+        try {
+            const transaction = appState.db.transaction(['guideData'], 'readwrite');
+            const store = transaction.objectStore('guideData');
+            const request = store.put(value, key);
+            request.onsuccess = () => {
+                console.log(`[IndexedDB] Data for key "${key}" saved successfully.`);
+                resolve(true);
+            };
+            request.onerror = (event) => {
+                console.error(`[IndexedDB] Error saving data for key "${key}" to DB:`, event.target.error);
+                reject(false);
+            };
+        } catch (e) {
+            console.error(`[IndexedDB] Unexpected error during saveDataToDB for key "${key}":`, e);
+            reject(false);
+        }
+    });
+}
 
 /**
  * Restores the dimensions of resizable modals and the channel column from saved settings.
