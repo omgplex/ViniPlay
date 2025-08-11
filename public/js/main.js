@@ -17,12 +17,40 @@ import { loadAndScheduleNotifications, subscribeUserToPush, navigateToProgramInG
 import { setupDvrEventListeners, handleDvrChannelClick, initDvrPage } from './modules/dvr.js';
 import { handleMultiViewChannelClick, populateChannelSelector, initMultiView } from './modules/multiview.js';
 import { setupDirectPlayerEventListeners, initDirectPlayer } from './modules/player_direct.js';
+import { ICONS } from './modules/icons.js'; // MODIFIED: Import the new icon library
 
 // The initializeCastApi function is no longer called directly from here,
 // but the cast.js module will handle its own initialization via the window callback.
 
 // NEW: Global variable to hold navigation target from a notification click
 let notificationTarget = null;
+
+/**
+ * NEW: Finds all icon placeholders in the document and injects the SVG markup.
+ */
+function renderIcons() {
+    console.log('[MAIN] Rendering all icons from placeholders...');
+    const iconPlaceholders = document.querySelectorAll('[data-icon]');
+    iconPlaceholders.forEach(placeholder => {
+        const iconName = placeholder.dataset.icon;
+        if (ICONS[iconName]) {
+            // Replace the placeholder itself with the SVG element
+            const template = document.createElement('template');
+            template.innerHTML = ICONS[iconName].trim();
+            const svgElement = template.content.firstChild;
+            
+            // Copy any existing classes from the placeholder to the SVG
+            if (placeholder.className) {
+                svgElement.classList.add(...placeholder.className.split(' '));
+            }
+
+            // Replace the placeholder in the DOM
+            placeholder.parentNode.replaceChild(svgElement, placeholder);
+        } else {
+            console.warn(`[ICONS] Icon not found in library: ${iconName}`);
+        }
+    });
+}
 
 
 /**
@@ -83,6 +111,9 @@ export async function initMainApp() {
     // REMOVED: The direct call to initializeCastApi() is no longer needed here.
     // The cast.js module will now be initialized automatically by the Google Cast SDK callback.
     console.log('[MAIN] All event listeners set up.');
+
+    // MODIFIED: Render all icons now that the DOM is ready.
+    renderIcons();
 
     // 3. Load initial configuration and guide data
     try {
