@@ -1281,26 +1281,7 @@ app.get('/api/notifications', requireAuth, (req, res) => {
     });
 });
 
-app.delete('/api/notifications/:id', requireAuth, (req, res) => {
-    const { id } = req.params;
-    console.log(`[PUSH_API] Deleting notification ID: ${id} for user ${req.session.userId}.`);
-    db.run(`DELETE FROM notifications WHERE id = ? AND user_id = ?`,
-        [id, req.session.userId],
-        function (err) {
-            if (err) {
-                console.error(`[PUSH_API] Error deleting notification ${id} from database:`, err);
-                return res.status(500).json({ error: 'Could not delete notification.' });
-            }
-            if (this.changes === 0) {
-                console.warn(`[PUSH_API] Notification ${id} not found or unauthorized for user ${req.session.userId}.`);
-                return res.status(404).json({ error: 'Notification not found or unauthorized.' });
-            }
-            console.log(`[PUSH_API] Notification ${id} deleted successfully for user ${req.session.userId}.`);
-            res.json({ success: true });
-    });
-});
-
-// NEW: Endpoint to clear all past notifications
+// MODIFIED: Reordered this route to be BEFORE the /:id route to fix the 404 error.
 app.delete('/api/notifications/past', requireAuth, (req, res) => {
     const userId = req.session.userId;
     const now = new Date().toISOString();
@@ -1318,6 +1299,25 @@ app.delete('/api/notifications/past', requireAuth, (req, res) => {
             res.json({ success: true, deletedCount: this.changes });
         }
     );
+});
+
+app.delete('/api/notifications/:id', requireAuth, (req, res) => {
+    const { id } = req.params;
+    console.log(`[PUSH_API] Deleting notification ID: ${id} for user ${req.session.userId}.`);
+    db.run(`DELETE FROM notifications WHERE id = ? AND user_id = ?`,
+        [id, req.session.userId],
+        function (err) {
+            if (err) {
+                console.error(`[PUSH_API] Error deleting notification ${id} from database:`, err);
+                return res.status(500).json({ error: 'Could not delete notification.' });
+            }
+            if (this.changes === 0) {
+                console.warn(`[PUSH_API] Notification ${id} not found or unauthorized for user ${req.session.userId}.`);
+                return res.status(404).json({ error: 'Notification not found or unauthorized.' });
+            }
+            console.log(`[PUSH_API] Notification ${id} deleted successfully for user ${req.session.userId}.`);
+            res.json({ success: true });
+    });
 });
 
 // MODIFIED: This endpoint is now admin-only and performs a full hard reset.
