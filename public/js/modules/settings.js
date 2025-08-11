@@ -170,6 +170,9 @@ export const updateUIFromSettings = () => {
     if (appState.currentUser?.isAdmin) {
         refreshUserList();
     }
+    
+    // NEW: Show/hide the Danger Zone section based on admin status
+    UIElements.dangerZoneSection.classList.toggle('hidden', !appState.currentUser?.isAdmin);
 };
 
 
@@ -288,13 +291,15 @@ const openEditorModal = (type, item = null) => {
 
     const isDefault = item && item.isDefault;
     UIElements.editorName.disabled = isDefault;
-    UIElements.editorValue.disabled = isDefault;
+    
+    // NEW LOGIC: Make the textarea readonly for default profiles so users can copy the command.
+    UIElements.editorValue.readOnly = isDefault;
+    UIElements.editorValue.classList.toggle('bg-gray-600', isDefault); // Visual cue for readonly
+    UIElements.editorValue.classList.toggle('cursor-not-allowed', isDefault);
 
-    if (isDefault && !isUserAgent && type === 'streamProfile') {
-        const defaultHelp = item.command === 'redirect' ?
-            'This built-in profile redirects the player to the stream URL directly. The command cannot be changed.' :
-            'This built-in profile uses the server to proxy the stream. The command cannot be changed.';
-        UIElements.editorValue.value = defaultHelp;
+    // If it's a default profile, still show the actual command for copying.
+    if (item) {
+        UIElements.editorValue.value = item.command || item.value || '';
     }
 
     UIElements.editorSaveBtn.disabled = isDefault;
