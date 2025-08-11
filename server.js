@@ -2081,6 +2081,118 @@ app.get('/api/events', requireAuth, (req, res) => {
     });
 });
 
+// --- NEW: URL Validation Endpoint ---
+app.post('/api/validate-url', requireAuth, async (req, res) => {
+    const { url } = req.body;
+    if (!url) {
+        return res.status(400).json({ error: 'URL is required.' });
+    }
+    console.log(`[VALIDATE_URL] Testing URL: ${url}`);
+    try {
+        await fetchUrlContent(url);
+        res.json({ success: true, message: 'URL is reachable and returned a successful response.' });
+    } catch (error) {
+        res.status(400).json({ success: false, error: `URL is not reachable. Error: ${error.message}` });
+    }
+});
+
+
+// --- NEW: Backup & Restore Endpoints ---
+const settingsUpload = multer({
+    storage: multer.diskStorage({
+        destination: (req, file, cb) => cb(null, DATA_DIR),
+        filename: (req, file, cb) => cb(null, 'settings.tmp.json')
+    }),
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype === 'application/json') {
+            cb(null, true);
+        } else {
+            cb(new Error('Invalid file type. Only JSON is allowed.'), false);
+        }
+    }
+});
+
+app.get('/api/settings/export', requireAdmin, (req, res) => {
+    if (fs.existsSync(SETTINGS_PATH)) {
+        res.download(SETTINGS_PATH, 'viniplay-settings-backup.json', (err) => {
+            if (err) {
+                console.error('[SETTINGS_EXPORT] Error sending settings file:', err);
+            }
+        });
+    } else {
+        res.status(404).json({ error: 'Settings file not found.' });
+    }
+});
+
+app.post('/api/settings/import', requireAdmin, settingsUpload.single('settingsFile'), (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ error: 'No settings file was uploaded.' });
+    }
+    const tempPath = path.join(DATA_DIR, 'settings.tmp.json');
+    try {
+        const fileContent = fs.readFileSync(tempPath, 'utf-8');
+        JSON.parse(fileContent); // Validate that it's valid JSON
+        fs.renameSync(tempPath, SETTINGS_PATH);
+        console.log('[SETTINGS_IMPORT] Settings file imported successfully. App will now use new settings.');
+        res.json({ success: true, message: 'Settings imported. The application will use them on next load.' });
+    } catch (error) {
+        console.error('[SETTINGS_IMPORT] Error processing imported settings file:', error.message);
+        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+        res.status(400).json({ error: `Invalid settings file. Error: ${error.message}` });
+    }
+});
+
+// --- NEW: DVR Bulk Delete Endpoints ---
+app.delete('/api/dvr/jobs/all', requireAuth, requireDvrAccess, (req, res) => {
+    const userId = req.session.userId;
+    console.log(`[DVR_API] Clearing all scheduled/historical jobs for user ${userId}.`);
+
+    db.all("SELECT id FROM dvr_jobs WHERE user_id = ? AND status = 'scheduled'", [userId], (err, scheduledJobs) => {
+        if (err) {
+            return res.status(500).json({ error: 'Could not fetch jobs to cancel.' });
+        }
+        scheduledJobs.forEach(job => {
+            if (activeDvrJobs.has(job.id)) {
+                activeDvrJobs.get(job.id)?.cancel();
+                activeDvrJobs.delete(job.id);
+            }
+        });
+
+        db.run("DELETE FROM dvr_jobs WHERE user_id = ?", [userId], function(err) {
+            if (err) {
+                return res.status(500).json({ error: 'Could not clear jobs from database.' });
+            }
+            res.json({ success: true, deletedCount: this.changes });
+        });
+    });
+});
+
+app.delete('/api/dvr/recordings/all', requireAuth, requireDvrAccess, (req, res) => {
+    const userId = req.session.userId;
+    console.log(`[DVR_API] Deleting all completed recordings for user ${userId}.`);
+
+    db.all("SELECT id, filePath FROM dvr_recordings WHERE user_id = ?", [userId], (err, recordings) => {
+        if (err) {
+            return res.status(500).json({ error: 'Could not fetch recordings to delete.' });
+        }
+        
+        recordings.forEach(rec => {
+            if (fs.existsSync(rec.filePath)) {
+                fs.unlink(rec.filePath, (unlinkErr) => {
+                    if (unlinkErr) console.error(`[DVR_API] Failed to delete file ${rec.filePath}:`, unlinkErr);
+                });
+            }
+        });
+
+        db.run("DELETE FROM dvr_recordings WHERE user_id = ?", [userId], function(err) {
+            if (err) {
+                return res.status(500).json({ error: 'Could not clear recordings from database.' });
+            }
+            res.json({ success: true, deletedCount: this.changes });
+        });
+    });
+});
+
 
 // --- Main Route Handling ---
 app.get('*', (req, res) => {
