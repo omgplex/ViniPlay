@@ -699,7 +699,6 @@
                     </div>
 
                     <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
-                        <!-- NEW: Added Clear All button -->
                         <div class="flex justify-between items-center mb-4 border-b border-gray-700 pb-2">
                             <h2 class="text-xl font-bold text-white">Scheduled Recordings</h2>
                             <button id="clear-scheduled-dvr-btn" class="hidden bg-gray-600 hover:bg-gray-500 text-white text-sm font-bold py-1 px-3 rounded-md">Clear All</button>
@@ -707,7 +706,8 @@
                         <div id="no-dvr-jobs-message" class="hidden text-center text-gray-500 p-4">
                             <p class="mt-1 text-sm">No upcoming recordings scheduled. Find a program in the TV Guide to record it.</p>
                         </div>
-                        <div class="overflow-x-auto">
+                        <!-- MODIFIED: Wrapped the table in a div with a new ID -->
+                        <div id="dvr-jobs-table-container" class="overflow-x-auto">
                             <table class="min-w-full dvr-table">
                                 <thead>
                                     <tr>
@@ -726,7 +726,6 @@
                     </div>
 
                     <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
-                        <!-- NEW: Added Clear All button -->
                         <div class="flex justify-between items-center mb-4 border-b border-gray-700 pb-2">
                             <h2 class="text-xl font-bold text-white">Completed Recordings</h2>
                             <button id="clear-completed-dvr-btn" class="hidden bg-gray-600 hover:bg-gray-500 text-white text-sm font-bold py-1 px-3 rounded-md">Clear All</button>
@@ -734,7 +733,8 @@
                         <div id="no-dvr-recordings-message" class="hidden text-center text-gray-500 p-4">
                             <p class="mt-1 text-sm">No recordings have been completed yet.</p>
                         </div>
-                        <div class="overflow-x-auto">
+                        <!-- MODIFIED: Wrapped the table in a div with a new ID -->
+                        <div id="dvr-recordings-table-container" class="overflow-x-auto">
                             <table class="min-w-full dvr-table">
                                 <thead>
                                     <tr>
