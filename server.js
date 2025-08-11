@@ -288,10 +288,13 @@ function saveSettings(settings) {
 function fetchUrlContent(url) {
     return new Promise((resolve, reject) => {
         const protocol = url.startsWith('https') ? https : http;
-        console.log(`[FETCH] Attempting to fetch URL content: ${url}`);
-        protocol.get(url, (res) => {
+        const TIMEOUT_DURATION = 60000; // 60 seconds
+        console.log(`[FETCH] Attempting to fetch URL content: ${url} (Timeout: ${TIMEOUT_DURATION/1000}s)`);
+
+        const request = protocol.get(url, { timeout: TIMEOUT_DURATION }, (res) => {
             if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
                 console.log(`[FETCH] Redirecting to: ${res.headers.location}`);
+                request.abort(); // Abort the current request before following redirect
                 return fetchUrlContent(new URL(res.headers.location, url).href).then(resolve, reject);
             }
             if (res.statusCode !== 200) {
@@ -305,7 +308,16 @@ function fetchUrlContent(url) {
                 console.log(`[FETCH] Successfully fetched content from: ${url}`);
                 resolve(data);
             });
-        }).on('error', (err) => {
+        });
+
+        request.on('timeout', () => {
+            request.destroy();
+            const timeoutError = new Error(`Request to ${url} timed out after ${TIMEOUT_DURATION / 1000} seconds.`);
+            console.error(`[FETCH] ${timeoutError.message}`);
+            reject(timeoutError);
+        });
+        
+        request.on('error', (err) => {
             console.error(`[FETCH] Network error fetching ${url}: ${err.message}`);
             reject(err);
         });
@@ -2094,4 +2106,3 @@ function parseM3U(data) {
     }
     return channels;
 }
-
