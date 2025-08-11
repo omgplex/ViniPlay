@@ -116,6 +116,9 @@ const initializeUIElements = () => {
     UIElements.editRecordingProfileBtn = document.getElementById('edit-recording-profile-btn');
     UIElements.deleteRecordingProfileBtn = document.getElementById('delete-recording-profile-btn');
     UIElements.recordingProfileSelect = document.getElementById('recording-profile-select');
+    // FIX: Add explicit references for the clear all buttons
+    UIElements.clearScheduledDvrBtn = document.getElementById('clear-scheduled-dvr-btn');
+    UIElements.clearCompletedDvrBtn = document.getElementById('clear-completed-dvr-btn');
 
     // Settings Buttons
     UIElements.addM3uBtn = document.getElementById('add-m3u-btn');
