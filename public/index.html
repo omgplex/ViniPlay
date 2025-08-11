@@ -495,7 +495,8 @@
 
         <main class="flex-grow flex flex-col overflow-hidden">
             <div id="page-guide" class="flex flex-grow flex-col overflow-hidden">
-                <div id="unified-guide-header" class="flex-shrink-0 bg-gray-800 p-2 sm:p-4 border-b border-gray-700 flex items-center justify-between">
+                <!-- MODIFIED: Changed flex container to stack vertically on mobile and added a gap -->
+                <div id="unified-guide-header" class="flex-shrink-0 bg-gray-800 p-2 sm:p-4 border-b border-gray-700 flex flex-col sm:flex-row items-stretch sm:items-center sm:justify-between gap-3">
                     <div class="flex items-center gap-2 sm:gap-3 date-nav-controls">
                         <span id="guide-date-display" class="text-base sm:text-lg font-semibold text-white"></span>
                         <label for="guide-date-picker" class="bg-gray-700 hover:bg-gray-600 border border-gray-600 rounded-md p-2 cursor-pointer transition-colors" title="Jump to date">
@@ -504,10 +505,12 @@
                         <input type="date" id="guide-date-picker" class="hidden">
                     </div>
                     
-                    <div class="relative w-full sm:w-auto flex flex-wrap items-center justify-end gap-2 filter-search-controls">
+                    <!-- MODIFIED: Changed flex container to a grid on mobile to stack filters evenly -->
+                    <div class="relative w-full sm:w-auto grid grid-cols-1 sm:flex sm:items-center sm:justify-end gap-2 filter-search-controls">
                         <select id="group-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"></select>
                         <select id="source-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"></select>
-                        <input type="search" id="search-input" placeholder="Search..." class="flex-grow sm:flex-grow-0 sm:w-48 bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500">
+                        <!-- MODIFIED: Removed flex-grow classes as they are not needed for the new grid layout -->
+                        <input type="search" id="search-input" placeholder="Search..." class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 sm:w-48">
                         <div id="search-results-container" class="hidden absolute top-full right-0 w-full sm:w-96 max-h-80 overflow-y-auto bg-gray-800 border border-gray-600 rounded-md mt-1 z-50 custom-scrollbar shadow-lg"></div>
                     </div>
                 </div>
