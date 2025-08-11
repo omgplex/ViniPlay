@@ -65,7 +65,8 @@ function updateStreamInfo() {
 
     const resolution = (video.videoWidth && video.videoHeight) ? `${video.videoWidth}x${video.videoHeight}` : 'N/A';
     const speed = `${(stats.speed / 1024).toFixed(2)} KB/s`;
-    const fps = stats.decodedFrames > 0 ? stats.fps.toFixed(2) : '0.00';
+    // FIX: Check if stats.fps is a valid number before calling toFixed()
+    const fps = (stats.decodedFrames > 0 && typeof stats.fps === 'number') ? stats.fps.toFixed(2) : '0.00';
     const buffer = video.buffered.length > 0 ? `${(video.buffered.end(0) - video.currentTime).toFixed(2)}s` : '0.00s';
 
     UIElements.streamInfoResolution.textContent = `Resolution: ${resolution}`;
@@ -214,3 +215,4 @@ export function setupPlayerEventListeners() {
         localStorage.setItem('iptvPlayerVolume', UIElements.videoElement.volume);
     });
 }
+
