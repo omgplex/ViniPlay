@@ -393,121 +393,130 @@ const handleClearAllPast = () => {
 };
 
 export const navigateToProgramInGuide = async (channelId, programStart, programId) => {
-    console.log(`[NOTIF_NAV] Attempting to navigate to program. Channel: ${channelId}, Start: ${programStart}`);
+    // MODIFIED: Set the navigation flag to true at the beginning of the process.
+    appState.isNavigating = true;
 
-    // This function will wait until the guide data is loaded and rendered.
-    const waitForGuideReady = () => {
-        return new Promise((resolve) => {
-            const maxAttempts = 100; // 10 seconds timeout
-            let attempts = 0;
-            const checkInterval = setInterval(() => {
-                // Check if the essential data and UI elements are ready
-                const isDataReady = guideState.channels.length > 0 && Object.keys(guideState.programs).length > 0;
-                const isUiReady = UIElements.guideGrid && UIElements.guideGrid.querySelector('.channel-info');
+    try {
+        console.log(`[NOTIF_NAV] Attempting to navigate to program. Channel: ${channelId}, Start: ${programStart}`);
 
-                if (isDataReady && isUiReady) {
-                    clearInterval(checkInterval);
-                    console.log('[NOTIF_NAV] Guide is ready. Proceeding with navigation.');
-                    resolve(true);
-                } else {
-                    attempts++;
-                    if (attempts >= maxAttempts) {
+        // This function will wait until the guide data is loaded and rendered.
+        const waitForGuideReady = () => {
+            return new Promise((resolve) => {
+                const maxAttempts = 100; // 10 seconds timeout
+                let attempts = 0;
+                const checkInterval = setInterval(() => {
+                    // Check if the essential data and UI elements are ready
+                    const isDataReady = guideState.channels.length > 0 && Object.keys(guideState.programs).length > 0;
+                    const isUiReady = UIElements.guideGrid && UIElements.guideGrid.querySelector('.channel-info');
+
+                    if (isDataReady && isUiReady) {
                         clearInterval(checkInterval);
-                        console.error('[NOTIF_NAV] Timeout waiting for guide to become ready.');
-                        resolve(false);
+                        console.log('[NOTIF_NAV] Guide is ready. Proceeding with navigation.');
+                        resolve(true);
+                    } else {
+                        attempts++;
+                        if (attempts >= maxAttempts) {
+                            clearInterval(checkInterval);
+                            console.error('[NOTIF_NAV] Timeout waiting for guide to become ready.');
+                            resolve(false);
+                        }
                     }
-                }
-            }, 100); // Check every 100ms
-        });
-    };
+                }, 100); // Check every 100ms
+            });
+        };
 
-    const isReady = await waitForGuideReady();
-    if (!isReady) {
-        showNotification("Could not navigate to program: Guide did not load in time.", true);
-        return;
-    }
-    
-    // The rest of the original logic can now execute safely.
-    console.log(`[NOTIF_NAV] Navigating to program. Channel: ${channelId}, Start: ${programStart}`);
-    const stableChannelIdSuffix = channelId.includes('_') ? '_' + channelId.split('_').pop() : channelId;
-    
-    // No need to navigate again if we are already on the guide page from the deep link
-    if (window.location.pathname !== '/tvguide' && window.location.pathname !== '/') {
-        navigate('/tvguide');
-        // Wait a moment for the page switch to happen visually.
-        await new Promise(resolve => setTimeout(resolve, 50));
-    }
-
-    const targetProgramStart = new Date(programStart);
-
-    // MODIFICATION: Create a new date object for comparison that ignores time, respecting timezone.
-    const targetProgramDate = new Date(targetProgramStart.getFullYear(), targetProgramStart.getMonth(), targetProgramStart.getDate());
-    const currentGuideDate = new Date(guideState.currentDate.getFullYear(), guideState.currentDate.getMonth(), guideState.currentDate.getDate());
-
-    // If the program is on a different day, switch to that day first
-    if (targetProgramDate.getTime() !== currentGuideDate.getTime()) {
-        console.log(`[NOTIF_NAV] Program is on a different day. Switching guide date to ${targetProgramStart.toDateString()}`);
-        guideState.currentDate = targetProgramStart;
-        // This will re-render the guide for the correct day
-        await handleSearchAndFilter(true); 
-    }
-
-    // Scroll to the correct channel. This function already has a built-in wait mechanism.
-    const channelScrolledAndRendered = await scrollToChannel(stableChannelIdSuffix);
-    
-    if (!channelScrolledAndRendered) {
-        showNotification("Could not find the channel in the guide.", false, 6000);
-        return;
-    }
-
-    // Now that we've scrolled and the row is rendered, find the specific channel and program elements.
-    // We need to get the full, dynamic channel ID, as the one from the notification might just be the EPG part.
-    const currentChannelElement = UIElements.guideGrid.querySelector(`.channel-info[data-id$="${stableChannelIdSuffix}"]`);
-    if (!currentChannelElement) {
-        showNotification("An unexpected error occurred while locating the channel element after scrolling.", true);
-        return;
-    }
-    const currentDynamicChannelId = currentChannelElement.dataset.id;
-    
-    // Find the program element using its unique data attributes
-    const programElement = UIElements.guideGrid.querySelector(
-        `.programme-item[data-prog-start="${programStart}"][data-channel-id="${currentDynamicChannelId}"]`
-    );
-
-    if (!programElement) {
-        showNotification("Could not find the specific program in the guide's timeline.", false, 6000);
-        // It's possible the program is off-screen horizontally, so let's try to scroll horizontally.
-        const guideContainer = UIElements.guideContainer;
-        const guideStartUtc = new Date(guideState.currentDate);
-        guideStartUtc.setHours(0,0,0,0);
-        const left = ((targetProgramStart.getTime() - guideStartUtc.getTime()) / 3600000) * guideState.hourWidthPixels;
+        const isReady = await waitForGuideReady();
+        if (!isReady) {
+            showNotification("Could not navigate to program: Guide did not load in time.", true);
+            return;
+        }
         
+        // The rest of the original logic can now execute safely.
+        console.log(`[NOTIF_NAV] Navigating to program. Channel: ${channelId}, Start: ${programStart}`);
+        const stableChannelIdSuffix = channelId.includes('_') ? '_' + channelId.split('_').pop() : channelId;
+        
+        // No need to navigate again if we are already on the guide page from the deep link
+        if (window.location.pathname !== '/tvguide' && window.location.pathname !== '/') {
+            navigate('/tvguide');
+            // Wait a moment for the page switch to happen visually.
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
+
+        const targetProgramStart = new Date(programStart);
+
+        // MODIFICATION: Create a new date object for comparison that ignores time, respecting timezone.
+        const targetProgramDate = new Date(targetProgramStart.getFullYear(), targetProgramStart.getMonth(), targetProgramStart.getDate());
+        const currentGuideDate = new Date(guideState.currentDate.getFullYear(), guideState.currentDate.getMonth(), guideState.currentDate.getDate());
+
+        // If the program is on a different day, switch to that day first
+        if (targetProgramDate.getTime() !== currentGuideDate.getTime()) {
+            console.log(`[NOTIF_NAV] Program is on a different day. Switching guide date to ${targetProgramStart.toDateString()}`);
+            guideState.currentDate = targetProgramStart;
+            // This will re-render the guide for the correct day
+            await handleSearchAndFilter(true); 
+        }
+
+        // Scroll to the correct channel. This function already has a built-in wait mechanism.
+        const channelScrolledAndRendered = await scrollToChannel(stableChannelIdSuffix);
+        
+        if (!channelScrolledAndRendered) {
+            showNotification("Could not find the channel in the guide.", false, 6000);
+            return;
+        }
+
+        // Now that we've scrolled and the row is rendered, find the specific channel and program elements.
+        // We need to get the full, dynamic channel ID, as the one from the notification might just be the EPG part.
+        const currentChannelElement = UIElements.guideGrid.querySelector(`.channel-info[data-id$="${stableChannelIdSuffix}"]`);
+        if (!currentChannelElement) {
+            showNotification("An unexpected error occurred while locating the channel element after scrolling.", true);
+            return;
+        }
+        const currentDynamicChannelId = currentChannelElement.dataset.id;
+        
+        // Find the program element using its unique data attributes
+        const programElement = UIElements.guideGrid.querySelector(
+            `.programme-item[data-prog-start="${programStart}"][data-channel-id="${currentDynamicChannelId}"]`
+        );
+
+        if (!programElement) {
+            showNotification("Could not find the specific program in the guide's timeline.", false, 6000);
+            // It's possible the program is off-screen horizontally, so let's try to scroll horizontally.
+            const guideContainer = UIElements.guideContainer;
+            const guideStartUtc = new Date(guideState.currentDate);
+            guideStartUtc.setHours(0,0,0,0);
+            const left = ((targetProgramStart.getTime() - guideStartUtc.getTime()) / 3600000) * guideState.hourWidthPixels;
+            
+            guideContainer.scrollTo({
+                left: Math.max(0, left - (guideContainer.clientWidth / 4)),
+                behavior: 'smooth'
+            });
+            // We don't try to open details here, as just getting the user to the right area is a good fallback.
+            return;
+        }
+
+        // Scroll the program into the center of the view (both vertically and horizontally)
+        const guideContainer = UIElements.guideContainer;
+        const programRect = programElement.getBoundingClientRect();
+        const containerRect = guideContainer.getBoundingClientRect();
+        
+        const desiredScrollTop = guideContainer.scrollTop + programRect.top - containerRect.top - (containerRect.height / 2) + (programRect.height / 2);
+        const desiredScrollLeft = guideContainer.scrollLeft + programRect.left - containerRect.left - (containerRect.width / 2) + (programRect.width / 2);
+
         guideContainer.scrollTo({
-            left: Math.max(0, left - (guideContainer.clientWidth / 4)),
+            top: Math.max(0, desiredScrollTop),
+            left: Math.max(0, desiredScrollLeft),
             behavior: 'smooth'
         });
-        // We don't try to open details here, as just getting the user to the right area is a good fallback.
-        return;
+
+        // Open details and highlight after a short delay to allow for the smooth scroll to complete.
+        setTimeout(() => {
+            openProgramDetails(programElement);
+            programElement.classList.add('highlighted-search');
+            setTimeout(() => { programElement.classList.remove('highlighted-search'); }, 2500);
+        }, 300);
+    } finally {
+        // MODIFIED: Ensure the navigation flag is always reset, even if an error occurs.
+        appState.isNavigating = false;
+        console.log('[NOTIF_NAV] Navigation process finished. Resetting navigation flag.');
     }
-
-    // Scroll the program into the center of the view (both vertically and horizontally)
-    const guideContainer = UIElements.guideContainer;
-    const programRect = programElement.getBoundingClientRect();
-    const containerRect = guideContainer.getBoundingClientRect();
-    
-    const desiredScrollTop = guideContainer.scrollTop + programRect.top - containerRect.top - (containerRect.height / 2) + (programRect.height / 2);
-    const desiredScrollLeft = guideContainer.scrollLeft + programRect.left - containerRect.left - (containerRect.width / 2) + (programRect.width / 2);
-
-    guideContainer.scrollTo({
-        top: Math.max(0, desiredScrollTop),
-        left: Math.max(0, desiredScrollLeft),
-        behavior: 'smooth'
-    });
-
-    // Open details and highlight after a short delay to allow for the smooth scroll to complete.
-    setTimeout(() => {
-        openProgramDetails(programElement);
-        programElement.classList.add('highlighted-search');
-        setTimeout(() => { programElement.classList.remove('highlighted-search'); }, 2500);
-    }, 300);
 };
