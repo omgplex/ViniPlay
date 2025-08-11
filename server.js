@@ -1956,6 +1956,58 @@ app.get('/api/dvr/storage', requireAuth, requireDvrAccess, (req, res) => {
     }
 });
 
+// --- FIX: Route Order Correction ---
+// Specific bulk-delete routes are now placed BEFORE dynamic routes with :id
+app.delete('/api/dvr/jobs/all', requireAuth, requireDvrAccess, (req, res) => {
+    const userId = req.session.userId;
+    console.log(`[DVR_API] Clearing all scheduled/historical jobs for user ${userId}.`);
+
+    db.all("SELECT id FROM dvr_jobs WHERE user_id = ? AND status = 'scheduled'", [userId], (err, scheduledJobs) => {
+        if (err) {
+            return res.status(500).json({ error: 'Could not fetch jobs to cancel.' });
+        }
+        scheduledJobs.forEach(job => {
+            if (activeDvrJobs.has(job.id)) {
+                activeDvrJobs.get(job.id)?.cancel();
+                activeDvrJobs.delete(job.id);
+            }
+        });
+
+        db.run("DELETE FROM dvr_jobs WHERE user_id = ?", [userId], function(err) {
+            if (err) {
+                return res.status(500).json({ error: 'Could not clear jobs from database.' });
+            }
+            res.json({ success: true, deletedCount: this.changes });
+        });
+    });
+});
+
+app.delete('/api/dvr/recordings/all', requireAuth, requireDvrAccess, (req, res) => {
+    const userId = req.session.userId;
+    console.log(`[DVR_API] Deleting all completed recordings for user ${userId}.`);
+
+    db.all("SELECT id, filePath FROM dvr_recordings WHERE user_id = ?", [userId], (err, recordings) => {
+        if (err) {
+            return res.status(500).json({ error: 'Could not fetch recordings to delete.' });
+        }
+        
+        recordings.forEach(rec => {
+            if (fs.existsSync(rec.filePath)) {
+                fs.unlink(rec.filePath, (unlinkErr) => {
+                    if (unlinkErr) console.error(`[DVR_API] Failed to delete file ${rec.filePath}:`, unlinkErr);
+                });
+            }
+        });
+
+        db.run("DELETE FROM dvr_recordings WHERE user_id = ?", [userId], function(err) {
+            if (err) {
+                return res.status(500).json({ error: 'Could not clear recordings from database.' });
+            }
+            res.json({ success: true, deletedCount: this.changes });
+        });
+    });
+});
+
 
 app.delete('/api/dvr/jobs/:id', requireAuth, requireDvrAccess, (req, res) => {
     const { id } = req.params;
@@ -2142,58 +2194,6 @@ app.post('/api/settings/import', requireAdmin, settingsUpload.single('settingsFi
     }
 });
 
-// --- NEW: DVR Bulk Delete Endpoints ---
-app.delete('/api/dvr/jobs/all', requireAuth, requireDvrAccess, (req, res) => {
-    const userId = req.session.userId;
-    console.log(`[DVR_API] Clearing all scheduled/historical jobs for user ${userId}.`);
-
-    db.all("SELECT id FROM dvr_jobs WHERE user_id = ? AND status = 'scheduled'", [userId], (err, scheduledJobs) => {
-        if (err) {
-            return res.status(500).json({ error: 'Could not fetch jobs to cancel.' });
-        }
-        scheduledJobs.forEach(job => {
-            if (activeDvrJobs.has(job.id)) {
-                activeDvrJobs.get(job.id)?.cancel();
-                activeDvrJobs.delete(job.id);
-            }
-        });
-
-        db.run("DELETE FROM dvr_jobs WHERE user_id = ?", [userId], function(err) {
-            if (err) {
-                return res.status(500).json({ error: 'Could not clear jobs from database.' });
-            }
-            res.json({ success: true, deletedCount: this.changes });
-        });
-    });
-});
-
-app.delete('/api/dvr/recordings/all', requireAuth, requireDvrAccess, (req, res) => {
-    const userId = req.session.userId;
-    console.log(`[DVR_API] Deleting all completed recordings for user ${userId}.`);
-
-    db.all("SELECT id, filePath FROM dvr_recordings WHERE user_id = ?", [userId], (err, recordings) => {
-        if (err) {
-            return res.status(500).json({ error: 'Could not fetch recordings to delete.' });
-        }
-        
-        recordings.forEach(rec => {
-            if (fs.existsSync(rec.filePath)) {
-                fs.unlink(rec.filePath, (unlinkErr) => {
-                    if (unlinkErr) console.error(`[DVR_API] Failed to delete file ${rec.filePath}:`, unlinkErr);
-                });
-            }
-        });
-
-        db.run("DELETE FROM dvr_recordings WHERE user_id = ?", [userId], function(err) {
-            if (err) {
-                return res.status(500).json({ error: 'Could not clear recordings from database.' });
-            }
-            res.json({ success: true, deletedCount: this.changes });
-        });
-    });
-});
-
-
 // --- Main Route Handling ---
 app.get('*', (req, res) => {
     const filePath = path.join(PUBLIC_DIR, req.path);
@@ -2232,6 +2232,7 @@ function parseM3U(data) {
         const line = lines[i].trim();
         if (line.startsWith('#EXTINF:')) {
             const nextLine = lines[i + 1]?.trim();
+            // Ensure the next line is a valid URL
             if (nextLine && (nextLine.startsWith('http') || nextLine.startsWith('rtp'))) {
                 const idMatch = line.match(/tvg-id="([^"]*)"/);
                 const logoMatch = line.match(/tvg-logo="([^"]*)"/);
