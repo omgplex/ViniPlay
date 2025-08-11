@@ -404,13 +404,16 @@ async function proceedWithRouteChange(path) {
         if (UIElements.guideContainer) {
             UIElements.guideContainer.scrollTop = 0;
         }
-        // ADDED: Soft refresh logic for TV Guide
-        console.log('[UI] Refreshing TV Guide data...');
-        const config = await fetchConfig();
-        if (config) {
-            Object.assign(guideState.settings, config.settings || {});
-            // FIX: Change 'false' to 'true' to force the "scroll to now" behavior on tab switch.
-            finalizeGuideLoad(true);
+        // MODIFIED: Check the navigation flag before performing a soft refresh.
+        if (!appState.isNavigating) {
+            console.log('[UI] Refreshing TV Guide data on tab switch.');
+            const config = await fetchConfig();
+            if (config) {
+                Object.assign(guideState.settings, config.settings || {});
+                finalizeGuideLoad(true); // true to force scroll to now
+            }
+        } else {
+            console.log('[UI] Skipping soft refresh because a navigation action is in progress.');
         }
 
     } else {
