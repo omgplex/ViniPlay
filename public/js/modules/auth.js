@@ -195,6 +195,12 @@ const showApp = (user) => {
     UIElements.userDisplay.textContent = user.username;
     UIElements.userDisplay.classList.remove('hidden');
     UIElements.userManagementSection.classList.toggle('hidden', !user.isAdmin);
+    // NEW: Also toggle the Danger Zone section based on admin status. This is also
+    // done in updateUIFromSettings, but doing it here ensures it's set immediately on login.
+    if (UIElements.dangerZoneSection) {
+        UIElements.dangerZoneSection.classList.toggle('hidden', !user.isAdmin);
+    }
+    
     // The entire DVR settings section visibility is handled in settings.js, so we don't need a specific element here.
     console.log(`[AUTH_UI] User display set to: ${user.username}. Admin section visibility: ${!user.isAdmin ? 'hidden' : 'visible'}.`);
 
