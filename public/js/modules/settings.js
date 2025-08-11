@@ -416,6 +416,32 @@ export function setupSettingsEventListeners() {
              showNotification(`Error: ${data.error}`, true);
         }
     });
+    
+    // NEW: URL Validation
+    UIElements.testSourceUrlBtn.addEventListener('click', async () => {
+        const url = UIElements.sourceEditorUrl.value.trim();
+        if (!url) {
+            return showNotification('Please enter a URL to test.', true);
+        }
+        const originalContent = UIElements.testSourceUrlBtn.innerHTML;
+        setButtonLoadingState(UIElements.testSourceUrlBtn, true, 'Testing...');
+        
+        const res = await apiFetch('/api/validate-url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url })
+        });
+        
+        if (res && res.ok) {
+            const data = await res.json();
+            if (data.success) {
+                showNotification('URL is reachable and valid!', false);
+            }
+        }
+        // apiFetch handles error notifications automatically
+        
+        setButtonLoadingState(UIElements.testSourceUrlBtn, false, originalContent);
+    });
 
     // --- Source Table Clicks ---
     const handleSourceTableClick = async (e, sourceType) => {
@@ -661,5 +687,38 @@ export function setupSettingsEventListeners() {
             showNotification('All data cleared. Reloading...');
             setTimeout(() => window.location.reload(), 1500);
         });
+    });
+    
+    // NEW: Backup & Restore Event Listeners
+    UIElements.exportSettingsBtn.addEventListener('click', () => {
+        window.location.href = '/api/settings/export';
+    });
+
+    UIElements.importSettingsBtn.addEventListener('click', () => {
+        UIElements.importSettingsFileInput.click();
+    });
+
+    UIElements.importSettingsFileInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        showConfirm('Import Settings?', 'This will overwrite all current application settings. Are you sure you want to proceed?', async () => {
+            const formData = new FormData();
+            formData.append('settingsFile', file);
+            
+            const res = await apiFetch('/api/settings/import', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (res && res.ok) {
+                showNotification('Settings imported successfully. The application will now reload to apply them.', false, 4000);
+                setTimeout(() => window.location.reload(), 4000);
+            }
+            // apiFetch handles error notification
+        });
+        
+        // Reset the file input so the 'change' event fires again if the same file is selected
+        e.target.value = '';
     });
 }
