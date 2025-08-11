@@ -251,7 +251,8 @@ function getSettings() {
             activeUserAgentId: `default-ua-${Date.now()}`,
             activeStreamProfileId: 'ffmpeg-default',
             searchScope: 'channels_only',
-            notificationLeadTime: 10
+            notificationLeadTime: 10,
+            sourcesLastUpdated: null
         };
         fs.writeFileSync(SETTINGS_PATH, JSON.stringify(defaultSettings, null, 2));
         return defaultSettings;
@@ -513,6 +514,10 @@ async function processAndMergeSources() {
     } catch (writeErr) {
         console.error(`[EPG] Error writing merged EPG JSON file: ${writeErr.message}`);
     }
+    
+    // FIX: Add a timestamp to the settings file after a successful processing run.
+    settings.sourcesLastUpdated = new Date().toISOString();
+    console.log(`[PROCESS] Finished processing. New 'sourcesLastUpdated' timestamp: ${settings.sourcesLastUpdated}`);
     
     return { success: true, message: 'Sources merged successfully.', updatedSettings: settings };
 }
