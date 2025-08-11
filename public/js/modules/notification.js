@@ -291,8 +291,10 @@ export const renderPastNotifications = () => {
         .sort((a, b) => new Date(b.scheduledTime) - new Date(a.scheduledTime))
         .slice(0, 20);
 
-    UIElements.noPastNotificationsMessage.classList.toggle('hidden', pastNotifications.length === 0);
-    // NEW: Show/hide the "Clear All" button based on whether there are past notifications.
+    // FIX: Corrected the logic to show the "no past notifications" message only when the list is empty.
+    UIElements.noPastNotificationsMessage.classList.toggle('hidden', pastNotifications.length > 0);
+    
+    // Show/hide the "Clear All" button based on whether there are past notifications.
     UIElements.clearPastNotificationsBtn.classList.toggle('hidden', pastNotifications.length === 0);
 
     pastNotificationsListEl.innerHTML = pastNotifications.map(notif => {
