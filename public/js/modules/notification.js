@@ -1,13 +1,13 @@
 /**
  * notification.js
- * Manages client-side logic for push notifications.
+ ** Manages client-side logic for push notifications.
  * Handles subscribing/unsubscribing and interacts with the backend API.
  */
 
 import { showNotification, showConfirm, navigate, openModal, closeModal } from './ui.js';
 import { UIElements, guideState, appState } from './state.js';
 import { handleSearchAndFilter, scrollToChannel, openProgramDetails } from './guide.js';
-import { getVapidKey, subscribeToPush, addProgramNotification, getProgramNotifications, deleteProgramNotification, unsubscribeFromPush } from './api.js';
+import { getVapidKey, subscribeToPush, addProgramNotification, getProgramNotifications, deleteProgramNotification, unsubscribeFromPush, clearPastNotifications } from './api.js';
 
 let isSubscribed = false;
 
@@ -291,7 +291,9 @@ export const renderPastNotifications = () => {
         .sort((a, b) => new Date(b.scheduledTime) - new Date(a.scheduledTime))
         .slice(0, 20);
 
-    UIElements.noPastNotificationsMessage.classList.toggle('hidden', pastNotifications.length > 0);
+    UIElements.noPastNotificationsMessage.classList.toggle('hidden', pastNotifications.length === 0);
+    // NEW: Show/hide the "Clear All" button based on whether there are past notifications.
+    UIElements.clearPastNotificationsBtn.classList.toggle('hidden', pastNotifications.length === 0);
 
     pastNotificationsListEl.innerHTML = pastNotifications.map(notif => {
         const programStartTime = new Date(notif.programStart);
@@ -362,9 +364,30 @@ const setupNotificationListEventListeners = () => {
 
     UIElements.notificationsList?.removeEventListener('click', handleClicks);
     UIElements.pastNotificationsList?.removeEventListener('click', handleClicks);
+    // NEW: Add event listener for the clear all button
+    UIElements.clearPastNotificationsBtn?.removeEventListener('click', handleClearAllPast);
     
     UIElements.notificationsList?.addEventListener('click', handleClicks);
     UIElements.pastNotificationsList?.addEventListener('click', handleClicks);
+    UIElements.clearPastNotificationsBtn?.addEventListener('click', handleClearAllPast);
+};
+
+// NEW: Handler function for the "Clear All" button
+const handleClearAllPast = () => {
+    showConfirm(
+        'Clear All Past Notifications?',
+        'This will remove all expired and sent notifications from your history. This action cannot be undone.',
+        async () => {
+            const success = await clearPastNotifications();
+            if (success) {
+                showNotification('Past notifications cleared successfully.');
+                notificationChannel.postMessage({ type: 'refresh-notifications' });
+                loadAndScheduleNotifications(); // Refresh the list
+            } else {
+                showNotification('Failed to clear past notifications.', true);
+            }
+        }
+    );
 };
 
 export const navigateToProgramInGuide = async (channelId, programStart, programId) => {
@@ -486,4 +509,3 @@ export const navigateToProgramInGuide = async (channelId, programStart, programI
         setTimeout(() => { programElement.classList.remove('highlighted-search'); }, 2500);
     }, 300);
 };
-
