@@ -7,6 +7,7 @@
 import { appState, guideState, UIElements } from './state.js';
 import { apiFetch } from './api.js';
 import { showNotification, openModal, closeModal, showConfirm } from './ui.js';
+import { ICONS } from './icons.js'; // MODIFIED: Import the new icon library
 
 let grid;
 const players = new Map(); // Stores player instances (mpegts) by widget ID
@@ -153,17 +154,17 @@ function addPlayerWidget(channel = null, layout = {}) {
         <div class="player-header">
             <span class="player-header-title">No Channel</span>
             <div class="player-controls">
-                <button class="select-channel-btn" title="Select Channel"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg></button>
-                <button class="mute-btn" title="Mute"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" id="mute-icon-${widgetId}"><path d="M5.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h3.5a.75.75 0 00.75-.75V3.75A.75.75 0 009.25 3h-3.5zM14.25 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h3.5a.75.75 0 00.75-.75V3.75a.75.75 0 00-.75-.75h-3.5z"></path></svg></button>
+                <button class="select-channel-btn" title="Select Channel">${ICONS.selectChannel}</button>
+                <button class="mute-btn" title="Mute">${ICONS.unmute}</button>
                 <input type="range" min="0" max="1" step="0.05" value="0.5" class="volume-slider">
-                <button class="fullscreen-btn" title="Fullscreen"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M3 8.75A.75.75 0 013.75 8h4.5a.75.75 0 010 1.5h-3.25v3.25a.75.75 0 01-1.5 0V8.75zM11.25 3a.75.75 0 01.75.75v3.25h3.25a.75.75 0 010 1.5h-4.5a.75.75 0 01-.75-.75V3.75A.75.75 0 0111.25 3zM8.75 17a.75.75 0 01-.75-.75v-3.25H4.75a.75.75 0 010-1.5h4.5a.75.75 0 01.75.75v4.5a.75.75 0 01-.75.75zM17 11.25a.75.75 0 01-.75.75h-3.25v3.25a.75.75 0 01-1.5 0v-4.5a.75.75 0 01.75-.75h4.5a.75.75 0 01.75.75z"></path></svg></button>
-                <button class="stop-btn" title="Stop Channel"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2H5z"></path></svg></button>
-                <button class="remove-widget-btn" title="Remove Player"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" /></svg></button>
+                <button class="fullscreen-btn" title="Fullscreen">${ICONS.fullscreen}</button>
+                <button class="stop-btn" title="Stop Channel">${ICONS.stop}</button>
+                <button class="remove-widget-btn" title="Remove Player">${ICONS.removeWidget}</button>
             </div>
         </div>
         <div class="player-body">
             <div class="player-placeholder" id="${widgetId}" data-channel-id="">
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                ${ICONS.placeholderPlay}
                 <span>Click to Select Channel</span>
             </div>
             <video class="hidden w-full h-full object-contain" muted></video>
@@ -342,21 +343,21 @@ function attachWidgetEventListeners(widgetContentEl, widgetId) {
         }
     });
     
-    widgetContentEl.querySelector('.mute-btn').addEventListener('click', (e) => {
+    // MODIFIED: Updated mute button logic to replace the whole icon
+    const muteBtn = widgetContentEl.querySelector('.mute-btn');
+    muteBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         videoEl.muted = !videoEl.muted;
-        const muteIcon = document.getElementById(`mute-icon-${widgetId}`);
-        if (muteIcon) {
-            muteIcon.innerHTML = videoEl.muted
-                ? `<path fill-rule="evenodd" d="M10 1a.75.75 0 00-1.06.04L4.854 5.146A.75.75 0 004.5 5.5v9a.75.75 0 00.22.53l5.43 5.43a.75.75 0 001.28-.53V1.5A.75.75 0 0010 1zM8.5 6.54v6.92L5.25 10.21V5.79L8.5 6.54zM12.5 5a.75.75 0 01.75.75v8.5a.75.75 0 01-1.5 0v-8.5a.75.75 0 01.75-.75zM15.5 5a.75.75 0 01.75.75v8.5a.75.75 0 01-1.5 0v-8.5a.75.75 0 01.75-.75z" clip-rule="evenodd" />`
-                : `<path d="M5.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h3.5a.75.75 0 00.75-.75V3.75A.75.75 0 009.25 3h-3.5zM14.25 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h3.5a.75.75 0 00.75-.75V3.75a.75.75 0 00-.75-.75h-3.5z"></path>`;
-        }
+        muteBtn.innerHTML = videoEl.muted ? ICONS.mute : ICONS.unmute;
     });
 
     widgetContentEl.querySelector('.volume-slider').addEventListener('input', (e) => {
         e.stopPropagation();
         videoEl.volume = parseFloat(e.target.value);
-        if (videoEl.volume > 0) videoEl.muted = false;
+        if (videoEl.volume > 0) {
+            videoEl.muted = false;
+            muteBtn.innerHTML = ICONS.unmute;
+        }
     });
 
     widgetContentEl.querySelector('.fullscreen-btn').addEventListener('click', (e) => {
@@ -385,6 +386,9 @@ function setActivePlayer(widgetId) {
         oldActiveWidgetContent.classList.remove('active-player');
         const oldVideo = oldActiveWidgetContent.querySelector('video');
         if (oldVideo) oldVideo.muted = true;
+        // MODIFIED: Update the mute icon in the old player
+        const oldMuteBtn = oldActiveWidgetContent.querySelector('.mute-btn');
+        if (oldMuteBtn) oldMuteBtn.innerHTML = ICONS.mute;
     }
     
     const newActivePlaceholder = document.getElementById(widgetId);
@@ -395,6 +399,9 @@ function setActivePlayer(widgetId) {
         const videoEl = newActiveWidgetContent.querySelector('video');
         if (videoEl) {
             videoEl.muted = false;
+            // MODIFIED: Update the mute icon in the new player
+            const newMuteBtn = newActiveWidgetContent.querySelector('.mute-btn');
+            if (newMuteBtn) newMuteBtn.innerHTML = ICONS.unmute;
         }
     }
     activePlayerId = widgetId;
