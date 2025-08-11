@@ -246,3 +246,16 @@ export async function deleteProgramNotification(notificationId) {
         return false;
     }
 }
+
+/**
+ * Deletes all past (sent or expired) notifications for the user.
+ * @returns {Promise<boolean>} - True on success, false on failure.
+ */
+export async function clearPastNotifications() {
+    console.log(`[API] Requesting to delete all past notifications.`);
+    const res = await apiFetch(`/api/notifications/past`, {
+        method: 'DELETE',
+    });
+    // Return true if the request was successful (res is not null and res.ok is true)
+    return res && res.ok;
+}
