@@ -1374,6 +1374,26 @@ app.delete('/api/data', requireAuth, requireAdmin, (req, res) => {
     }
 });
 
+// VINI-MOD: New endpoint for the client to explicitly stop a direct stream.
+app.post('/api/stream/stop', requireAuth, (req, res) => {
+    const userId = req.session.userId;
+    if (directStreams.has(userId)) {
+        console.log(`[STREAM_API] Received stop request for user ${userId}. Terminating stream.`);
+        const ffmpeg = directStreams.get(userId);
+        try {
+            // Kill the entire process group to ensure child processes are also terminated.
+            process.kill(-ffmpeg.pid, 'SIGKILL');
+        } catch (e) {
+            console.warn(`[STREAM_API] Error killing stream for user ${userId}: ${e.message}`);
+        }
+        directStreams.delete(userId);
+        res.json({ success: true, message: 'Stream stopped.' });
+    } else {
+        console.log(`[STREAM_API] Received stop request for user ${userId}, but no active stream was found.`);
+        res.json({ success: false, message: 'No active stream found for this user.' });
+    }
+});
+
 
 app.get('/stream', requireAuth, (req, res) => {
     const { url: streamUrl, profileId, userAgentId } = req.query;
@@ -2300,4 +2320,5 @@ function parseM3U(data) {
     }
     return channels;
 }
+
 
