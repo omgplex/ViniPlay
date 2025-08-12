@@ -30,7 +30,11 @@ function logToPlayerConsole(message, isError = false) {
 
     const timestamp = new Date().toLocaleTimeString();
     const logEntry = document.createElement('p');
-    logEntry.innerHTML = `<span class="text-gray-500">${timestamp}:</span> <span class="${isError ? 'text-red-400' : 'text-gray-300'}">${message}</span>`;
+    // Sanitize message to prevent potential XSS if it contains HTML-like strings
+    const sanitizedMessage = document.createElement('span');
+    sanitizedMessage.textContent = message;
+
+    logEntry.innerHTML = `<span class="text-gray-500">${timestamp}:</span> <span class="${isError ? 'text-red-400' : 'text-gray-300'}">${sanitizedMessage.innerHTML}</span>`;
     
     consoleEl.appendChild(logEntry);
     consoleEl.scrollTop = consoleEl.scrollHeight; // Auto-scroll to the bottom
@@ -125,25 +129,34 @@ export function initDirectPlayer() {
 
 /**
  * Stops the current stream and cleans up the mpegts.js player instance and UI.
+ * This is now an async function to ensure the server is notified before client-side cleanup.
  */
 async function stopAndCleanupDirectPlayer() {
-    // VINI-MOD: Explicitly tell the server to stop the ffmpeg process first.
+    logToPlayerConsole('Stop requested. Cleaning up player...');
+    // **FIX**: Await the server call to ensure the backend process is killed.
     await stopDirectStream();
 
     if (directPlayer) {
         console.log('[DirectPlayer] Destroying direct player instance.');
-        directPlayer.destroy();
+        try {
+            directPlayer.destroy();
+        } catch (e) {
+            console.warn('[DirectPlayer] Error during player.destroy():', e.message);
+        }
         directPlayer = null;
     }
+
     if (UIElements.directVideoElement) {
+        UIElements.directVideoElement.pause();
         UIElements.directVideoElement.src = "";
         UIElements.directVideoElement.removeAttribute('src');
-        UIElements.directVideoElement.load();
+        UIElements.directVideoElement.load(); // Important to release resources
     }
+
     UIElements.directPlayerContainer.classList.add('hidden');
-    UIElements.directPlayerConsoleContainer.classList.add('hidden');
     UIElements.directStopBtn.classList.add('hidden');
     UIElements.directPlayBtn.classList.remove('hidden');
+    logToPlayerConsole('Player stopped and cleaned up.');
 }
 
 /**
@@ -164,9 +177,11 @@ export function isDirectPlayerActive() {
 
 /**
  * Initializes mpegts.js and plays the provided stream URL, handling direct vs. proxy.
+ * This function is now async to properly handle cleanup.
  * @param {string} url The URL of the .ts or .m3u8 stream.
  */
 async function playDirectStream(url) {
+    // **FIX**: Await the cleanup to ensure the previous stream is fully stopped before starting a new one.
     await stopAndCleanupDirectPlayer();
 
     const consoleEl = UIElements.directPlayerConsole;
@@ -190,7 +205,7 @@ async function playDirectStream(url) {
             return;
         }
         streamUrlToPlay = `/stream?url=${encodeURIComponent(url)}&profileId=${profileId}&userAgentId=${userAgentId}`;
-        logToPlayerConsole(`Proxy URL: ${streamUrlToPlay}`);
+        logToPlayerConsole(`Proxy URL constructed.`);
     } else {
         logToPlayerConsole('Direct Play is ON. Connecting directly to stream.');
     }
@@ -201,9 +216,14 @@ async function playDirectStream(url) {
     if (mpegts.isSupported()) {
         try {
             directPlayer = mpegts.createPlayer({
-                type: 'mse',
+                type: 'mse', // mpegts.js will auto-detect HLS (.m3u8) vs MPEG-TS (.ts)
                 isLive: true,
                 url: streamUrlToPlay
+            }, {
+                // **FIX**: Add robust error handling configuration
+                enableStashBuffer: false,
+                lazyLoad: false,
+                liveBufferLatencyChasing: true,
             });
 
             UIElements.directPlayerContainer.classList.remove('hidden');
@@ -212,21 +232,34 @@ async function playDirectStream(url) {
             
             directPlayer.attachMediaElement(UIElements.directVideoElement);
             
-            directPlayer.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
-                console.error('[DirectPlayer] MPEGTS Error:', errorType, errorDetail);
-                logToPlayerConsole(`Error: ${errorType} - ${errorDetail}`, true);
+            // **FIX**: Enhanced error listener for more detailed feedback.
+            directPlayer.on(mpegts.Events.ERROR, (errorType, errorDetail, errorInfo) => {
+                console.error('[DirectPlayer] MPEGTS Error:', errorType, errorDetail, errorInfo);
+                let errorMessage = `Player Error: ${errorType} - ${errorDetail}.`;
+                if (errorInfo && errorInfo.code) {
+                    errorMessage += ` (Code: ${errorInfo.code}, Msg: ${errorInfo.msg})`;
+                }
+                logToPlayerConsole(errorMessage, true);
+                // On a network error, it's often best to stop and let the user retry.
+                if (errorType === mpegts.ErrorTypes.NETWORK_ERROR) {
+                    logToPlayerConsole("Stream terminated due to network error.", true);
+                    stopAndCleanupDirectPlayer();
+                }
             });
 
+            logToPlayerConsole('Player instance created. Loading media...');
             directPlayer.load();
+
+            // The play() method returns a Promise that can reject.
             await directPlayer.play();
-            logToPlayerConsole('Player instance created and attempting to load stream.');
+            logToPlayerConsole('Playback started successfully.');
 
         } catch (err) {
-            const errorMsg = `Could not play the stream. Please check the URL and console log for details.`;
+            const errorMsg = `Could not play the stream. The format may be unsupported or the URL is invalid.`;
             console.error("[DirectPlayer] Player.play() caught an error:", err);
-            logToPlayerConsole(errorMsg, true);
+            logToPlayerConsole(`${errorMsg} (Details: ${err.message})`, true);
             showNotification(errorMsg, true);
-            await stopAndCleanupDirectPlayer();
+            await stopAndCleanupDirectPlayer(); // Ensure cleanup on failure
         }
     } else {
         const errorMsg = 'Your browser does not support the necessary technology to play this stream (Media Source Extensions).';
@@ -284,4 +317,3 @@ export function setupDirectPlayerEventListeners() {
         }
     });
 }
-
