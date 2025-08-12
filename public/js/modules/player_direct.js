@@ -123,23 +123,46 @@ export function initDirectPlayer() {
 }
 
 /**
- * Stops the current stream and cleans up the mpegts.js player instance and UI.
+ * **MODIFIED: Robustly stops the stream and cleans up the player.**
+ * This function now follows the full, explicit mpegts.js cleanup sequence
+ * to ensure the network connection is terminated reliably.
  */
 function stopAndCleanupDirectPlayer() {
+    // Check if there is an active mpegts.js player instance.
     if (directPlayer) {
-        console.log('[DirectPlayer] Destroying direct player instance.');
+        console.log('[DirectPlayer] Stopping and cleaning up direct player instance.');
+        
+        // 1. Pause the video playback.
+        directPlayer.pause();
+        
+        // 2. Unload the media data source. This stops the player from fetching more data and is critical for closing the connection.
+        directPlayer.unload();
+        
+        // 3. Detach the mpegts.js player from the HTML <video> element.
+        directPlayer.detachMediaElement();
+        
+        // 4. Destroy the player instance to release all resources. This is the final step.
         directPlayer.destroy();
+        
+        // 5. Set the reference to null to indicate the player is gone.
         directPlayer = null;
     }
+
+    // After the player is fully destroyed, reset the video element itself as a fallback.
     if (UIElements.directVideoElement) {
         UIElements.directVideoElement.src = "";
         UIElements.directVideoElement.removeAttribute('src');
-        UIElements.directVideoElement.load();
+        // REMOVED: The .load() call can interfere with the mpegts.js cleanup process.
+        // It's better to let the mpegts.js library handle the media source detachment completely.
     }
+
+    // Hide the player UI elements.
     UIElements.directPlayerContainer.classList.add('hidden');
     UIElements.directPlayerConsoleContainer.classList.add('hidden');
     UIElements.directStopBtn.classList.add('hidden');
     UIElements.directPlayBtn.classList.remove('hidden');
+
+    console.log('[DirectPlayer] Cleanup complete.');
 }
 
 /**
