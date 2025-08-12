@@ -5,13 +5,15 @@
  * and a logging console for better error feedback.
  */
 
+// MODIFIED: Import guideState and saveUserSetting to manage server-side settings.
 import { UIElements, guideState } from './state.js';
 import { showNotification } from './ui.js';
 import { saveUserSetting } from './api.js';
-// FINAL FIX: Import the CORRECT function name from the main player module.
-import { stopAndCleanupPlayer } from './player.js';
 
 let directPlayer = null; // To hold the mpegts.js instance
+// REMOVED: localStorage keys are no longer needed as data is now stored on the server.
+// const RECENT_LINKS_KEY = 'viniplay_recent_direct_links';
+// const DIRECT_PLAY_KEY = 'vini-direct-play-enabled';
 const MAX_RECENT_LINKS = 10;
 
 // --- Helper Functions ---
@@ -106,7 +108,7 @@ function renderRecentLinks() {
 export function initDirectPlayer() {
     console.log('[DirectPlayer] Initializing Direct Player page.');
     if (directPlayer) {
-        handleStopDirectPlayer();
+        stopAndCleanupDirectPlayer();
     }
     if (UIElements.directPlayerForm) {
         UIElements.directPlayerForm.reset();
@@ -121,43 +123,31 @@ export function initDirectPlayer() {
 }
 
 /**
- * **MODIFIED: This is now a wrapper.**
- * It handles the specific UI for the Direct Player tab and calls the unified cleanup logic.
+ * Stops the current stream and cleans up the mpegts.js player instance and UI.
  */
-function handleStopDirectPlayer() {
-    console.log('[DirectPlayer] Stopping direct player and cleaning up UI.');
-    
-    // **Using the unified, exported cleanup logic for the player instance**
+function stopAndCleanupDirectPlayer() {
     if (directPlayer) {
-        directPlayer.pause();
-        directPlayer.unload();
-        directPlayer.detachMediaElement();
+        console.log('[DirectPlayer] Destroying direct player instance.');
         directPlayer.destroy();
         directPlayer = null;
     }
-
     if (UIElements.directVideoElement) {
         UIElements.directVideoElement.src = "";
         UIElements.directVideoElement.removeAttribute('src');
         UIElements.directVideoElement.load();
     }
-
-    // Hide the player-specific UI elements
     UIElements.directPlayerContainer.classList.add('hidden');
     UIElements.directPlayerConsoleContainer.classList.add('hidden');
     UIElements.directStopBtn.classList.add('hidden');
     UIElements.directPlayBtn.classList.remove('hidden');
-
-    console.log('[DirectPlayer] UI cleanup complete.');
 }
-
 
 /**
  * Cleans up the direct player when the user navigates away from the tab.
  */
 export function cleanupDirectPlayer() {
     console.log('[DirectPlayer] Cleaning up direct player due to navigation.');
-    handleStopDirectPlayer();
+    stopAndCleanupDirectPlayer();
 }
 
 /**
@@ -173,7 +163,7 @@ export function isDirectPlayerActive() {
  * @param {string} url The URL of the .ts or .m3u8 stream.
  */
 function playDirectStream(url) {
-    handleStopDirectPlayer();
+    stopAndCleanupDirectPlayer();
 
     const consoleEl = UIElements.directPlayerConsole;
     if (consoleEl) {
@@ -229,7 +219,7 @@ function playDirectStream(url) {
                 console.error("[DirectPlayer] Player.play() caught an error:", err);
                 logToPlayerConsole(errorMsg, true);
                 showNotification(errorMsg, true);
-                handleStopDirectPlayer();
+                stopAndCleanupDirectPlayer();
             });
             logToPlayerConsole('Player instance created and attempting to load stream.');
 
@@ -237,7 +227,7 @@ function playDirectStream(url) {
             const errorMsg = 'Failed to create player instance. Check stream URL.';
             console.error('[DirectPlayer] Error creating player:', e);
             logToPlayerConsole(`${errorMsg} Details: ${e.message}`, true);
-            handleStopDirectPlayer();
+            stopAndCleanupDirectPlayer();
         }
     } else {
         const errorMsg = 'Your browser does not support the necessary technology to play this stream (Media Source Extensions).';
@@ -262,7 +252,7 @@ export function setupDirectPlayerEventListeners() {
         }
     });
 
-    UIElements.directStopBtn.addEventListener('click', handleStopDirectPlayer);
+    UIElements.directStopBtn.addEventListener('click', stopAndCleanupDirectPlayer);
     
     // MODIFIED: Save the checkbox state to the server whenever it changes.
     UIElements.directPlayCheckbox.addEventListener('change', () => {
@@ -295,4 +285,3 @@ export function setupDirectPlayerEventListeners() {
         }
     });
 }
-
