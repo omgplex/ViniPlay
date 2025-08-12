@@ -8,8 +8,8 @@
 import { UIElements, guideState } from './state.js';
 import { showNotification } from './ui.js';
 import { saveUserSetting } from './api.js';
-// FINAL FIX: Import the new generic cleanup function from the main player module.
-import { cleanupMpegtsPlayer } from './player.js';
+// FINAL FIX: Import the CORRECT function name from the main player module.
+import { stopAndCleanupPlayer } from './player.js';
 
 let directPlayer = null; // To hold the mpegts.js instance
 const MAX_RECENT_LINKS = 10;
@@ -128,7 +128,19 @@ function handleStopDirectPlayer() {
     console.log('[DirectPlayer] Stopping direct player and cleaning up UI.');
     
     // **Using the unified, exported cleanup logic for the player instance**
-    directPlayer = cleanupMpegtsPlayer(directPlayer, UIElements.directVideoElement);
+    if (directPlayer) {
+        directPlayer.pause();
+        directPlayer.unload();
+        directPlayer.detachMediaElement();
+        directPlayer.destroy();
+        directPlayer = null;
+    }
+
+    if (UIElements.directVideoElement) {
+        UIElements.directVideoElement.src = "";
+        UIElements.directVideoElement.removeAttribute('src');
+        UIElements.directVideoElement.load();
+    }
 
     // Hide the player-specific UI elements
     UIElements.directPlayerContainer.classList.add('hidden');
