@@ -259,16 +259,3 @@ export async function clearPastNotifications() {
     // Return true if the request was successful (res is not null and res.ok is true)
     return res && res.ok;
 }
-
-/**
- * VINI-MOD: Explicitly tells the server to stop the current direct stream for the user.
- * @returns {Promise<boolean>} - True on success, false on failure.
- */
-export async function stopDirectStream() {
-    console.log('[API] Requesting to stop direct stream.');
-    const res = await apiFetch('/api/stream/stop', {
-        method: 'POST'
-    });
-    return res && res.ok;
-}
-
