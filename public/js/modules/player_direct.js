@@ -5,66 +5,88 @@
  * and a logging console for better error feedback.
  */
 
+// MODIFIED: Import guideState and saveUserSetting to manage server-side settings.
 import { UIElements, guideState } from './state.js';
 import { showNotification } from './ui.js';
-import { saveUserSetting, stopDirectStream } from './api.js';
+import { saveUserSetting } from './api.js';
 
 let directPlayer = null; // To hold the mpegts.js instance
+// REMOVED: localStorage keys are no longer needed as data is now stored on the server.
+// const RECENT_LINKS_KEY = 'viniplay_recent_direct_links';
+// const DIRECT_PLAY_KEY = 'vini-direct-play-enabled';
 const MAX_RECENT_LINKS = 10;
-
-// Store event listener references for proper cleanup
-const playerEventListeners = {
-    onError: null,
-    onMediaInfo: null,
-    onStatisticsInfo: null,
-    onLoadingComplete: null
-};
-const videoEventListeners = {
-    onPlaying: null,
-    onWaiting: null,
-    onStalled: null,
-    onError: null
-};
 
 // --- Helper Functions ---
 
+/**
+ * Logs a message to the on-screen player console.
+ * @param {string} message - The message to display.
+ * @param {boolean} isError - If true, styles the message as an error.
+ */
 function logToPlayerConsole(message, isError = false) {
     const consoleEl = UIElements.directPlayerConsole;
     if (!consoleEl) return;
+
     const timestamp = new Date().toLocaleTimeString();
     const logEntry = document.createElement('p');
-    const sanitizedMessage = document.createElement('span');
-    sanitizedMessage.textContent = message;
-    logEntry.innerHTML = `<span class="text-gray-500">${timestamp}:</span> <span class="${isError ? 'text-red-400' : 'text-gray-300'}">${sanitizedMessage.innerHTML}</span>`;
+    logEntry.innerHTML = `<span class="text-gray-500">${timestamp}:</span> <span class="${isError ? 'text-red-400' : 'text-gray-300'}">${message}</span>`;
+    
     consoleEl.appendChild(logEntry);
-    consoleEl.scrollTop = consoleEl.scrollHeight;
+    consoleEl.scrollTop = consoleEl.scrollHeight; // Auto-scroll to the bottom
 }
 
+/**
+ * MODIFIED: Retrieves the list of recent links from the central guideState object,
+ * which is populated from the server on login.
+ * @returns {Array<string>} An array of URLs.
+ */
 function getRecentLinks() {
+    // Read from the central guideState, providing a default empty array if the setting doesn't exist.
     return guideState.settings.recentDirectLinks || [];
 }
 
+/**
+ * MODIFIED: Saves the list of recent links to the server via the API.
+ * @param {Array<string>} links - The array of URLs to save.
+ */
 function saveRecentLinks(links) {
+    // Update the local state immediately for UI responsiveness.
     guideState.settings.recentDirectLinks = links;
+    // Asynchronously save the setting to the user's profile on the server.
     saveUserSetting('recentDirectLinks', links);
 }
 
+/**
+ * Adds a new URL to the recent links list, ensuring it's unique and capped at the max limit.
+ * @param {string} url - The URL to add.
+ */
 function addRecentLink(url) {
     let links = getRecentLinks();
+    // Remove the link if it already exists to move it to the top
     links = links.filter(link => link !== url);
+    // Add the new link to the beginning of the array
     links.unshift(url);
+    // Trim the array to the maximum allowed length
     links = links.slice(0, MAX_RECENT_LINKS);
     saveRecentLinks(links);
 }
 
+/**
+ * Renders the recent links table in the UI.
+ */
 function renderRecentLinks() {
     const links = getRecentLinks();
     const tbody = UIElements.recentLinksTbody;
+
     UIElements.noRecentLinksMessage.classList.toggle('hidden', links.length > 0);
     UIElements.recentLinksTableContainer.classList.toggle('hidden', links.length === 0);
+
     if (!tbody) return;
-    tbody.innerHTML = links.map(link => `
-        <tr>
+    tbody.innerHTML = '';
+
+    links.forEach(link => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
             <td class="max-w-md truncate" title="${link}">
                 <a href="#" class="replay-link text-blue-400 hover:underline" data-url="${link}">${link}</a>
             </td>
@@ -73,12 +95,16 @@ function renderRecentLinks() {
                     <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
                 </button>
             </td>
-        </tr>
-    `).join('');
+        `;
+        tbody.appendChild(tr);
+    });
 }
 
 // --- Player Lifecycle Functions ---
 
+/**
+ * Initializes the Direct Player page. Called when the user navigates to the Player tab.
+ */
 export function initDirectPlayer() {
     console.log('[DirectPlayer] Initializing Direct Player page.');
     if (directPlayer) {
@@ -87,64 +113,68 @@ export function initDirectPlayer() {
     if (UIElements.directPlayerForm) {
         UIElements.directPlayerForm.reset();
     }
+    
+    // MODIFIED: Restore the 'Direct Play' checkbox state from the central settings object.
+    // Defaults to false if the setting has not been saved by the user yet.
     const savedDirectPlayState = guideState.settings.directPlayEnabled === true;
     UIElements.directPlayCheckbox.checked = savedDirectPlayState;
+
     renderRecentLinks();
 }
 
-async function stopAndCleanupDirectPlayer() {
-    logToPlayerConsole('Stop requested. Cleaning up player...');
-    await stopDirectStream();
+/**
+ * Stops the current stream and cleans up the mpegts.js player instance and UI.
+ */
+function stopAndCleanupDirectPlayer() {
     if (directPlayer) {
         console.log('[DirectPlayer] Destroying direct player instance.');
-        logToPlayerConsole('Destroying player instance.');
-        try {
-            if (playerEventListeners.onError) directPlayer.off(mpegts.Events.ERROR, playerEventListeners.onError);
-            if (playerEventListeners.onMediaInfo) directPlayer.off(mpegts.Events.MEDIA_INFO, playerEventListeners.onMediaInfo);
-            if (playerEventListeners.onStatisticsInfo) directPlayer.off(mpegts.Events.STATISTICS_INFO, playerEventListeners.onStatisticsInfo);
-            if (playerEventListeners.onLoadingComplete) directPlayer.off(mpegts.Events.LOADING_COMPLETE, playerEventListeners.onLoadingComplete);
-            directPlayer.detachMediaElement();
-            directPlayer.destroy();
-        } catch (e) {
-            console.warn('[DirectPlayer] Error during player.destroy():', e.message);
-            logToPlayerConsole(`Error during player cleanup: ${e.message}`, true);
-        }
+        directPlayer.destroy();
         directPlayer = null;
     }
     if (UIElements.directVideoElement) {
-        const videoEl = UIElements.directVideoElement;
-        if (videoEventListeners.onPlaying) videoEl.removeEventListener('playing', videoEventListeners.onPlaying);
-        if (videoEventListeners.onWaiting) videoEl.removeEventListener('waiting', videoEventListeners.onWaiting);
-        if (videoEventListeners.onStalled) videoEl.removeEventListener('stalled', videoEventListeners.onStalled);
-        if (videoEventListeners.onError) videoEl.removeEventListener('error', videoEventListeners.onError);
-        videoEl.pause();
-        videoEl.src = "";
-        videoEl.removeAttribute('src');
-        videoEl.load();
+        UIElements.directVideoElement.src = "";
+        UIElements.directVideoElement.removeAttribute('src');
+        UIElements.directVideoElement.load();
     }
     UIElements.directPlayerContainer.classList.add('hidden');
+    UIElements.directPlayerConsoleContainer.classList.add('hidden');
     UIElements.directStopBtn.classList.add('hidden');
     UIElements.directPlayBtn.classList.remove('hidden');
-    logToPlayerConsole('Player stopped and cleaned up.');
 }
 
-export async function cleanupDirectPlayer() {
+/**
+ * Cleans up the direct player when the user navigates away from the tab.
+ */
+export function cleanupDirectPlayer() {
     console.log('[DirectPlayer] Cleaning up direct player due to navigation.');
-    await stopAndCleanupDirectPlayer();
+    stopAndCleanupDirectPlayer();
 }
 
+/**
+ * Checks if a stream is currently active on the direct player page.
+ * @returns {boolean} True if a player instance exists.
+ */
 export function isDirectPlayerActive() {
     return !!directPlayer;
 }
 
-async function playDirectStream(url) {
-    await stopAndCleanupDirectPlayer();
+/**
+ * Initializes mpegts.js and plays the provided stream URL, handling direct vs. proxy.
+ * @param {string} url The URL of the .ts or .m3u8 stream.
+ */
+function playDirectStream(url) {
+    stopAndCleanupDirectPlayer();
+
     const consoleEl = UIElements.directPlayerConsole;
-    if (consoleEl) consoleEl.innerHTML = '';
+    if (consoleEl) {
+        consoleEl.innerHTML = ''; // Clear previous logs
+    }
     UIElements.directPlayerConsoleContainer.classList.remove('hidden');
     logToPlayerConsole(`Attempting to play: ${url}`);
+
     const isDirectPlay = UIElements.directPlayCheckbox.checked;
     let streamUrlToPlay = url;
+
     if (!isDirectPlay) {
         logToPlayerConsole('Direct Play is OFF. Using server proxy.');
         const profileId = guideState.settings.activeStreamProfileId;
@@ -156,71 +186,48 @@ async function playDirectStream(url) {
             return;
         }
         streamUrlToPlay = `/stream?url=${encodeURIComponent(url)}&profileId=${profileId}&userAgentId=${userAgentId}`;
-        logToPlayerConsole(`Proxy URL constructed: ${streamUrlToPlay}`);
+        logToPlayerConsole(`Proxy URL: ${streamUrlToPlay}`);
     } else {
         logToPlayerConsole('Direct Play is ON. Connecting directly to stream.');
     }
+
     addRecentLink(url);
     renderRecentLinks();
+
     if (mpegts.isSupported()) {
         try {
-            const playerConfig = { type: 'mse', isLive: true, url: streamUrlToPlay };
-            const featureConfig = { enableStashBuffer: true, stashInitialSize: 384, lazyLoad: false, liveBufferLatencyChasing: true };
-            logToPlayerConsole(`Creating mpegts.js player with config: ${JSON.stringify(playerConfig)}`);
-            directPlayer = mpegts.createPlayer(playerConfig, featureConfig);
+            directPlayer = mpegts.createPlayer({
+                type: 'mse',
+                isLive: true,
+                url: streamUrlToPlay
+            });
+
             UIElements.directPlayerContainer.classList.remove('hidden');
             UIElements.directStopBtn.classList.remove('hidden');
             UIElements.directPlayBtn.classList.add('hidden');
-            playerEventListeners.onError = (type, detail, info) => {
-                console.error('[DirectPlayer] MPEGTS Error:', type, detail, info);
-                let msg = `Player Error: ${type} - ${detail}.`;
-                if (info && info.code) msg += ` (Code: ${info.code}, Msg: ${info.msg})`;
-                logToPlayerConsole(msg, true);
-                if (type === mpegts.ErrorTypes.NETWORK_ERROR) {
-                    logToPlayerConsole("Stream terminated due to network error.", true);
-                    stopAndCleanupDirectPlayer();
-                }
-            };
-            playerEventListeners.onMediaInfo = (info) => logToPlayerConsole(`Media Info received: ${JSON.stringify(info)}`);
-            playerEventListeners.onStatisticsInfo = (stats) => console.log('[DirectPlayer Stats]', stats);
-            playerEventListeners.onLoadingComplete = () => {
-                logToPlayerConsole('Warning: Loading complete event fired for a live stream. The source may have ended.', true);
-                stopAndCleanupDirectPlayer();
-            };
-            directPlayer.on(mpegts.Events.ERROR, playerEventListeners.onError);
-            directPlayer.on(mpegts.Events.MEDIA_INFO, playerEventListeners.onMediaInfo);
-            directPlayer.on(mpegts.Events.STATISTICS_INFO, playerEventListeners.onStatisticsInfo);
-            directPlayer.on(mpegts.Events.LOADING_COMPLETE, playerEventListeners.onLoadingComplete);
-            const videoEl = UIElements.directVideoElement;
-            videoEl.muted = true;
-            videoEventListeners.onPlaying = () => logToPlayerConsole('Video Event: playing');
-            videoEventListeners.onWaiting = () => logToPlayerConsole('Video Event: waiting (buffering)');
-            videoEventListeners.onStalled = () => logToPlayerConsole('Video Event: stalled (network issue)', true);
-            videoEventListeners.onError = () => logToPlayerConsole(`Video Element Error: Code ${videoEl.error.code}, Message: ${videoEl.error.message}`, true);
-            videoEl.addEventListener('playing', videoEventListeners.onPlaying);
-            videoEl.addEventListener('waiting', videoEventListeners.onWaiting);
-            videoEl.addEventListener('stalled', videoEventListeners.onStalled);
-            videoEl.addEventListener('error', videoEventListeners.onError);
-            logToPlayerConsole('Attaching media element...');
-            directPlayer.attachMediaElement(videoEl);
-            logToPlayerConsole('Player instance created. Loading media...');
-            directPlayer.load();
-            logToPlayerConsole('Calling player.play()...');
-            // --- FINAL FIX: Removed await from play() call ---
-            directPlayer.play().catch(err => {
-                const errorMsg = `Could not play the stream. The format may be unsupported or the URL is invalid.`;
-                console.error("[DirectPlayer] Player.play() caught an error:", err);
-                logToPlayerConsole(`${errorMsg} (Details: ${err.message})`, true);
-                showNotification(errorMsg, true);
-                stopAndCleanupDirectPlayer(); // Ensure cleanup on failure
+            
+            directPlayer.attachMediaElement(UIElements.directVideoElement);
+            
+            directPlayer.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
+                console.error('[DirectPlayer] MPEGTS Error:', errorType, errorDetail);
+                logToPlayerConsole(`Error: ${errorType} - ${errorDetail}`, true);
             });
-            logToPlayerConsole('player.play() called. Playback should be active.');
-        } catch (err) {
-            const errorMsg = `Could not play the stream. The format may be unsupported or the URL is invalid.`;
-            console.error("[DirectPlayer] Player.play() caught an error:", err);
-            logToPlayerConsole(`${errorMsg} (Details: ${err.message})`, true);
-            showNotification(errorMsg, true);
-            await stopAndCleanupDirectPlayer();
+
+            directPlayer.load();
+            directPlayer.play().catch((err) => {
+                const errorMsg = `Could not play the stream. Please check the URL and console log for details.`;
+                console.error("[DirectPlayer] Player.play() caught an error:", err);
+                logToPlayerConsole(errorMsg, true);
+                showNotification(errorMsg, true);
+                stopAndCleanupDirectPlayer();
+            });
+            logToPlayerConsole('Player instance created and attempting to load stream.');
+
+        } catch (e) {
+            const errorMsg = 'Failed to create player instance. Check stream URL.';
+            console.error('[DirectPlayer] Error creating player:', e);
+            logToPlayerConsole(`${errorMsg} Details: ${e.message}`, true);
+            stopAndCleanupDirectPlayer();
         }
     } else {
         const errorMsg = 'Your browser does not support the necessary technology to play this stream (Media Source Extensions).';
@@ -229,35 +236,49 @@ async function playDirectStream(url) {
     }
 }
 
+// --- Event Listener Setup ---
+
+/**
+ * Sets up the event listeners for the Direct Player page controls.
+ */
 export function setupDirectPlayerEventListeners() {
-    UIElements.directPlayerForm.addEventListener('submit', async (e) => {
+    UIElements.directPlayerForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const streamUrl = UIElements.directStreamUrl.value.trim();
         if (streamUrl) {
-            await playDirectStream(streamUrl);
+            playDirectStream(streamUrl);
         } else {
             showNotification('Please enter a stream URL.', true);
         }
     });
+
     UIElements.directStopBtn.addEventListener('click', stopAndCleanupDirectPlayer);
+    
+    // MODIFIED: Save the checkbox state to the server whenever it changes.
     UIElements.directPlayCheckbox.addEventListener('change', () => {
         const isEnabled = UIElements.directPlayCheckbox.checked;
+        // Update the local state object.
         guideState.settings.directPlayEnabled = isEnabled;
+        // Save the setting to the server for the current user.
         saveUserSetting('directPlayEnabled', isEnabled);
         showNotification(`Direct Play ${isEnabled ? 'enabled' : 'disabled'}.`, false, 2000);
     });
-    UIElements.recentLinksTbody.addEventListener('click', async (e) => {
+
+    // Use event delegation for recent links table
+    UIElements.recentLinksTbody.addEventListener('click', (e) => {
         const replayLink = e.target.closest('.replay-link');
         const deleteBtn = e.target.closest('.delete-recent-link-btn');
+        
         if (replayLink) {
             e.preventDefault();
             const url = replayLink.dataset.url;
             UIElements.directStreamUrl.value = url;
-            await playDirectStream(url);
+            playDirectStream(url);
         } else if (deleteBtn) {
             const urlToDelete = deleteBtn.dataset.url;
             let links = getRecentLinks();
             links = links.filter(link => link !== urlToDelete);
+            // MODIFIED: saveRecentLinks now saves to the server.
             saveRecentLinks(links);
             renderRecentLinks();
             showNotification('Link removed from recents.');
