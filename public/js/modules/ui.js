@@ -293,7 +293,7 @@ export const closeMobileMenu = () => {
 /**
  * Handles client-side routing by showing/hiding pages based on the URL path.
  */
-export const handleRouteChange = () => {
+export const handleRouteChange = async () => {
     const wasMultiView = currentPage.startsWith('/multiview');
     const wasPlayer = currentPage.startsWith('/player'); // NEW: Check if the previous page was the Player
     const path = window.location.pathname;
@@ -324,8 +324,8 @@ export const handleRouteChange = () => {
             showConfirm(
                 'Leave Player?',
                 'Leaving this page will stop the current stream. Are you sure?',
-                () => {
-                    cleanupDirectPlayer();
+                async () => {
+                    await cleanupDirectPlayer();
                     proceedWithRouteChange(path);
                 }
             );
@@ -333,7 +333,7 @@ export const handleRouteChange = () => {
             window.history.pushState({}, currentPage, window.location.origin + currentPage);
             return;
         } else {
-            cleanupDirectPlayer();
+            await cleanupDirectPlayer();
         }
     }
 
@@ -477,3 +477,4 @@ export const switchTab = (activeTab) => {
     }
     navigate(newPath);
 };
+
