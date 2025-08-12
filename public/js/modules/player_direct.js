@@ -166,8 +166,8 @@ export function isDirectPlayerActive() {
  * Initializes mpegts.js and plays the provided stream URL, handling direct vs. proxy.
  * @param {string} url The URL of the .ts or .m3u8 stream.
  */
-function playDirectStream(url) {
-    stopAndCleanupDirectPlayer();
+async function playDirectStream(url) {
+    await stopAndCleanupDirectPlayer();
 
     const consoleEl = UIElements.directPlayerConsole;
     if (consoleEl) {
@@ -218,20 +218,15 @@ function playDirectStream(url) {
             });
 
             directPlayer.load();
-            directPlayer.play().catch((err) => {
-                const errorMsg = `Could not play the stream. Please check the URL and console log for details.`;
-                console.error("[DirectPlayer] Player.play() caught an error:", err);
-                logToPlayerConsole(errorMsg, true);
-                showNotification(errorMsg, true);
-                stopAndCleanupDirectPlayer();
-            });
+            await directPlayer.play();
             logToPlayerConsole('Player instance created and attempting to load stream.');
 
-        } catch (e) {
-            const errorMsg = 'Failed to create player instance. Check stream URL.';
-            console.error('[DirectPlayer] Error creating player:', e);
-            logToPlayerConsole(`${errorMsg} Details: ${e.message}`, true);
-            stopAndCleanupDirectPlayer();
+        } catch (err) {
+            const errorMsg = `Could not play the stream. Please check the URL and console log for details.`;
+            console.error("[DirectPlayer] Player.play() caught an error:", err);
+            logToPlayerConsole(errorMsg, true);
+            showNotification(errorMsg, true);
+            await stopAndCleanupDirectPlayer();
         }
     } else {
         const errorMsg = 'Your browser does not support the necessary technology to play this stream (Media Source Extensions).';
@@ -246,11 +241,11 @@ function playDirectStream(url) {
  * Sets up the event listeners for the Direct Player page controls.
  */
 export function setupDirectPlayerEventListeners() {
-    UIElements.directPlayerForm.addEventListener('submit', (e) => {
+    UIElements.directPlayerForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const streamUrl = UIElements.directStreamUrl.value.trim();
         if (streamUrl) {
-            playDirectStream(streamUrl);
+            await playDirectStream(streamUrl);
         } else {
             showNotification('Please enter a stream URL.', true);
         }
@@ -269,7 +264,7 @@ export function setupDirectPlayerEventListeners() {
     });
 
     // Use event delegation for recent links table
-    UIElements.recentLinksTbody.addEventListener('click', (e) => {
+    UIElements.recentLinksTbody.addEventListener('click', async (e) => {
         const replayLink = e.target.closest('.replay-link');
         const deleteBtn = e.target.closest('.delete-recent-link-btn');
         
@@ -277,7 +272,7 @@ export function setupDirectPlayerEventListeners() {
             e.preventDefault();
             const url = replayLink.dataset.url;
             UIElements.directStreamUrl.value = url;
-            playDirectStream(url);
+            await playDirectStream(url);
         } else if (deleteBtn) {
             const urlToDelete = deleteBtn.dataset.url;
             let links = getRecentLinks();
