@@ -11,6 +11,7 @@ import { castState, loadMedia, setLocalPlayerState } from './cast.js';
 let streamInfoInterval = null; // NEW: Interval to update stream stats
 
 /**
+ * **CORRECTED: Now properly exported.**
  * Stops the current local stream, cleans up the mpegts.js player instance, and closes the modal.
  * This does NOT affect an active Google Cast session.
  */
@@ -36,6 +37,10 @@ export const stopAndCleanupPlayer = () => {
     // If not casting, proceed with cleaning up the local player.
     if (appState.player) {
         console.log('[PLAYER] Destroying local mpegts player.');
+        // **Using the full cleanup sequence for consistency.**
+        appState.player.pause();
+        appState.player.unload();
+        appState.player.detachMediaElement();
         appState.player.destroy();
         appState.player = null;
     }
@@ -123,8 +128,8 @@ export const playChannel = (url, name, channelId) => {
     setLocalPlayerState(streamUrlToPlay, name, logo);
     
     if (appState.player) {
-        appState.player.destroy();
-        appState.player = null;
+        // Now using the exported, robust cleanup function
+        stopAndCleanupPlayer();
     }
     // NEW: Clear any existing info interval before starting a new player
     if (streamInfoInterval) {
