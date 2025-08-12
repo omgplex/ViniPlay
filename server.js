@@ -29,7 +29,7 @@ let notificationCheckInterval = null;
 const sourceRefreshTimers = new Map(); // FIXED: Initialize sourceRefreshTimers here
 
 // --- NEW: For Server-Sent Events (SSE) ---
-const sseClients = new Map(); 
+const sseClients = new Map();
 
 // --- NEW: DVR State ---
 const activeDvrJobs = new Map(); // Stores active node-schedule jobs
@@ -1417,7 +1417,14 @@ app.get('/stream', requireAuth, (req, res) => {
     ffmpeg.stdout.pipe(res);
     
     ffmpeg.stderr.on('data', (data) => {
-        console.error(`[FFMPEG_ERROR] Stream: ${streamUrl} - ${data.toString().trim()}`);
+        const logLine = data.toString().trim();
+        // Check for common non-error lines and log them as INFO
+        if (logLine.startsWith('frame=') || logLine.startsWith('size=') || logLine.startsWith('bitrate=') || logLine.startsWith('speed=')) {
+            // These are progress updates, not errors. We can choose to suppress them or log them differently.
+            // For now, let's suppress them to keep logs clean.
+        } else {
+            console.log(`[FFMPEG_LOG] Stream: ${streamUrl} - ${logLine}`);
+        }
     });
 
     ffmpeg.on('close', (code) => {
