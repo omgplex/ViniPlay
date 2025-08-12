@@ -1411,17 +1411,18 @@ app.get('/stream', requireAuth, (req, res) => {
     const args = (commandTemplate.match(/(?:[^\s"]+|"[^"]*")+/g) || []).map(arg => arg.replace(/^"|"$/g, ''));
 
     console.log(`[STREAM] FFmpeg command args: ${args.join(' ')}`);
-    const ffmpeg = spawn('ffmpeg', args);
+    
+    // *** FIX: Spawn ffmpeg in a detached state to create a new process group ***
+    const ffmpeg = spawn('ffmpeg', args, { detached: true });
+    
     res.setHeader('Content-Type', 'video/mp2t');
     
     ffmpeg.stdout.pipe(res);
     
     ffmpeg.stderr.on('data', (data) => {
         const logLine = data.toString().trim();
-        // Check for common non-error lines and log them as INFO
         if (logLine.startsWith('frame=') || logLine.startsWith('size=') || logLine.startsWith('bitrate=') || logLine.startsWith('speed=')) {
-            // These are progress updates, not errors. We can choose to suppress them or log them differently.
-            // For now, let's suppress them to keep logs clean.
+            // Suppress progress updates to keep logs clean.
         } else {
             console.log(`[FFMPEG_LOG] Stream: ${streamUrl} - ${logLine}`);
         }
@@ -1448,8 +1449,20 @@ app.get('/stream', requireAuth, (req, res) => {
     });
 
     req.on('close', () => {
-        console.log(`[STREAM] Client closed connection for ${streamUrl}. Killing ffmpeg process (PID: ${ffmpeg.pid}).`);
-        ffmpeg.kill('SIGKILL');
+        // *** FIX: Kill the entire process group using the negative PID ***
+        console.log(`[STREAM] Client closed connection for ${streamUrl}. Killing ffmpeg process group (PGID: ${ffmpeg.pid}).`);
+        try {
+            // The '-' before the PID is crucial. It signals to kill the entire process group.
+            process.kill(-ffmpeg.pid, 'SIGKILL');
+        } catch (e) {
+            console.warn(`[STREAM] Could not kill process group ${ffmpeg.pid}. It may have already exited. Error: ${e.message}`);
+            // As a fallback, try to kill the main process directly if the group kill fails.
+            try {
+                ffmpeg.kill('SIGKILL');
+            } catch (e2) {
+                 console.warn(`[STREAM] Fallback kill for PID ${ffmpeg.pid} also failed. Error: ${e2.message}`);
+            }
+        }
     });
 });
 
