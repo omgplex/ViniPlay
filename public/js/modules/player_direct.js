@@ -12,15 +12,13 @@ import { saveUserSetting, stopDirectStream } from './api.js';
 let directPlayer = null; // To hold the mpegts.js instance
 const MAX_RECENT_LINKS = 10;
 
-// --- VINI-FIX: Store event listener references for proper cleanup ---
+// Store event listener references for proper cleanup
 const playerEventListeners = {
     onError: null,
     onMediaInfo: null,
     onStatisticsInfo: null,
     onLoadingComplete: null
 };
-
-// --- VINI-FIX: Store video element event listener references ---
 const videoEventListeners = {
     onPlaying: null,
     onWaiting: null,
@@ -28,50 +26,29 @@ const videoEventListeners = {
     onError: null
 };
 
-
 // --- Helper Functions ---
 
-/**
- * Logs a message to the on-screen player console.
- * @param {string} message - The message to display.
- * @param {boolean} isError - If true, styles the message as an error.
- */
 function logToPlayerConsole(message, isError = false) {
     const consoleEl = UIElements.directPlayerConsole;
     if (!consoleEl) return;
-
     const timestamp = new Date().toLocaleTimeString();
     const logEntry = document.createElement('p');
     const sanitizedMessage = document.createElement('span');
     sanitizedMessage.textContent = message;
-
     logEntry.innerHTML = `<span class="text-gray-500">${timestamp}:</span> <span class="${isError ? 'text-red-400' : 'text-gray-300'}">${sanitizedMessage.innerHTML}</span>`;
-    
     consoleEl.appendChild(logEntry);
     consoleEl.scrollTop = consoleEl.scrollHeight;
 }
 
-/**
- * Retrieves the list of recent links from the central guideState object.
- * @returns {Array<string>} An array of URLs.
- */
 function getRecentLinks() {
     return guideState.settings.recentDirectLinks || [];
 }
 
-/**
- * Saves the list of recent links to the server via the API.
- * @param {Array<string>} links - The array of URLs to save.
- */
 function saveRecentLinks(links) {
     guideState.settings.recentDirectLinks = links;
     saveUserSetting('recentDirectLinks', links);
 }
 
-/**
- * Adds a new URL to the recent links list.
- * @param {string} url - The URL to add.
- */
 function addRecentLink(url) {
     let links = getRecentLinks();
     links = links.filter(link => link !== url);
@@ -80,16 +57,11 @@ function addRecentLink(url) {
     saveRecentLinks(links);
 }
 
-/**
- * Renders the recent links table in the UI.
- */
 function renderRecentLinks() {
     const links = getRecentLinks();
     const tbody = UIElements.recentLinksTbody;
-
     UIElements.noRecentLinksMessage.classList.toggle('hidden', links.length > 0);
     UIElements.recentLinksTableContainer.classList.toggle('hidden', links.length === 0);
-
     if (!tbody) return;
     tbody.innerHTML = links.map(link => `
         <tr>
@@ -107,9 +79,6 @@ function renderRecentLinks() {
 
 // --- Player Lifecycle Functions ---
 
-/**
- * Initializes the Direct Player page.
- */
 export function initDirectPlayer() {
     console.log('[DirectPlayer] Initializing Direct Player page.');
     if (directPlayer) {
@@ -118,30 +87,22 @@ export function initDirectPlayer() {
     if (UIElements.directPlayerForm) {
         UIElements.directPlayerForm.reset();
     }
-    
     const savedDirectPlayState = guideState.settings.directPlayEnabled === true;
     UIElements.directPlayCheckbox.checked = savedDirectPlayState;
-
     renderRecentLinks();
 }
 
-/**
- * Stops the current stream and cleans up the mpegts.js player instance and UI.
- */
 async function stopAndCleanupDirectPlayer() {
     logToPlayerConsole('Stop requested. Cleaning up player...');
     await stopDirectStream();
-
     if (directPlayer) {
         console.log('[DirectPlayer] Destroying direct player instance.');
         logToPlayerConsole('Destroying player instance.');
         try {
-            // **VINI-FIX**: Reliably detach all event listeners before destroying.
             if (playerEventListeners.onError) directPlayer.off(mpegts.Events.ERROR, playerEventListeners.onError);
             if (playerEventListeners.onMediaInfo) directPlayer.off(mpegts.Events.MEDIA_INFO, playerEventListeners.onMediaInfo);
             if (playerEventListeners.onStatisticsInfo) directPlayer.off(mpegts.Events.STATISTICS_INFO, playerEventListeners.onStatisticsInfo);
             if (playerEventListeners.onLoadingComplete) directPlayer.off(mpegts.Events.LOADING_COMPLETE, playerEventListeners.onLoadingComplete);
-            
             directPlayer.detachMediaElement();
             directPlayer.destroy();
         } catch (e) {
@@ -150,58 +111,40 @@ async function stopAndCleanupDirectPlayer() {
         }
         directPlayer = null;
     }
-
     if (UIElements.directVideoElement) {
         const videoEl = UIElements.directVideoElement;
-        // **VINI-FIX**: Reliably remove video element listeners.
         if (videoEventListeners.onPlaying) videoEl.removeEventListener('playing', videoEventListeners.onPlaying);
         if (videoEventListeners.onWaiting) videoEl.removeEventListener('waiting', videoEventListeners.onWaiting);
         if (videoEventListeners.onStalled) videoEl.removeEventListener('stalled', videoEventListeners.onStalled);
         if (videoEventListeners.onError) videoEl.removeEventListener('error', videoEventListeners.onError);
-        
         videoEl.pause();
         videoEl.src = "";
         videoEl.removeAttribute('src');
         videoEl.load();
     }
-
     UIElements.directPlayerContainer.classList.add('hidden');
     UIElements.directStopBtn.classList.add('hidden');
     UIElements.directPlayBtn.classList.remove('hidden');
     logToPlayerConsole('Player stopped and cleaned up.');
 }
 
-/**
- * Cleans up the direct player when navigating away from the tab.
- */
 export async function cleanupDirectPlayer() {
     console.log('[DirectPlayer] Cleaning up direct player due to navigation.');
     await stopAndCleanupDirectPlayer();
 }
 
-/**
- * Checks if a stream is currently active.
- * @returns {boolean} True if a player instance exists.
- */
 export function isDirectPlayerActive() {
     return !!directPlayer;
 }
 
-/**
- * Initializes mpegts.js and plays the provided stream URL.
- * @param {string} url The URL of the .ts or .m3u8 stream.
- */
 async function playDirectStream(url) {
     await stopAndCleanupDirectPlayer();
-
     const consoleEl = UIElements.directPlayerConsole;
     if (consoleEl) consoleEl.innerHTML = '';
     UIElements.directPlayerConsoleContainer.classList.remove('hidden');
     logToPlayerConsole(`Attempting to play: ${url}`);
-
     const isDirectPlay = UIElements.directPlayCheckbox.checked;
     let streamUrlToPlay = url;
-
     if (!isDirectPlay) {
         logToPlayerConsole('Direct Play is OFF. Using server proxy.');
         const profileId = guideState.settings.activeStreamProfileId;
@@ -217,28 +160,17 @@ async function playDirectStream(url) {
     } else {
         logToPlayerConsole('Direct Play is ON. Connecting directly to stream.');
     }
-
     addRecentLink(url);
     renderRecentLinks();
-
     if (mpegts.isSupported()) {
         try {
             const playerConfig = { type: 'mse', isLive: true, url: streamUrlToPlay };
-            // **FINAL FIX**: Increased buffer size slightly to help with intermittent streams.
-            const featureConfig = { 
-                enableStashBuffer: true, 
-                stashInitialSize: 384, // Increased from default
-                lazyLoad: false, 
-                liveBufferLatencyChasing: true 
-            };
-            
+            const featureConfig = { enableStashBuffer: true, stashInitialSize: 384, lazyLoad: false, liveBufferLatencyChasing: true };
             logToPlayerConsole(`Creating mpegts.js player with config: ${JSON.stringify(playerConfig)}`);
             directPlayer = mpegts.createPlayer(playerConfig, featureConfig);
-
             UIElements.directPlayerContainer.classList.remove('hidden');
             UIElements.directStopBtn.classList.remove('hidden');
             UIElements.directPlayBtn.classList.add('hidden');
-            
             playerEventListeners.onError = (type, detail, info) => {
                 console.error('[DirectPlayer] MPEGTS Error:', type, detail, info);
                 let msg = `Player Error: ${type} - ${detail}.`;
@@ -255,36 +187,34 @@ async function playDirectStream(url) {
                 logToPlayerConsole('Warning: Loading complete event fired for a live stream. The source may have ended.', true);
                 stopAndCleanupDirectPlayer();
             };
-
             directPlayer.on(mpegts.Events.ERROR, playerEventListeners.onError);
             directPlayer.on(mpegts.Events.MEDIA_INFO, playerEventListeners.onMediaInfo);
             directPlayer.on(mpegts.Events.STATISTICS_INFO, playerEventListeners.onStatisticsInfo);
             directPlayer.on(mpegts.Events.LOADING_COMPLETE, playerEventListeners.onLoadingComplete);
-
             const videoEl = UIElements.directVideoElement;
-            // **FINAL FIX**: Mute the video element by default to encourage autoplay.
             videoEl.muted = true;
-            
             videoEventListeners.onPlaying = () => logToPlayerConsole('Video Event: playing');
             videoEventListeners.onWaiting = () => logToPlayerConsole('Video Event: waiting (buffering)');
             videoEventListeners.onStalled = () => logToPlayerConsole('Video Event: stalled (network issue)', true);
             videoEventListeners.onError = () => logToPlayerConsole(`Video Element Error: Code ${videoEl.error.code}, Message: ${videoEl.error.message}`, true);
-            
             videoEl.addEventListener('playing', videoEventListeners.onPlaying);
             videoEl.addEventListener('waiting', videoEventListeners.onWaiting);
             videoEl.addEventListener('stalled', videoEventListeners.onStalled);
             videoEl.addEventListener('error', videoEventListeners.onError);
-            
             logToPlayerConsole('Attaching media element...');
             directPlayer.attachMediaElement(videoEl);
-            
             logToPlayerConsole('Player instance created. Loading media...');
             directPlayer.load();
-
             logToPlayerConsole('Calling player.play()...');
-            await directPlayer.play();
-            logToPlayerConsole('player.play() promise resolved. Playback should be active.');
-
+            // --- FINAL FIX: Removed await from play() call ---
+            directPlayer.play().catch(err => {
+                const errorMsg = `Could not play the stream. The format may be unsupported or the URL is invalid.`;
+                console.error("[DirectPlayer] Player.play() caught an error:", err);
+                logToPlayerConsole(`${errorMsg} (Details: ${err.message})`, true);
+                showNotification(errorMsg, true);
+                stopAndCleanupDirectPlayer(); // Ensure cleanup on failure
+            });
+            logToPlayerConsole('player.play() called. Playback should be active.');
         } catch (err) {
             const errorMsg = `Could not play the stream. The format may be unsupported or the URL is invalid.`;
             console.error("[DirectPlayer] Player.play() caught an error:", err);
@@ -299,11 +229,6 @@ async function playDirectStream(url) {
     }
 }
 
-// --- Event Listener Setup ---
-
-/**
- * Sets up the event listeners for the Direct Player page controls.
- */
 export function setupDirectPlayerEventListeners() {
     UIElements.directPlayerForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -314,20 +239,16 @@ export function setupDirectPlayerEventListeners() {
             showNotification('Please enter a stream URL.', true);
         }
     });
-
     UIElements.directStopBtn.addEventListener('click', stopAndCleanupDirectPlayer);
-    
     UIElements.directPlayCheckbox.addEventListener('change', () => {
         const isEnabled = UIElements.directPlayCheckbox.checked;
         guideState.settings.directPlayEnabled = isEnabled;
         saveUserSetting('directPlayEnabled', isEnabled);
         showNotification(`Direct Play ${isEnabled ? 'enabled' : 'disabled'}.`, false, 2000);
     });
-
     UIElements.recentLinksTbody.addEventListener('click', async (e) => {
         const replayLink = e.target.closest('.replay-link');
         const deleteBtn = e.target.closest('.delete-recent-link-btn');
-        
         if (replayLink) {
             e.preventDefault();
             const url = replayLink.dataset.url;
