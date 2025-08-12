@@ -35,6 +35,9 @@ const sseClients = new Map();
 const activeDvrJobs = new Map(); // Stores active node-schedule jobs
 const runningFFmpegProcesses = new Map(); // Stores PIDs of running ffmpeg recordings
 
+// --- VINI-MOD: To track the single ffmpeg process for the /stream endpoint per user ---
+const directStreams = new Map(); 
+
 // --- Configuration ---
 const DATA_DIR = '/data';
 const DVR_DIR = '/dvr'; // NEW: DVR recordings directory
@@ -1412,8 +1415,24 @@ app.get('/stream', requireAuth, (req, res) => {
 
     console.log(`[STREAM] FFmpeg command args: ${args.join(' ')}`);
     
-    // *** FIX: Spawn ffmpeg in a detached state to create a new process group ***
+    // *** FIX: Manage active stream process to prevent orphans ***
+    // If there's already a stream running for this user, kill it before starting a new one.
+    // This handles cases where the 'close' event didn't fire correctly on the client side.
+    if (directStreams.has(req.session.userId)) {
+        console.warn(`[STREAM] User ${req.session.userId} already has an active stream. Terminating old stream before starting new one.`);
+        const oldFfmpeg = directStreams.get(req.session.userId);
+        try {
+            process.kill(-oldFfmpeg.pid, 'SIGKILL');
+        } catch (e) {
+            console.warn(`[STREAM] Error killing old stream for user ${req.session.userId}: ${e.message}`);
+        }
+        directStreams.delete(req.session.userId);
+    }
+    
     const ffmpeg = spawn('ffmpeg', args, { detached: true });
+    
+    // Store the new ffmpeg process associated with the user
+    directStreams.set(req.session.userId, ffmpeg);
     
     res.setHeader('Content-Type', 'video/mp2t');
     
@@ -1434,6 +1453,7 @@ app.get('/stream', requireAuth, (req, res) => {
         } else {
             console.log(`[STREAM] ffmpeg process for ${streamUrl} exited gracefully.`);
         }
+        directStreams.delete(req.session.userId); // Also remove from map on close
         if (!res.headersSent) {
              res.status(500).send('FFmpeg stream ended unexpectedly or failed to start.');
         } else {
@@ -1443,6 +1463,7 @@ app.get('/stream', requireAuth, (req, res) => {
 
     ffmpeg.on('error', (err) => {
         console.error(`[STREAM] Failed to start ffmpeg process for ${streamUrl}: ${err.message}`);
+        directStreams.delete(req.session.userId); // Also remove from map on error
         if (!res.headersSent) {
             res.status(500).send('Failed to start streaming service. Check server logs.');
         }
@@ -1451,6 +1472,7 @@ app.get('/stream', requireAuth, (req, res) => {
     req.on('close', () => {
         // *** FIX: Kill the entire process group using the negative PID ***
         console.log(`[STREAM] Client closed connection for ${streamUrl}. Killing ffmpeg process group (PGID: ${ffmpeg.pid}).`);
+        directStreams.delete(req.session.userId); // Remove from map
         try {
             // The '-' before the PID is crucial. It signals to kill the entire process group.
             process.kill(-ffmpeg.pid, 'SIGKILL');
@@ -2278,3 +2300,4 @@ function parseM3U(data) {
     }
     return channels;
 }
+
