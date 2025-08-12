@@ -29,14 +29,11 @@ let notificationCheckInterval = null;
 const sourceRefreshTimers = new Map(); // FIXED: Initialize sourceRefreshTimers here
 
 // --- NEW: For Server-Sent Events (SSE) ---
-const sseClients = new Map();
+const sseClients = new Map(); 
 
 // --- NEW: DVR State ---
 const activeDvrJobs = new Map(); // Stores active node-schedule jobs
 const runningFFmpegProcesses = new Map(); // Stores PIDs of running ffmpeg recordings
-
-// --- VINI-MOD: To track the single ffmpeg process for the /stream endpoint per user ---
-const directStreams = new Map(); 
 
 // --- Configuration ---
 const DATA_DIR = '/data';
@@ -1374,81 +1371,38 @@ app.delete('/api/data', requireAuth, requireAdmin, (req, res) => {
     }
 });
 
-// --- START: Player Stream Fix ---
-
-/**
- * A centralized function to reliably stop the direct stream for a given user.
- * This ensures the FFmpeg process group is terminated and the state is cleaned up.
- * @param {string|number} userId The ID of the user whose stream should be stopped.
- */
-function stopStreamForUser(userId) {
-    if (directStreams.has(userId)) {
-        const ffmpeg = directStreams.get(userId);
-        console.log(`[STREAM_MANAGER] Stopping stream for user ${userId}. Terminating process group with PID: ${ffmpeg.pid}.`);
-        
-        // Remove the entry from the map immediately to prevent race conditions.
-        directStreams.delete(userId);
-
-        try {
-            // Kill the entire process group by using a negative PID. This is crucial.
-            // 'SIGKILL' is a forceful termination.
-            process.kill(-ffmpeg.pid, 'SIGKILL');
-        } catch (e) {
-            // This error (ESRCH) is common if the process has already exited for any reason.
-            // It's not a critical failure, so we log it as a warning.
-            if (e.code === 'ESRCH') {
-                console.warn(`[STREAM_MANAGER] Could not kill process group ${ffmpeg.pid} for user ${userId}. It may have already exited.`);
-            } else {
-                console.error(`[STREAM_MANAGER] Unexpected error killing stream for user ${userId}:`, e);
-            }
-        }
-    } else {
-        // This is a normal and expected situation, e.g., when the user stops a stream that has already ended.
-        console.log(`[STREAM_MANAGER] Stop request for user ${userId}, but no active stream was found in the map.`);
-    }
-}
-
-// VINI-MOD: New endpoint for the client to explicitly stop a direct stream.
-app.post('/api/stream/stop', requireAuth, (req, res) => {
-    const userId = req.session.userId;
-    stopStreamForUser(userId);
-    res.json({ success: true, message: 'Stream stop request processed.' });
-});
-
 
 app.get('/stream', requireAuth, (req, res) => {
     const { url: streamUrl, profileId, userAgentId } = req.query;
-    const userId = req.session.userId;
-    console.log(`[STREAM] Stream request received for user ${userId}. URL: ${streamUrl}`);
+    console.log(`[STREAM] Stream request received. URL: ${streamUrl}, Profile ID: ${profileId}, User Agent ID: ${userAgentId}`);
 
     if (!streamUrl) {
         console.warn('[STREAM] Missing stream URL in request.');
         return res.status(400).send('Error: `url` query parameter is required.');
     }
-    
-    // **CRITICAL FIX**: Stop any existing stream for this user BEFORE starting a new one.
-    // This prevents orphaned processes and ensures a clean state for each new stream request.
-    stopStreamForUser(userId);
 
     let settings = getSettings();
+    
     const profile = (settings.streamProfiles || []).find(p => p.id === profileId);
     if (!profile) {
-        console.error(`[STREAM] Stream profile with ID "${profileId}" not found.`);
+        console.error(`[STREAM] Stream profile with ID "${profileId}" not found in settings.`);
         return res.status(404).send(`Error: Stream profile with ID "${profileId}" not found.`);
     }
 
     if (profile.command === 'redirect') {
-        console.log(`[STREAM] Redirecting user ${userId} to stream URL: ${streamUrl}`);
+        console.log(`[STREAM] Redirecting to stream URL: ${streamUrl}`);
         return res.redirect(302, streamUrl);
     }
     
     const userAgent = (settings.userAgents || []).find(ua => ua.id === userAgentId);
     if (!userAgent) {
-        console.error(`[STREAM] User agent with ID "${userAgentId}" not found.`);
+        console.error(`[STREAM] User agent with ID "${userAgentId}" not found in settings.`);
         return res.status(404).send(`Error: User agent with ID "${userAgentId}" not found.`);
     }
     
-    console.log(`[STREAM] Proxying stream for user ${userId} with Profile: "${profile.name}" and User Agent: "${userAgent.name}"`);
+    console.log(`[STREAM] Proxying stream: ${streamUrl}`);
+    console.log(`[STREAM] Using Profile: "${profile.name}"`);
+    console.log(`[STREAM] Using User Agent: "${userAgent.name}"`);
 
     const commandTemplate = profile.command
         .replace(/{streamUrl}/g, streamUrl)
@@ -1456,32 +1410,22 @@ app.get('/stream', requireAuth, (req, res) => {
         
     const args = (commandTemplate.match(/(?:[^\s"]+|"[^"]*")+/g) || []).map(arg => arg.replace(/^"|"$/g, ''));
 
-    console.log(`[STREAM] Spawning FFmpeg for user ${userId} with command: ffmpeg ${args.join(' ')}`);
-    
-    // **CRITICAL FIX**: Spawn the process in a detached state to create a new process group.
-    // This allows us to kill the entire group later, including any child processes FFmpeg might spawn.
-    const ffmpeg = spawn('ffmpeg', args, { detached: true });
-    
-    // Store the new ffmpeg process associated with the user.
-    directStreams.set(userId, ffmpeg);
-    
+    console.log(`[STREAM] FFmpeg command args: ${args.join(' ')}`);
+    const ffmpeg = spawn('ffmpeg', args);
     res.setHeader('Content-Type', 'video/mp2t');
     
     ffmpeg.stdout.pipe(res);
     
     ffmpeg.stderr.on('data', (data) => {
-        const logLine = data.toString().trim();
-        // Suppress noisy progress updates to keep logs clean and relevant.
-        if (!logLine.startsWith('frame=') && !logLine.startsWith('size=') && !logLine.startsWith('bitrate=') && !logLine.startsWith('speed=')) {
-            console.log(`[FFMPEG_LOG][User:${userId}] ${logLine}`);
-        }
+        console.error(`[FFMPEG_ERROR] Stream: ${streamUrl} - ${data.toString().trim()}`);
     });
 
     ffmpeg.on('close', (code) => {
-        console.log(`[STREAM] FFmpeg process for user ${userId} exited with code ${code}.`);
-        // We call the centralized cleanup function here as well, although the 'req.on('close')'
-        // handler will likely have already been triggered. This is a safe redundancy.
-        stopStreamForUser(userId); 
+        if (code !== 0) {
+            console.log(`[STREAM] ffmpeg process for ${streamUrl} exited with code ${code}`);
+        } else {
+            console.log(`[STREAM] ffmpeg process for ${streamUrl} exited gracefully.`);
+        }
         if (!res.headersSent) {
              res.status(500).send('FFmpeg stream ended unexpectedly or failed to start.');
         } else {
@@ -1490,21 +1434,17 @@ app.get('/stream', requireAuth, (req, res) => {
     });
 
     ffmpeg.on('error', (err) => {
-        console.error(`[STREAM] Failed to start FFmpeg process for user ${userId}: ${err.message}`);
-        stopStreamForUser(userId);
+        console.error(`[STREAM] Failed to start ffmpeg process for ${streamUrl}: ${err.message}`);
         if (!res.headersSent) {
             res.status(500).send('Failed to start streaming service. Check server logs.');
         }
     });
 
-    // **CRITICAL FIX**: This event is fired when the client closes the connection (e.g., closes tab, navigates away).
     req.on('close', () => {
-        console.log(`[STREAM] Client closed connection for user ${userId}. Initiating cleanup.`);
-        stopStreamForUser(userId);
+        console.log(`[STREAM] Client closed connection for ${streamUrl}. Killing ffmpeg process (PID: ${ffmpeg.pid}).`);
+        ffmpeg.kill('SIGKILL');
     });
 });
-// --- END: Player Stream Fix ---
-
 
 // --- Multi-View Layout API Endpoints ---
 app.get('/api/multiview/layouts', requireAuth, (req, res) => {
