@@ -123,13 +123,24 @@ export function initDirectPlayer() {
 }
 
 /**
+ * **MODIFIED: This function now includes the full cleanup sequence.**
  * Stops the current stream and cleans up the mpegts.js player instance and UI.
+ * This more robust sequence ensures the stream connection is fully terminated.
  */
 function stopAndCleanupDirectPlayer() {
     if (directPlayer) {
-        console.log('[DirectPlayer] Destroying direct player instance.');
-        directPlayer.destroy();
-        directPlayer = null;
+        console.log('[DirectPlayer] Cleaning up and destroying direct player instance.');
+        try {
+            // This is the full, robust cleanup sequence.
+            directPlayer.pause();
+            directPlayer.unload();
+            directPlayer.detachMediaElement();
+            directPlayer.destroy();
+        } catch (e) {
+            console.error('[DirectPlayer] Error during player cleanup:', e);
+        } finally {
+            directPlayer = null;
+        }
     }
     if (UIElements.directVideoElement) {
         UIElements.directVideoElement.src = "";
