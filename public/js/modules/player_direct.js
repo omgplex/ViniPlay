@@ -138,15 +138,28 @@ async function stopAndCleanupDirectPlayer() {
 
     if (directPlayer) {
         console.log('[DirectPlayer] Destroying direct player instance.');
+        logToPlayerConsole('Destroying player instance.');
         try {
+            // **DEBUG**: Detach all event listeners before destroying to prevent memory leaks.
+            directPlayer.off(mpegts.Events.ERROR);
+            directPlayer.off(mpegts.Events.MEDIA_INFO);
+            directPlayer.off(mpegts.Events.STATISTICS_INFO);
+            directPlayer.detachMediaElement();
             directPlayer.destroy();
         } catch (e) {
             console.warn('[DirectPlayer] Error during player.destroy():', e.message);
+            logToPlayerConsole(`Error during player cleanup: ${e.message}`, true);
         }
         directPlayer = null;
     }
 
     if (UIElements.directVideoElement) {
+        // **DEBUG**: Remove event listeners from video element
+        const videoEl = UIElements.directVideoElement;
+        const newVideoEl = videoEl.cloneNode(true); // Clone to remove all listeners
+        videoEl.parentNode.replaceChild(newVideoEl, videoEl);
+        UIElements.directVideoElement = newVideoEl; // Update reference
+        
         UIElements.directVideoElement.pause();
         UIElements.directVideoElement.src = "";
         UIElements.directVideoElement.removeAttribute('src');
@@ -205,7 +218,7 @@ async function playDirectStream(url) {
             return;
         }
         streamUrlToPlay = `/stream?url=${encodeURIComponent(url)}&profileId=${profileId}&userAgentId=${userAgentId}`;
-        logToPlayerConsole(`Proxy URL constructed.`);
+        logToPlayerConsole(`Proxy URL constructed: ${streamUrlToPlay}`);
     } else {
         logToPlayerConsole('Direct Play is ON. Connecting directly to stream.');
     }
@@ -215,24 +228,26 @@ async function playDirectStream(url) {
 
     if (mpegts.isSupported()) {
         try {
-            directPlayer = mpegts.createPlayer({
+            const playerConfig = {
                 type: 'mse', // mpegts.js will auto-detect HLS (.m3u8) vs MPEG-TS (.ts)
                 isLive: true,
                 url: streamUrlToPlay
-            }, {
+            };
+            const featureConfig = {
                 // **FIX**: Add robust error handling configuration
                 enableStashBuffer: false,
                 lazyLoad: false,
                 liveBufferLatencyChasing: true,
-            });
+            };
+            
+            logToPlayerConsole(`Creating mpegts.js player with config: ${JSON.stringify(playerConfig)}`);
+            directPlayer = mpegts.createPlayer(playerConfig, featureConfig);
 
             UIElements.directPlayerContainer.classList.remove('hidden');
             UIElements.directStopBtn.classList.remove('hidden');
             UIElements.directPlayBtn.classList.add('hidden');
             
-            directPlayer.attachMediaElement(UIElements.directVideoElement);
-            
-            // **FIX**: Enhanced error listener for more detailed feedback.
+            // **DEBUG**: Attach extensive event listeners for debugging
             directPlayer.on(mpegts.Events.ERROR, (errorType, errorDetail, errorInfo) => {
                 console.error('[DirectPlayer] MPEGTS Error:', errorType, errorDetail, errorInfo);
                 let errorMessage = `Player Error: ${errorType} - ${errorDetail}.`;
@@ -240,19 +255,41 @@ async function playDirectStream(url) {
                     errorMessage += ` (Code: ${errorInfo.code}, Msg: ${errorInfo.msg})`;
                 }
                 logToPlayerConsole(errorMessage, true);
-                // On a network error, it's often best to stop and let the user retry.
                 if (errorType === mpegts.ErrorTypes.NETWORK_ERROR) {
                     logToPlayerConsole("Stream terminated due to network error.", true);
                     stopAndCleanupDirectPlayer();
                 }
             });
 
+            directPlayer.on(mpegts.Events.MEDIA_INFO, (mediaInfo) => {
+                logToPlayerConsole(`Media Info received: ${JSON.stringify(mediaInfo)}`);
+            });
+            
+            directPlayer.on(mpegts.Events.STATISTICS_INFO, (stats) => {
+                // This is very noisy, so we log it to the browser console instead of the UI console.
+                console.log('[DirectPlayer Stats]', stats);
+            });
+
+            directPlayer.on(mpegts.Events.LOADING_COMPLETE, () => {
+                logToPlayerConsole('Warning: Loading complete event fired for a live stream. The source may have ended.', true);
+                stopAndCleanupDirectPlayer();
+            });
+
+            const videoEl = UIElements.directVideoElement;
+            videoEl.addEventListener('playing', () => logToPlayerConsole('Video Event: playing'));
+            videoEl.addEventListener('waiting', () => logToPlayerConsole('Video Event: waiting (buffering)'));
+            videoEl.addEventListener('stalled', () => logToPlayerConsole('Video Event: stalled (network issue)', true));
+            videoEl.addEventListener('error', () => logToPlayerConsole(`Video Element Error: Code ${videoEl.error.code}, Message: ${videoEl.error.message}`, true));
+            
+            logToPlayerConsole('Attaching media element...');
+            directPlayer.attachMediaElement(videoEl);
+            
             logToPlayerConsole('Player instance created. Loading media...');
             directPlayer.load();
 
-            // The play() method returns a Promise that can reject.
+            logToPlayerConsole('Calling player.play()...');
             await directPlayer.play();
-            logToPlayerConsole('Playback started successfully.');
+            logToPlayerConsole('player.play() promise resolved. Playback should be active.');
 
         } catch (err) {
             const errorMsg = `Could not play the stream. The format may be unsupported or the URL is invalid.`;
@@ -317,3 +354,4 @@ export function setupDirectPlayerEventListeners() {
         }
     });
 }
+
