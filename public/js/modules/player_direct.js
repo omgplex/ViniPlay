@@ -8,7 +8,8 @@
 // MODIFIED: Import guideState and saveUserSetting to manage server-side settings.
 import { UIElements, guideState } from './state.js';
 import { showNotification } from './ui.js';
-import { saveUserSetting } from './api.js';
+// VINI-MOD: Import the new stopDirectStream function
+import { saveUserSetting, stopDirectStream } from './api.js';
 
 let directPlayer = null; // To hold the mpegts.js instance
 // REMOVED: localStorage keys are no longer needed as data is now stored on the server.
@@ -125,7 +126,10 @@ export function initDirectPlayer() {
 /**
  * Stops the current stream and cleans up the mpegts.js player instance and UI.
  */
-function stopAndCleanupDirectPlayer() {
+async function stopAndCleanupDirectPlayer() {
+    // VINI-MOD: Explicitly tell the server to stop the ffmpeg process first.
+    await stopDirectStream();
+
     if (directPlayer) {
         console.log('[DirectPlayer] Destroying direct player instance.');
         directPlayer.destroy();
@@ -145,9 +149,9 @@ function stopAndCleanupDirectPlayer() {
 /**
  * Cleans up the direct player when the user navigates away from the tab.
  */
-export function cleanupDirectPlayer() {
+export async function cleanupDirectPlayer() {
     console.log('[DirectPlayer] Cleaning up direct player due to navigation.');
-    stopAndCleanupDirectPlayer();
+    await stopAndCleanupDirectPlayer();
 }
 
 /**
@@ -285,3 +289,4 @@ export function setupDirectPlayerEventListeners() {
         }
     });
 }
+
