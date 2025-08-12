@@ -224,7 +224,13 @@ async function playDirectStream(url) {
     if (mpegts.isSupported()) {
         try {
             const playerConfig = { type: 'mse', isLive: true, url: streamUrlToPlay };
-            const featureConfig = { enableStashBuffer: false, lazyLoad: false, liveBufferLatencyChasing: true };
+            // **FINAL FIX**: Increased buffer size slightly to help with intermittent streams.
+            const featureConfig = { 
+                enableStashBuffer: true, 
+                stashInitialSize: 384, // Increased from default
+                lazyLoad: false, 
+                liveBufferLatencyChasing: true 
+            };
             
             logToPlayerConsole(`Creating mpegts.js player with config: ${JSON.stringify(playerConfig)}`);
             directPlayer = mpegts.createPlayer(playerConfig, featureConfig);
@@ -233,7 +239,6 @@ async function playDirectStream(url) {
             UIElements.directStopBtn.classList.remove('hidden');
             UIElements.directPlayBtn.classList.add('hidden');
             
-            // **VINI-FIX**: Define and store listener functions
             playerEventListeners.onError = (type, detail, info) => {
                 console.error('[DirectPlayer] MPEGTS Error:', type, detail, info);
                 let msg = `Player Error: ${type} - ${detail}.`;
@@ -251,14 +256,15 @@ async function playDirectStream(url) {
                 stopAndCleanupDirectPlayer();
             };
 
-            // Attach player listeners
             directPlayer.on(mpegts.Events.ERROR, playerEventListeners.onError);
             directPlayer.on(mpegts.Events.MEDIA_INFO, playerEventListeners.onMediaInfo);
             directPlayer.on(mpegts.Events.STATISTICS_INFO, playerEventListeners.onStatisticsInfo);
             directPlayer.on(mpegts.Events.LOADING_COMPLETE, playerEventListeners.onLoadingComplete);
 
             const videoEl = UIElements.directVideoElement;
-            // **VINI-FIX**: Define, store, and attach video element listeners
+            // **FINAL FIX**: Mute the video element by default to encourage autoplay.
+            videoEl.muted = true;
+            
             videoEventListeners.onPlaying = () => logToPlayerConsole('Video Event: playing');
             videoEventListeners.onWaiting = () => logToPlayerConsole('Video Event: waiting (buffering)');
             videoEventListeners.onStalled = () => logToPlayerConsole('Video Event: stalled (network issue)', true);
