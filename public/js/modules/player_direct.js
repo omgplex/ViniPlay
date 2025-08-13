@@ -5,15 +5,12 @@
  * and a logging console for better error feedback.
  */
 
-// MODIFIED: Import guideState and saveUserSetting to manage server-side settings.
-import { UIElements, guideState } from './state.js';
+// MODIFIED: Import appState to use the centralized player instance.
+import { UIElements, guideState, appState } from './state.js';
 import { showNotification } from './ui.js';
 import { saveUserSetting } from './api.js';
 
-let directPlayer = null; // To hold the mpegts.js instance
-// REMOVED: localStorage keys are no longer needed as data is now stored on the server.
-// const RECENT_LINKS_KEY = 'viniplay_recent_direct_links';
-// const DIRECT_PLAY_KEY = 'vini-direct-play-enabled';
+// REMOVED: The local directPlayer variable is no longer needed. We will use appState.player.
 const MAX_RECENT_LINKS = 10;
 
 // --- Helper Functions ---
@@ -107,7 +104,8 @@ function renderRecentLinks() {
  */
 export function initDirectPlayer() {
     console.log('[DirectPlayer] Initializing Direct Player page.');
-    if (directPlayer) {
+    // MODIFIED: Check the global appState for an active player
+    if (isDirectPlayerActive()) {
         stopAndCleanupDirectPlayer();
     }
     if (UIElements.directPlayerForm) {
@@ -123,23 +121,25 @@ export function initDirectPlayer() {
 }
 
 /**
- * **MODIFIED: This function now includes the full cleanup sequence.**
+ * **MODIFIED: This function now uses the global appState.player instance.**
  * Stops the current stream and cleans up the mpegts.js player instance and UI.
  * This more robust sequence ensures the stream connection is fully terminated.
  */
 function stopAndCleanupDirectPlayer() {
-    if (directPlayer) {
-        console.log('[DirectPlayer] Cleaning up and destroying direct player instance.');
+    // MODIFIED: Operate on the global appState.player instance
+    if (appState.player) {
+        console.log('[DirectPlayer] Cleaning up and destroying the global player instance.');
         try {
             // This is the full, robust cleanup sequence.
-            directPlayer.pause();
-            directPlayer.unload();
-            directPlayer.detachMediaElement();
-            directPlayer.destroy();
+            appState.player.pause();
+            appState.player.unload();
+            appState.player.detachMediaElement();
+            appState.player.destroy();
         } catch (e) {
             console.error('[DirectPlayer] Error during player cleanup:', e);
         } finally {
-            directPlayer = null;
+            // MODIFIED: Nullify the global instance
+            appState.player = null;
         }
     }
     if (UIElements.directVideoElement) {
@@ -162,11 +162,12 @@ export function cleanupDirectPlayer() {
 }
 
 /**
+ * **MODIFIED: This function now checks the global appState.player instance.**
  * Checks if a stream is currently active on the direct player page.
  * @returns {boolean} True if a player instance exists.
  */
 export function isDirectPlayerActive() {
-    return !!directPlayer;
+    return !!appState.player;
 }
 
 /**
@@ -207,7 +208,8 @@ function playDirectStream(url) {
 
     if (mpegts.isSupported()) {
         try {
-            directPlayer = mpegts.createPlayer({
+            // MODIFIED: Create the player instance on the global appState
+            appState.player = mpegts.createPlayer({
                 type: 'mse',
                 isLive: true,
                 url: streamUrlToPlay
@@ -217,15 +219,16 @@ function playDirectStream(url) {
             UIElements.directStopBtn.classList.remove('hidden');
             UIElements.directPlayBtn.classList.add('hidden');
             
-            directPlayer.attachMediaElement(UIElements.directVideoElement);
+            // MODIFIED: Use the global player instance
+            appState.player.attachMediaElement(UIElements.directVideoElement);
             
-            directPlayer.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
+            appState.player.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
                 console.error('[DirectPlayer] MPEGTS Error:', errorType, errorDetail);
                 logToPlayerConsole(`Error: ${errorType} - ${errorDetail}`, true);
             });
 
-            directPlayer.load();
-            directPlayer.play().catch((err) => {
+            appState.player.load();
+            appState.player.play().catch((err) => {
                 const errorMsg = `Could not play the stream. Please check the URL and console log for details.`;
                 console.error("[DirectPlayer] Player.play() caught an error:", err);
                 logToPlayerConsole(errorMsg, true);
@@ -296,3 +299,4 @@ export function setupDirectPlayerEventListeners() {
         }
     });
 }
+
