@@ -261,14 +261,16 @@ export async function clearPastNotifications() {
 }
 
 /**
- * NEW: Sends a request to the server to explicitly stop the currently running stream for the user.
+ * NEW: Sends a request to the server to explicitly stop a stream.
+ * @param {string} streamUrl - The URL of the stream to stop.
  * @returns {Promise<boolean>} - True on success, false on failure.
  */
-export async function stopStream() {
+export async function stopStream(streamUrl) {
     console.log('[API] Sending request to stop the current stream on the server.');
     const res = await apiFetch('/api/stream/stop', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: streamUrl })
     });
-    // We only care if the request was successful, not the response body.
     return res && res.ok;
 }
