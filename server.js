@@ -1383,10 +1383,8 @@ app.get('/stream', requireAuth, (req, res) => {
         }
         req.session.activeStreamPid = null;
         req.session.activeStreamUrl = null;
-    } else if (req.session.activeStreamPid) {
+    } else if (req.session.activeStreamPid && req.session.activeStreamUrl === req.query.url) {
         // If it's the same URL (likely an HLS segment request), do nothing and let the existing process handle it.
-        // We don't pipe the response here because the original response is already handling that.
-        // This effectively ignores the subsequent requests for the same m3u8, preventing orphan processes.
         console.log(`[STREAM] HLS segment request for existing stream. Ignoring request to spawn new process.`);
         return; // IMPORTANT: Exit here to prevent spawning a new process
     }
