@@ -29,11 +29,15 @@ let notificationCheckInterval = null;
 const sourceRefreshTimers = new Map(); // FIXED: Initialize sourceRefreshTimers here
 
 // --- NEW: For Server-Sent Events (SSE) ---
-const sseClients = new Map(); 
+const sseClients = new Map();
 
 // --- NEW: DVR State ---
 const activeDvrJobs = new Map(); // Stores active node-schedule jobs
 const runningFFmpegProcesses = new Map(); // Stores PIDs of running ffmpeg recordings
+
+// --- NEW: Active Stream Management ---
+// Stores active FFMPEG processes for a given stream URL, along with a reference count.
+const activeStreamProcesses = new Map();
 
 // --- Configuration ---
 const DATA_DIR = '/data';
@@ -1331,6 +1335,11 @@ app.delete('/api/data', requireAuth, requireAdmin, (req, res) => {
         sourceRefreshTimers.clear();
         for (const job of activeDvrJobs.values()) job.cancel();
         activeDvrJobs.clear();
+        // FIXED: Now also kill active streams from the global map
+        for (const { process: ffmpegProcess } of activeStreamProcesses.values()) {
+             try { ffmpegProcess.kill('SIGKILL'); } catch (e) {}
+        }
+        activeStreamProcesses.clear();
         for (const pid of runningFFmpegProcesses.values()) {
             try { process.kill(pid, 'SIGKILL'); } catch (e) {}
         }
@@ -1373,25 +1382,47 @@ app.delete('/api/data', requireAuth, requireAdmin, (req, res) => {
 
 
 app.get('/stream', requireAuth, (req, res) => {
-    // --- FINAL FIX: Kill existing stream ONLY if the URL is different ---
-    if (req.session.activeStreamPid && req.session.activeStreamUrl !== req.query.url) {
-        console.log(`[STREAM] User ${req.session.userId} is switching streams. Old URL: ${req.session.activeStreamUrl}, New URL: ${req.query.url}. Terminating old process (PID: ${req.session.activeStreamPid}).`);
-        try {
-            process.kill(req.session.activeStreamPid, 'SIGKILL');
-        } catch (e) {
-            console.warn(`[STREAM] Could not kill old process (PID: ${req.session.activeStreamPid}). It might have already exited. Error: ${e.message}`);
-        }
-        req.session.activeStreamPid = null;
-        req.session.activeStreamUrl = null;
-    } else if (req.session.activeStreamPid && req.session.activeStreamUrl === req.query.url) {
-        // If it's the same URL (likely an HLS segment request), do nothing and let the existing process handle it.
-        console.log(`[STREAM] HLS segment request for existing stream. Ignoring request to spawn new process.`);
-        return; // IMPORTANT: Exit here to prevent spawning a new process
+    const streamUrl = req.query.url;
+    const profileId = req.query.profileId;
+    const userAgentId = req.query.userAgentId;
+    const userId = req.session.userId;
+    
+    // Check if the stream is already active
+    const activeStreamInfo = activeStreamProcesses.get(streamUrl);
+    
+    if (activeStreamInfo) {
+        // Stream is already active, increment reference count
+        activeStreamInfo.references++;
+        activeStreamInfo.lastAccess = Date.now();
+        console.log(`[STREAM] Existing stream requested. URL: ${streamUrl}. New ref count: ${activeStreamInfo.references}.`);
+        activeStreamInfo.process.stdout.pipe(res);
+        // Bind the connection close handler to decrement the count
+        req.on('close', () => {
+            console.log(`[STREAM] Client closed connection for existing stream ${streamUrl}. Decrementing ref count.`);
+            activeStreamInfo.references--;
+            activeStreamInfo.lastAccess = Date.now();
+            if (activeStreamInfo.references <= 0) {
+                // If this was the last client, gracefully kill the process after a timeout
+                console.log(`[STREAM] Last client disconnected. Scheduling graceful termination for PID: ${activeStreamInfo.process.pid}.`);
+                setTimeout(() => {
+                    const latestInfo = activeStreamProcesses.get(streamUrl);
+                    if (latestInfo && latestInfo.references <= 0) {
+                        try {
+                           latestInfo.process.kill('SIGINT');
+                           activeStreamProcesses.delete(streamUrl);
+                           console.log(`[STREAM] Gracefully terminated FFMPEG process for ${streamUrl}.`);
+                        } catch (e) {
+                           console.warn(`[STREAM] Could not kill process for ${streamUrl}. It may have already exited.`);
+                        }
+                    }
+                }, 5000); // Wait 5 seconds before killing to allow for short disconnects/reconnects
+            }
+        });
+        return;
     }
 
-
-    const { url: streamUrl, profileId, userAgentId } = req.query;
-    console.log(`[STREAM] Stream request received. URL: ${streamUrl}, Profile ID: ${profileId}, User Agent ID: ${userAgentId}`);
+    // Stream is not active, proceed to spawn new process
+    console.log(`[STREAM] New stream request. URL: ${streamUrl}, Profile ID: ${profileId}, User Agent ID: ${userAgentId}`);
 
     if (!streamUrl) {
         console.warn('[STREAM] Missing stream URL in request.');
@@ -1430,13 +1461,15 @@ app.get('/stream', requireAuth, (req, res) => {
     console.log(`[STREAM] FFmpeg command args: ${args.join(' ')}`);
     const ffmpeg = spawn('ffmpeg', args);
 
-    // Store the PID and the URL in the user's session
-    req.session.activeStreamPid = ffmpeg.pid;
-    req.session.activeStreamUrl = streamUrl;
-    console.log(`[STREAM] Started FFMPEG process with PID: ${ffmpeg.pid} for user ${req.session.userId} for URL: ${streamUrl}. Storing in session.`);
-
-    res.setHeader('Content-Type', 'video/mp2t');
+    // Store the process in our global map
+    activeStreamProcesses.set(streamUrl, {
+        process: ffmpeg,
+        references: 1,
+        lastAccess: Date.now()
+    });
+    console.log(`[STREAM] Started FFMPEG process with PID: ${ffmpeg.pid} for user ${userId} for URL: ${streamUrl}. Storing in global map.`);
     
+    res.setHeader('Content-Type', 'video/mp2t');
     ffmpeg.stdout.pipe(res);
     
     ffmpeg.stderr.on('data', (data) => {
@@ -1444,15 +1477,8 @@ app.get('/stream', requireAuth, (req, res) => {
     });
 
     ffmpeg.on('close', (code) => {
-        if (code !== 0) {
-            console.log(`[STREAM] ffmpeg process for ${streamUrl} exited with code ${code}`);
-        } else {
-            console.log(`[STREAM] ffmpeg process for ${streamUrl} exited gracefully.`);
-        }
-        if (req.session.activeStreamPid === ffmpeg.pid) {
-            req.session.activeStreamPid = null;
-            req.session.activeStreamUrl = null;
-        }
+        console.log(`[STREAM] ffmpeg process for ${streamUrl} exited with code ${code}`);
+        activeStreamProcesses.delete(streamUrl);
         if (!res.headersSent) {
              res.status(500).send('FFmpeg stream ended unexpectedly or failed to start.');
         } else {
@@ -1462,42 +1488,63 @@ app.get('/stream', requireAuth, (req, res) => {
 
     ffmpeg.on('error', (err) => {
         console.error(`[STREAM] Failed to start ffmpeg process for ${streamUrl}: ${err.message}`);
-        if (req.session.activeStreamPid === ffmpeg.pid) {
-            req.session.activeStreamPid = null;
-            req.session.activeStreamUrl = null;
-        }
+        activeStreamProcesses.delete(streamUrl);
         if (!res.headersSent) {
             res.status(500).send('Failed to start streaming service. Check server logs.');
         }
     });
-
+    
+    // FIXED: Reworked the connection close handler to use the reference count
     req.on('close', () => {
-        console.log(`[STREAM] Client closed connection for ${streamUrl}. Killing ffmpeg process (PID: ${ffmpeg.pid}).`);
-        if (req.session.activeStreamPid === ffmpeg.pid) {
-            req.session.activeStreamPid = null;
-            req.session.activeStreamUrl = null;
+        const info = activeStreamProcesses.get(streamUrl);
+        if (info) {
+             console.log(`[STREAM] Client closed connection for new stream ${streamUrl}. Decrementing ref count.`);
+             info.references--;
+             info.lastAccess = Date.now();
+             if (info.references <= 0) {
+                console.log(`[STREAM] Last client disconnected. Scheduling graceful termination for PID: ${info.process.pid}.`);
+                setTimeout(() => {
+                    const latestInfo = activeStreamProcesses.get(streamUrl);
+                    if (latestInfo && latestInfo.references <= 0) {
+                         try {
+                           latestInfo.process.kill('SIGINT');
+                           activeStreamProcesses.delete(streamUrl);
+                           console.log(`[STREAM] Gracefully terminated FFMPEG process for ${streamUrl}.`);
+                        } catch (e) {
+                           console.warn(`[STREAM] Could not kill process for ${streamUrl}. It may have already exited.`);
+                        }
+                    }
+                }, 5000);
+            }
+        } else {
+            // Fallback for a process that died unexpectedly
+            console.log(`[STREAM] Client closed connection for ${streamUrl}, but no process was found in the map.`);
         }
-        ffmpeg.kill('SIGKILL');
     });
 });
 
 // --- NEW: API Endpoint to explicitly stop a stream ---
 app.post('/api/stream/stop', requireAuth, (req, res) => {
-    const pid = req.session.activeStreamPid;
-    if (pid) {
-        console.log(`[STREAM_STOP_API] Received request to stop stream for user ${req.session.userId}. Terminating PID: ${pid}`);
+    // The client now sends the stream URL to be stopped
+    const { url: streamUrl } = req.body;
+    if (!streamUrl) {
+        return res.status(400).json({ error: "Stream URL is required to stop the stream." });
+    }
+
+    const activeStreamInfo = activeStreamProcesses.get(streamUrl);
+
+    if (activeStreamInfo) {
+        console.log(`[STREAM_STOP_API] Received request to stop stream for user ${req.session.userId}. Terminating URL: ${streamUrl}`);
         try {
-            process.kill(pid, 'SIGKILL');
-            console.log(`[STREAM_STOP_API] Successfully terminated process with PID: ${pid}`);
+            activeStreamInfo.process.kill('SIGKILL');
+            activeStreamProcesses.delete(streamUrl);
+            console.log(`[STREAM_STOP_API] Successfully terminated process for URL: ${streamUrl}`);
         } catch (e) {
-            console.warn(`[STREAM_STOP_API] Could not kill process (PID: ${pid}). It might have already exited. Error: ${e.message}`);
-        } finally {
-            req.session.activeStreamPid = null;
-            req.session.activeStreamUrl = null;
+            console.warn(`[STREAM_STOP_API] Could not kill process for URL: ${streamUrl}. It might have already exited. Error: ${e.message}`);
         }
-        res.json({ success: true, message: `Stream process ${pid} terminated.` });
+        res.json({ success: true, message: `Stream process for ${streamUrl} terminated.` });
     } else {
-        console.log(`[STREAM_STOP_API] Received stop request for user ${req.session.userId}, but no active stream was found in their session.`);
+        console.log(`[STREAM_STOP_API] Received stop request for user ${req.session.userId}, but no active stream was found for URL: ${streamUrl}`);
         res.json({ success: true, message: 'No active stream to stop.' });
     }
 });
