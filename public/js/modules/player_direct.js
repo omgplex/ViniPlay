@@ -11,6 +11,7 @@ import { showNotification } from './ui.js';
 import { saveUserSetting, stopStream } from './api.js';
 
 const MAX_RECENT_LINKS = 10;
+let currentStreamUrl = null; // NEW: Track the URL of the current stream
 
 // --- Helper Functions ---
 
@@ -96,6 +97,7 @@ function renderRecentLinks() {
  */
 export function initDirectPlayer() {
     console.log('[DEBUG] initDirectPlayer: Initializing Direct Player page.');
+    // Check if the player is active and perform cleanup if necessary
     if (isDirectPlayerActive()) {
         console.log('[DEBUG] initDirectPlayer: An active player was found. Cleaning it up.');
         stopAndCleanupDirectPlayer();
@@ -115,10 +117,15 @@ export function initDirectPlayer() {
  */
 async function stopAndCleanupDirectPlayer() {
     console.log('[DEBUG] stopAndCleanupDirectPlayer: Function called.');
-    // Explicitly tell the server to stop the stream
-    console.log('[DEBUG] stopAndCleanupDirectPlayer: Calling stopStream() API.');
-    await stopStream();
-    console.log('[DEBUG] stopAndCleanupDirectPlayer: stopStream() API call complete.');
+
+    // If a stream is active, explicitly tell the server to stop it
+    if (currentStreamUrl) {
+         console.log(`[DEBUG] stopAndCleanupDirectPlayer: Calling stopStream() API for URL: ${currentStreamUrl}.`);
+         await stopStream(currentStreamUrl);
+         console.log('[DEBUG] stopAndCleanupDirectPlayer: stopStream() API call complete.');
+    } else {
+        console.log('[DEBUG] stopAndCleanupDirectPlayer: No currentStreamUrl to stop.');
+    }
 
     if (appState.player) {
         console.log('[DEBUG] stopAndCleanupDirectPlayer: appState.player exists. Proceeding with client-side cleanup.');
@@ -135,7 +142,8 @@ async function stopAndCleanupDirectPlayer() {
             console.error('[DEBUG] stopAndCleanupDirectPlayer: Error during local player cleanup:', e);
         } finally {
             appState.player = null;
-            console.log('[DEBUG] stopAndCleanupDirectPlayer: Set appState.player to null.');
+            currentStreamUrl = null; // Clear the tracked URL
+            console.log('[DEBUG] stopAndCleanupDirectPlayer: Set appState.player and currentStreamUrl to null.');
         }
     } else {
         console.log('[DEBUG] stopAndCleanupDirectPlayer: No appState.player instance to clean up.');
@@ -165,7 +173,8 @@ export function cleanupDirectPlayer() {
  * @returns {boolean} True if a player instance exists in the global state.
  */
 export function isDirectPlayerActive() {
-    const isActive = !!appState.player;
+    // Check if both the client-side player instance and the tracked URL exist
+    const isActive = !!appState.player && !!currentStreamUrl;
     console.log(`[DEBUG] isDirectPlayerActive check: ${isActive}`);
     return isActive;
 }
@@ -177,6 +186,9 @@ export function isDirectPlayerActive() {
 function playDirectStream(url) {
     console.log(`[DEBUG] playDirectStream: Called with URL: ${url}`);
     
+    // First, stop any existing stream
+    stopAndCleanupDirectPlayer();
+
     const consoleEl = UIElements.directPlayerConsole;
     if (consoleEl) {
         consoleEl.innerHTML = ''; // Clear previous logs
@@ -202,18 +214,15 @@ function playDirectStream(url) {
     } else {
         logToPlayerConsole('Direct Play is ON. Connecting directly to stream.');
     }
+    
+    // Set the current stream URL for tracking and stopping purposes.
+    currentStreamUrl = url;
 
     addRecentLink(url);
     renderRecentLinks();
 
     if (mpegts.isSupported()) {
         try {
-            if (appState.player) {
-                console.log('[DEBUG] playDirectStream: An existing player was found in appState. Destroying it before creating a new one.');
-                appState.player.destroy();
-                appState.player = null;
-            }
-
             console.log(`[DEBUG] playDirectStream: Creating new mpegts.js player for URL: ${streamUrlToPlay}`);
             const newPlayer = mpegts.createPlayer({
                 type: url.includes('.m3u8') ? 'mse' : 'mpegts', // Auto-detect type based on extension
@@ -233,6 +242,7 @@ function playDirectStream(url) {
             appState.player.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
                 console.error('[DirectPlayer] MPEGTS Error:', errorType, errorDetail);
                 logToPlayerConsole(`Error: ${errorType} - ${errorDetail}`, true);
+                stopAndCleanupDirectPlayer();
             });
 
             console.log('[DEBUG] playDirectStream: Calling player.load().');
