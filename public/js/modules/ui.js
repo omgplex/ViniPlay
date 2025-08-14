@@ -295,7 +295,7 @@ export const closeMobileMenu = () => {
  */
 export const handleRouteChange = () => {
     const wasMultiView = currentPage.startsWith('/multiview');
-    const wasPlayer = currentPage.startsWith('/player'); // NEW: Check if the previous page was the Player
+    const wasPlayer = currentPage.startsWith('/player');
     const path = window.location.pathname;
     
     // If leaving multiview and players are active, ask for confirmation.
@@ -318,14 +318,14 @@ export const handleRouteChange = () => {
         }
     }
 
-    // NEW: If leaving the direct player and a stream is active, ask for confirmation.
+    // MODIFIED: Logic now correctly calls the server-aware cleanup function.
     if (wasPlayer && !path.startsWith('/player')) {
         if (isDirectPlayerActive()) {
             showConfirm(
                 'Leave Player?',
                 'Leaving this page will stop the current stream. Are you sure?',
                 () => {
-                    cleanupDirectPlayer();
+                    cleanupDirectPlayer(); // This now handles server-side termination
                     proceedWithRouteChange(path);
                 }
             );
