@@ -95,8 +95,9 @@ function renderRecentLinks() {
  * Initializes the Direct Player page.
  */
 export function initDirectPlayer() {
-    console.log('[DirectPlayer] Initializing Direct Player page.');
+    console.log('[DEBUG] initDirectPlayer: Initializing Direct Player page.');
     if (isDirectPlayerActive()) {
+        console.log('[DEBUG] initDirectPlayer: An active player was found. Cleaning it up.');
         stopAndCleanupDirectPlayer();
     }
     if (UIElements.directPlayerForm) {
@@ -113,21 +114,31 @@ export function initDirectPlayer() {
  * Stops the current stream and cleans up the player instance and UI.
  */
 async function stopAndCleanupDirectPlayer() {
+    console.log('[DEBUG] stopAndCleanupDirectPlayer: Function called.');
     // Explicitly tell the server to stop the stream
+    console.log('[DEBUG] stopAndCleanupDirectPlayer: Calling stopStream() API.');
     await stopStream();
+    console.log('[DEBUG] stopAndCleanupDirectPlayer: stopStream() API call complete.');
 
     if (appState.player) {
-        console.log('[DirectPlayer] Cleaning up local player instance.');
+        console.log('[DEBUG] stopAndCleanupDirectPlayer: appState.player exists. Proceeding with client-side cleanup.');
         try {
+            console.log('[DEBUG] stopAndCleanupDirectPlayer: Pausing player.');
             appState.player.pause();
+            console.log('[DEBUG] stopAndCleanupDirectPlayer: Unloading player.');
             appState.player.unload();
+            console.log('[DEBUG] stopAndCleanupDirectPlayer: Detaching media element.');
             appState.player.detachMediaElement();
+            console.log('[DEBUG] stopAndCleanupDirectPlayer: Destroying player.');
             appState.player.destroy();
         } catch (e) {
-            console.error('[DirectPlayer] Error during local player cleanup:', e);
+            console.error('[DEBUG] stopAndCleanupDirectPlayer: Error during local player cleanup:', e);
         } finally {
             appState.player = null;
+            console.log('[DEBUG] stopAndCleanupDirectPlayer: Set appState.player to null.');
         }
+    } else {
+        console.log('[DEBUG] stopAndCleanupDirectPlayer: No appState.player instance to clean up.');
     }
     if (UIElements.directVideoElement) {
         UIElements.directVideoElement.src = "";
@@ -138,13 +149,14 @@ async function stopAndCleanupDirectPlayer() {
     UIElements.directPlayerConsoleContainer.classList.add('hidden');
     UIElements.directStopBtn.classList.add('hidden');
     UIElements.directPlayBtn.classList.remove('hidden');
+    console.log('[DEBUG] stopAndCleanupDirectPlayer: UI has been reset.');
 }
 
 /**
  * Cleans up the direct player when the user navigates away from the tab.
  */
 export function cleanupDirectPlayer() {
-    console.log('[DirectPlayer] Cleaning up direct player due to navigation.');
+    console.log('[DEBUG] cleanupDirectPlayer: Cleaning up direct player due to navigation.');
     stopAndCleanupDirectPlayer();
 }
 
@@ -153,7 +165,9 @@ export function cleanupDirectPlayer() {
  * @returns {boolean} True if a player instance exists in the global state.
  */
 export function isDirectPlayerActive() {
-    return !!appState.player;
+    const isActive = !!appState.player;
+    console.log(`[DEBUG] isDirectPlayerActive check: ${isActive}`);
+    return isActive;
 }
 
 /**
@@ -161,10 +175,8 @@ export function isDirectPlayerActive() {
  * @param {string} url The URL of the .ts or .m3u8 stream.
  */
 function playDirectStream(url) {
-    // **FIX:** The call to stopAndCleanupDirectPlayer() was removed from here
-    // to prevent the race condition. Cleanup is now handled only by explicit
-    // user actions (stop button, tab switch).
-
+    console.log(`[DEBUG] playDirectStream: Called with URL: ${url}`);
+    
     const consoleEl = UIElements.directPlayerConsole;
     if (consoleEl) {
         consoleEl.innerHTML = ''; // Clear previous logs
@@ -196,22 +208,26 @@ function playDirectStream(url) {
 
     if (mpegts.isSupported()) {
         try {
-            // If a player already exists, destroy it before creating a new one.
             if (appState.player) {
+                console.log('[DEBUG] playDirectStream: An existing player was found in appState. Destroying it before creating a new one.');
                 appState.player.destroy();
                 appState.player = null;
             }
 
-            appState.player = mpegts.createPlayer({
-                type: 'mse',
+            console.log(`[DEBUG] playDirectStream: Creating new mpegts.js player for URL: ${streamUrlToPlay}`);
+            const newPlayer = mpegts.createPlayer({
+                type: url.includes('.m3u8') ? 'mse' : 'mpegts', // Auto-detect type based on extension
                 isLive: true,
                 url: streamUrlToPlay
             });
+            appState.player = newPlayer; // Assign to global state immediately
+            console.log('[DEBUG] playDirectStream: New player instance created and assigned to appState.player.');
 
             UIElements.directPlayerContainer.classList.remove('hidden');
             UIElements.directStopBtn.classList.remove('hidden');
             UIElements.directPlayBtn.classList.add('hidden');
             
+            console.log('[DEBUG] playDirectStream: Attaching media element.');
             appState.player.attachMediaElement(UIElements.directVideoElement);
             
             appState.player.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
@@ -219,15 +235,17 @@ function playDirectStream(url) {
                 logToPlayerConsole(`Error: ${errorType} - ${errorDetail}`, true);
             });
 
+            console.log('[DEBUG] playDirectStream: Calling player.load().');
             appState.player.load();
+            
+            console.log('[DEBUG] playDirectStream: Calling player.play().');
             appState.player.play().catch((err) => {
-                // Ignore AbortError as it's expected if the user stops the stream quickly
                 if (err.name === 'AbortError') {
-                    console.warn('[DirectPlayer] Playback was aborted, likely by user action.');
+                    console.warn('[DEBUG] playDirectStream: Playback was aborted. This is expected if the user clicks stop or navigates away very quickly.');
                     return;
                 }
                 const errorMsg = `Could not play the stream. Please check the URL and console log for details.`;
-                console.error("[DirectPlayer] Player.play() caught an error:", err);
+                console.error("[DEBUG] playDirectStream: player.play() caught an error:", err);
                 logToPlayerConsole(errorMsg, true);
                 showNotification(errorMsg, true);
                 stopAndCleanupDirectPlayer();
@@ -236,7 +254,7 @@ function playDirectStream(url) {
 
         } catch (e) {
             const errorMsg = 'Failed to create player instance. Check stream URL.';
-            console.error('[DirectPlayer] Error creating player:', e);
+            console.error('[DEBUG] playDirectStream: Critical error during player creation:', e);
             logToPlayerConsole(`${errorMsg} Details: ${e.message}`, true);
             stopAndCleanupDirectPlayer();
         }
