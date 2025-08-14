@@ -1373,6 +1373,17 @@ app.delete('/api/data', requireAuth, requireAdmin, (req, res) => {
 
 
 app.get('/stream', requireAuth, (req, res) => {
+    // --- NEW: Kill any existing stream for this user session ---
+    if (req.session.activeStreamPid) {
+        console.log(`[STREAM] User ${req.session.userId} has an existing stream (PID: ${req.session.activeStreamPid}). Terminating it before starting new one.`);
+        try {
+            process.kill(req.session.activeStreamPid, 'SIGKILL');
+        } catch (e) {
+            console.warn(`[STREAM] Could not kill old process (PID: ${req.session.activeStreamPid}). It might have already exited. Error: ${e.message}`);
+        }
+        req.session.activeStreamPid = null;
+    }
+
     const { url: streamUrl, profileId, userAgentId } = req.query;
     console.log(`[STREAM] Stream request received. URL: ${streamUrl}, Profile ID: ${profileId}, User Agent ID: ${userAgentId}`);
 
@@ -1412,6 +1423,11 @@ app.get('/stream', requireAuth, (req, res) => {
 
     console.log(`[STREAM] FFmpeg command args: ${args.join(' ')}`);
     const ffmpeg = spawn('ffmpeg', args);
+
+    // --- NEW: Store the PID in the user's session ---
+    req.session.activeStreamPid = ffmpeg.pid;
+    console.log(`[STREAM] Started FFMPEG process with PID: ${ffmpeg.pid} for user ${req.session.userId}. Storing in session.`);
+
     res.setHeader('Content-Type', 'video/mp2t');
     
     ffmpeg.stdout.pipe(res);
@@ -1426,6 +1442,9 @@ app.get('/stream', requireAuth, (req, res) => {
         } else {
             console.log(`[STREAM] ffmpeg process for ${streamUrl} exited gracefully.`);
         }
+        if (req.session.activeStreamPid === ffmpeg.pid) {
+            req.session.activeStreamPid = null;
+        }
         if (!res.headersSent) {
              res.status(500).send('FFmpeg stream ended unexpectedly or failed to start.');
         } else {
@@ -1435,6 +1454,9 @@ app.get('/stream', requireAuth, (req, res) => {
 
     ffmpeg.on('error', (err) => {
         console.error(`[STREAM] Failed to start ffmpeg process for ${streamUrl}: ${err.message}`);
+        if (req.session.activeStreamPid === ffmpeg.pid) {
+            req.session.activeStreamPid = null;
+        }
         if (!res.headersSent) {
             res.status(500).send('Failed to start streaming service. Check server logs.');
         }
@@ -1442,9 +1464,34 @@ app.get('/stream', requireAuth, (req, res) => {
 
     req.on('close', () => {
         console.log(`[STREAM] Client closed connection for ${streamUrl}. Killing ffmpeg process (PID: ${ffmpeg.pid}).`);
+        // --- NEW: Clear the PID from the session on client disconnect ---
+        if (req.session.activeStreamPid === ffmpeg.pid) {
+            req.session.activeStreamPid = null;
+        }
         ffmpeg.kill('SIGKILL');
     });
 });
+
+// --- NEW: API Endpoint to explicitly stop a stream ---
+app.post('/api/stream/stop', requireAuth, (req, res) => {
+    const pid = req.session.activeStreamPid;
+    if (pid) {
+        console.log(`[STREAM_STOP_API] Received request to stop stream for user ${req.session.userId}. Terminating PID: ${pid}`);
+        try {
+            process.kill(pid, 'SIGKILL');
+            console.log(`[STREAM_STOP_API] Successfully terminated process with PID: ${pid}`);
+        } catch (e) {
+            console.warn(`[STREAM_STOP_API] Could not kill process (PID: ${pid}). It might have already exited. Error: ${e.message}`);
+        } finally {
+            req.session.activeStreamPid = null;
+        }
+        res.json({ success: true, message: `Stream process ${pid} terminated.` });
+    } else {
+        console.log(`[STREAM_STOP_API] Received stop request for user ${req.session.userId}, but no active stream was found in their session.`);
+        res.json({ success: true, message: 'No active stream to stop.' });
+    }
+});
+
 
 // --- Multi-View Layout API Endpoints ---
 app.get('/api/multiview/layouts', requireAuth, (req, res) => {
