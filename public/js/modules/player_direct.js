@@ -110,11 +110,10 @@ export function initDirectPlayer() {
 }
 
 /**
- * **MODIFIED: This function now explicitly stops the server stream first.**
  * Stops the current stream and cleans up the player instance and UI.
  */
 async function stopAndCleanupDirectPlayer() {
-    // --- NEW: Explicitly tell the server to stop the stream ---
+    // Explicitly tell the server to stop the stream
     await stopStream();
 
     if (appState.player) {
@@ -162,7 +161,9 @@ export function isDirectPlayerActive() {
  * @param {string} url The URL of the .ts or .m3u8 stream.
  */
 function playDirectStream(url) {
-    stopAndCleanupDirectPlayer();
+    // **FIX:** The call to stopAndCleanupDirectPlayer() was removed from here
+    // to prevent the race condition. Cleanup is now handled only by explicit
+    // user actions (stop button, tab switch).
 
     const consoleEl = UIElements.directPlayerConsole;
     if (consoleEl) {
@@ -195,6 +196,12 @@ function playDirectStream(url) {
 
     if (mpegts.isSupported()) {
         try {
+            // If a player already exists, destroy it before creating a new one.
+            if (appState.player) {
+                appState.player.destroy();
+                appState.player = null;
+            }
+
             appState.player = mpegts.createPlayer({
                 type: 'mse',
                 isLive: true,
@@ -214,6 +221,11 @@ function playDirectStream(url) {
 
             appState.player.load();
             appState.player.play().catch((err) => {
+                // Ignore AbortError as it's expected if the user stops the stream quickly
+                if (err.name === 'AbortError') {
+                    console.warn('[DirectPlayer] Playback was aborted, likely by user action.');
+                    return;
+                }
                 const errorMsg = `Could not play the stream. Please check the URL and console log for details.`;
                 console.error("[DirectPlayer] Player.play() caught an error:", err);
                 logToPlayerConsole(errorMsg, true);
@@ -280,4 +292,3 @@ export function setupDirectPlayerEventListeners() {
         }
     });
 }
-
