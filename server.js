@@ -1373,16 +1373,24 @@ app.delete('/api/data', requireAuth, requireAdmin, (req, res) => {
 
 
 app.get('/stream', requireAuth, (req, res) => {
-    // --- NEW: Kill any existing stream for this user session ---
-    if (req.session.activeStreamPid) {
-        console.log(`[STREAM] User ${req.session.userId} has an existing stream (PID: ${req.session.activeStreamPid}). Terminating it before starting new one.`);
+    // --- FINAL FIX: Kill existing stream ONLY if the URL is different ---
+    if (req.session.activeStreamPid && req.session.activeStreamUrl !== req.query.url) {
+        console.log(`[STREAM] User ${req.session.userId} is switching streams. Old URL: ${req.session.activeStreamUrl}, New URL: ${req.query.url}. Terminating old process (PID: ${req.session.activeStreamPid}).`);
         try {
             process.kill(req.session.activeStreamPid, 'SIGKILL');
         } catch (e) {
             console.warn(`[STREAM] Could not kill old process (PID: ${req.session.activeStreamPid}). It might have already exited. Error: ${e.message}`);
         }
         req.session.activeStreamPid = null;
+        req.session.activeStreamUrl = null;
+    } else if (req.session.activeStreamPid) {
+        // If it's the same URL (likely an HLS segment request), do nothing and let the existing process handle it.
+        // We don't pipe the response here because the original response is already handling that.
+        // This effectively ignores the subsequent requests for the same m3u8, preventing orphan processes.
+        console.log(`[STREAM] HLS segment request for existing stream. Ignoring request to spawn new process.`);
+        return; // IMPORTANT: Exit here to prevent spawning a new process
     }
+
 
     const { url: streamUrl, profileId, userAgentId } = req.query;
     console.log(`[STREAM] Stream request received. URL: ${streamUrl}, Profile ID: ${profileId}, User Agent ID: ${userAgentId}`);
@@ -1424,9 +1432,10 @@ app.get('/stream', requireAuth, (req, res) => {
     console.log(`[STREAM] FFmpeg command args: ${args.join(' ')}`);
     const ffmpeg = spawn('ffmpeg', args);
 
-    // --- NEW: Store the PID in the user's session ---
+    // Store the PID and the URL in the user's session
     req.session.activeStreamPid = ffmpeg.pid;
-    console.log(`[STREAM] Started FFMPEG process with PID: ${ffmpeg.pid} for user ${req.session.userId}. Storing in session.`);
+    req.session.activeStreamUrl = streamUrl;
+    console.log(`[STREAM] Started FFMPEG process with PID: ${ffmpeg.pid} for user ${req.session.userId} for URL: ${streamUrl}. Storing in session.`);
 
     res.setHeader('Content-Type', 'video/mp2t');
     
@@ -1444,6 +1453,7 @@ app.get('/stream', requireAuth, (req, res) => {
         }
         if (req.session.activeStreamPid === ffmpeg.pid) {
             req.session.activeStreamPid = null;
+            req.session.activeStreamUrl = null;
         }
         if (!res.headersSent) {
              res.status(500).send('FFmpeg stream ended unexpectedly or failed to start.');
@@ -1456,6 +1466,7 @@ app.get('/stream', requireAuth, (req, res) => {
         console.error(`[STREAM] Failed to start ffmpeg process for ${streamUrl}: ${err.message}`);
         if (req.session.activeStreamPid === ffmpeg.pid) {
             req.session.activeStreamPid = null;
+            req.session.activeStreamUrl = null;
         }
         if (!res.headersSent) {
             res.status(500).send('Failed to start streaming service. Check server logs.');
@@ -1464,9 +1475,9 @@ app.get('/stream', requireAuth, (req, res) => {
 
     req.on('close', () => {
         console.log(`[STREAM] Client closed connection for ${streamUrl}. Killing ffmpeg process (PID: ${ffmpeg.pid}).`);
-        // --- NEW: Clear the PID from the session on client disconnect ---
         if (req.session.activeStreamPid === ffmpeg.pid) {
             req.session.activeStreamPid = null;
+            req.session.activeStreamUrl = null;
         }
         ffmpeg.kill('SIGKILL');
     });
@@ -1484,6 +1495,7 @@ app.post('/api/stream/stop', requireAuth, (req, res) => {
             console.warn(`[STREAM_STOP_API] Could not kill process (PID: ${pid}). It might have already exited. Error: ${e.message}`);
         } finally {
             req.session.activeStreamPid = null;
+            req.session.activeStreamUrl = null;
         }
         res.json({ success: true, message: `Stream process ${pid} terminated.` });
     } else {
