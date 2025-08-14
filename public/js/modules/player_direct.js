@@ -5,12 +5,11 @@
  * and a logging console for better error feedback.
  */
 
-// MODIFIED: Import appState to use the centralized player instance.
 import { UIElements, guideState, appState } from './state.js';
 import { showNotification } from './ui.js';
-import { saveUserSetting } from './api.js';
+// MODIFIED: Import stopStream to explicitly kill the server process.
+import { saveUserSetting, stopStream } from './api.js';
 
-// REMOVED: The local directPlayer variable is no longer needed. We will use appState.player.
 const MAX_RECENT_LINKS = 10;
 
 // --- Helper Functions ---
@@ -33,37 +32,30 @@ function logToPlayerConsole(message, isError = false) {
 }
 
 /**
- * MODIFIED: Retrieves the list of recent links from the central guideState object,
- * which is populated from the server on login.
+ * Retrieves the list of recent links from the central guideState object.
  * @returns {Array<string>} An array of URLs.
  */
 function getRecentLinks() {
-    // Read from the central guideState, providing a default empty array if the setting doesn't exist.
     return guideState.settings.recentDirectLinks || [];
 }
 
 /**
- * MODIFIED: Saves the list of recent links to the server via the API.
+ * Saves the list of recent links to the server via the API.
  * @param {Array<string>} links - The array of URLs to save.
  */
 function saveRecentLinks(links) {
-    // Update the local state immediately for UI responsiveness.
     guideState.settings.recentDirectLinks = links;
-    // Asynchronously save the setting to the user's profile on the server.
     saveUserSetting('recentDirectLinks', links);
 }
 
 /**
- * Adds a new URL to the recent links list, ensuring it's unique and capped at the max limit.
+ * Adds a new URL to the recent links list.
  * @param {string} url - The URL to add.
  */
 function addRecentLink(url) {
     let links = getRecentLinks();
-    // Remove the link if it already exists to move it to the top
     links = links.filter(link => link !== url);
-    // Add the new link to the beginning of the array
     links.unshift(url);
-    // Trim the array to the maximum allowed length
     links = links.slice(0, MAX_RECENT_LINKS);
     saveRecentLinks(links);
 }
@@ -100,11 +92,10 @@ function renderRecentLinks() {
 // --- Player Lifecycle Functions ---
 
 /**
- * Initializes the Direct Player page. Called when the user navigates to the Player tab.
+ * Initializes the Direct Player page.
  */
 export function initDirectPlayer() {
     console.log('[DirectPlayer] Initializing Direct Player page.');
-    // MODIFIED: Check the global appState for an active player
     if (isDirectPlayerActive()) {
         stopAndCleanupDirectPlayer();
     }
@@ -112,8 +103,6 @@ export function initDirectPlayer() {
         UIElements.directPlayerForm.reset();
     }
     
-    // MODIFIED: Restore the 'Direct Play' checkbox state from the central settings object.
-    // Defaults to false if the setting has not been saved by the user yet.
     const savedDirectPlayState = guideState.settings.directPlayEnabled === true;
     UIElements.directPlayCheckbox.checked = savedDirectPlayState;
 
@@ -121,24 +110,23 @@ export function initDirectPlayer() {
 }
 
 /**
- * **MODIFIED: This function now uses the global appState.player instance.**
- * Stops the current stream and cleans up the mpegts.js player instance and UI.
- * This more robust sequence ensures the stream connection is fully terminated.
+ * **MODIFIED: This function now explicitly stops the server stream first.**
+ * Stops the current stream and cleans up the player instance and UI.
  */
-function stopAndCleanupDirectPlayer() {
-    // MODIFIED: Operate on the global appState.player instance
+async function stopAndCleanupDirectPlayer() {
+    // --- NEW: Explicitly tell the server to stop the stream ---
+    await stopStream();
+
     if (appState.player) {
-        console.log('[DirectPlayer] Cleaning up and destroying the global player instance.');
+        console.log('[DirectPlayer] Cleaning up local player instance.');
         try {
-            // This is the full, robust cleanup sequence.
             appState.player.pause();
             appState.player.unload();
             appState.player.detachMediaElement();
             appState.player.destroy();
         } catch (e) {
-            console.error('[DirectPlayer] Error during player cleanup:', e);
+            console.error('[DirectPlayer] Error during local player cleanup:', e);
         } finally {
-            // MODIFIED: Nullify the global instance
             appState.player = null;
         }
     }
@@ -162,16 +150,15 @@ export function cleanupDirectPlayer() {
 }
 
 /**
- * **MODIFIED: This function now checks the global appState.player instance.**
  * Checks if a stream is currently active on the direct player page.
- * @returns {boolean} True if a player instance exists.
+ * @returns {boolean} True if a player instance exists in the global state.
  */
 export function isDirectPlayerActive() {
     return !!appState.player;
 }
 
 /**
- * Initializes mpegts.js and plays the provided stream URL, handling direct vs. proxy.
+ * Initializes mpegts.js and plays the provided stream URL.
  * @param {string} url The URL of the .ts or .m3u8 stream.
  */
 function playDirectStream(url) {
@@ -208,7 +195,6 @@ function playDirectStream(url) {
 
     if (mpegts.isSupported()) {
         try {
-            // MODIFIED: Create the player instance on the global appState
             appState.player = mpegts.createPlayer({
                 type: 'mse',
                 isLive: true,
@@ -219,7 +205,6 @@ function playDirectStream(url) {
             UIElements.directStopBtn.classList.remove('hidden');
             UIElements.directPlayBtn.classList.add('hidden');
             
-            // MODIFIED: Use the global player instance
             appState.player.attachMediaElement(UIElements.directVideoElement);
             
             appState.player.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
@@ -268,12 +253,9 @@ export function setupDirectPlayerEventListeners() {
 
     UIElements.directStopBtn.addEventListener('click', stopAndCleanupDirectPlayer);
     
-    // MODIFIED: Save the checkbox state to the server whenever it changes.
     UIElements.directPlayCheckbox.addEventListener('change', () => {
         const isEnabled = UIElements.directPlayCheckbox.checked;
-        // Update the local state object.
         guideState.settings.directPlayEnabled = isEnabled;
-        // Save the setting to the server for the current user.
         saveUserSetting('directPlayEnabled', isEnabled);
         showNotification(`Direct Play ${isEnabled ? 'enabled' : 'disabled'}.`, false, 2000);
     });
@@ -292,7 +274,6 @@ export function setupDirectPlayerEventListeners() {
             const urlToDelete = deleteBtn.dataset.url;
             let links = getRecentLinks();
             links = links.filter(link => link !== urlToDelete);
-            // MODIFIED: saveRecentLinks now saves to the server.
             saveRecentLinks(links);
             renderRecentLinks();
             showNotification('Link removed from recents.');
