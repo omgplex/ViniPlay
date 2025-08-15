@@ -19,28 +19,70 @@ let lastLayoutBeforeHide = null; // To store layout when tab is hidden
 const MAX_PLAYERS = 9;
 
 /**
+ * NEW: A less aggressive cleanup function specifically for when the tab is hidden.
+ * It pauses players and stops server streams without destroying the player instances,
+ * which can cause race conditions with the browser's media suspension.
+ */
+async function pauseAndClearAllPlayers() {
+    // 1. Save the layout for potential restoration
+    if (grid) {
+        const gridItems = grid.getGridItems();
+        lastLayoutBeforeHide = gridItems.map(item => {
+            const node = item.gridstackNode;
+            const placeholder = item.querySelector('.player-placeholder');
+            return {
+                x: node.x,
+                y: node.y,
+                w: node.w,
+                h: node.h,
+                id: placeholder?.id || node.id,
+                channelId: placeholder?.dataset.channelId || null
+            };
+        });
+    }
+
+    // 2. Stop server-side streams and pause client-side players
+    const stopPromises = [];
+    for (const [widgetId, player] of players.entries()) {
+        // Stop the server-side ffmpeg process
+        if (playerUrls.has(widgetId)) {
+            const originalUrl = playerUrls.get(widgetId);
+            console.log(`[MultiView] Tab Hide: Sending stop request for widget ${widgetId}, URL: ${originalUrl}`);
+            stopPromises.push(stopStream(originalUrl));
+        }
+
+        // Safely detach and pause the client-side player
+        try {
+            player.pause();
+            player.detachMediaElement();
+        } catch (e) {
+            console.warn(`[MultiView] Tab Hide: Error pausing player for widget ${widgetId}. It might already be detached.`, e);
+        }
+    }
+    
+    // Wait for all server stop requests to be sent
+    await Promise.all(stopPromises);
+    console.log('[MultiView] Tab Hide: All server streams have been requested to stop.');
+
+    // 3. Clear the state and UI
+    players.clear();
+    playerUrls.clear();
+    activePlayerId = null;
+    if (grid) {
+        grid.removeAll(); // This removes the widgets from the view
+    }
+}
+
+
+/**
  * Handles the visibility change of the tab to prevent crashes.
  */
 const handleVisibilityChange = async () => {
     if (document.hidden) {
         if (isMultiViewActive()) {
-            console.log('[MultiView] Tab hidden. Saving layout and cleaning up all players.');
-            // Save the current layout
-            const gridItems = grid.getGridItems();
-            lastLayoutBeforeHide = gridItems.map(item => {
-                const node = item.gridstackNode;
-                const placeholder = item.querySelector('.player-placeholder');
-                return {
-                    x: node.x,
-                    y: node.y,
-                    w: node.w,
-                    h: node.h,
-                    id: placeholder?.id || node.id,
-                    channelId: placeholder?.dataset.channelId || null
-                };
-            });
-            // Aggressively clean up everything
-            await cleanupMultiView();
+            console.log('[MultiView] Tab hidden. Pausing all streams and cleaning up UI.');
+            // Use the new, safer cleanup for tab switching.
+            await pauseAndClearAllPlayers(); 
         }
     } else {
         if (lastLayoutBeforeHide) {
@@ -127,7 +169,7 @@ export async function cleanupMultiView() {
     playerUrls.clear();
     activePlayerId = null;
     channelSelectorCallback = null;
-    // Do NOT clear lastLayoutBeforeHide here, it's needed for session restore
+    lastLayoutBeforeHide = null; // A full cleanup should clear this
     console.log('[MultiView] Cleanup complete.');
 }
 
@@ -509,10 +551,14 @@ async function stopAndCleanupPlayer(widgetId, resetUI = true) {
 
     if (players.has(widgetId)) {
         const player = players.get(widgetId);
-        player.pause();
-        player.unload();
-        player.detachMediaElement();
-        player.destroy();
+        try {
+            player.pause();
+            player.unload();
+            player.detachMediaElement();
+            player.destroy();
+        } catch (e) {
+            console.warn(`[MultiView] Error during full cleanup of player for widget ${widgetId}:`, e.message);
+        }
         players.delete(widgetId);
         console.log(`[MultiView] Client-side player destroyed for widget ${widgetId}`);
     }
