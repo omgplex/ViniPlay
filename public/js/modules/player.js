@@ -4,50 +4,53 @@
  */
 
 import { appState, guideState, UIElements } from './state.js';
-import { saveUserSetting } from './api.js';
+// MODIFIED: Added stopStream to the import
+import { saveUserSetting, stopStream } from './api.js';
 import { showNotification, openModal, closeModal } from './ui.js';
 import { castState, loadMedia, setLocalPlayerState } from './cast.js';
 
-let streamInfoInterval = null; // NEW: Interval to update stream stats
+let streamInfoInterval = null; // Interval to update stream stats
+let currentLocalStreamUrl = null; // ADDED: Track the original URL of the currently playing local stream
 
 /**
  * Stops the current local stream, cleans up the mpegts.js player instance, and closes the modal.
  * This does NOT affect an active Google Cast session.
  */
-export const stopAndCleanupPlayer = () => {
-    // NEW: Clear the stream info update interval
+export const stopAndCleanupPlayer = async () => { // MODIFIED: Made function async
+    // NEW: Explicitly tell the server to stop the stream process.
+    if (currentLocalStreamUrl && !castState.isCasting) {
+        console.log(`[PLAYER] Sending stop request to server for URL: ${currentLocalStreamUrl}`);
+        await stopStream(currentLocalStreamUrl);
+        currentLocalStreamUrl = null; // Clear the tracked URL after stopping
+    }
+
+    // Clear the stream info update interval
     if (streamInfoInterval) {
         clearInterval(streamInfoInterval);
         streamInfoInterval = null;
     }
-    // NEW: Hide the stream info overlay on close
+    
     if (UIElements.streamInfoOverlay) {
         UIElements.streamInfoOverlay.classList.add('hidden');
     }
 
-    // If we are casting, the modal might be showing the "Now Casting" screen.
-    // In this case, we just want to close the modal, not stop the remote playback.
     if (castState.isCasting) {
         console.log('[PLAYER] Closing modal but leaving cast session active.');
         closeModal(UIElements.videoModal);
-        return; // Exit without stopping the cast session.
+        return;
     }
 
-    // If not casting, proceed with cleaning up the local player.
     if (appState.player) {
         console.log('[PLAYER] Destroying local mpegts player.');
         appState.player.destroy();
         appState.player = null;
     }
-    // Clear the video source to stop any background loading
     UIElements.videoElement.src = "";
     UIElements.videoElement.removeAttribute('src');
     UIElements.videoElement.load();
 
-    // Clear the local player state so it's not auto-cast later if the modal is closed.
     setLocalPlayerState(null, null, null);
 
-    // Exit Picture-in-Picture mode if active
     if (document.pictureInPictureElement) {
         document.exitPictureInPicture().catch(console.error);
     }
@@ -55,7 +58,7 @@ export const stopAndCleanupPlayer = () => {
 };
 
 /**
- * NEW: Updates the stream info overlay with the latest stats from mpegts.js.
+ * Updates the stream info overlay with the latest stats from mpegts.js.
  */
 function updateStreamInfo() {
     if (!appState.player || !appState.player.statisticsInfo) return;
@@ -65,7 +68,6 @@ function updateStreamInfo() {
 
     const resolution = (video.videoWidth && video.videoHeight) ? `${video.videoWidth}x${video.videoHeight}` : 'N/A';
     const speed = `${(stats.speed / 1024).toFixed(2)} KB/s`;
-    // FIX: Check if stats.fps is a valid number before calling toFixed()
     const fps = (stats.decodedFrames > 0 && typeof stats.fps === 'number') ? stats.fps.toFixed(2) : '0.00';
     const buffer = video.buffered.length > 0 ? `${(video.buffered.end(0) - video.currentTime).toFixed(2)}s` : '0.00s';
 
@@ -102,14 +104,10 @@ export const playChannel = (url, name, channelId) => {
         return showNotification("Stream profile not found.", true);
     }
     
-    // Determine the final URL to play based on the stream profile (direct redirect or server proxy)
     const streamUrlToPlay = profile.command === 'redirect' ? url : `/stream?url=${encodeURIComponent(url)}&profileId=${profileId}&userAgentId=${userAgentId}`;
     const channel = guideState.channels.find(c => c.id === channelId);
     const logo = channel ? channel.logo : '';
 
-    // --- Casting Logic ---
-    // If the cast button is clicked and a session starts, this logic will be handled
-    // by the session state change listener in cast.js, which automatically plays the current local media.
     if (castState.isCasting) {
         console.log(`[PLAYER] Already casting. Loading new channel "${name}" to remote device.`);
         loadMedia(streamUrlToPlay, name, logo);
@@ -118,15 +116,16 @@ export const playChannel = (url, name, channelId) => {
     }
 
     // --- Local Playback Logic ---
-    console.log(`[PLAYER] Playing channel "${name}" locally.`);
-    // Set the local player state so the cast module knows what's playing if the user decides to cast.
+    // MODIFIED: Store the original stream URL for the explicit stop API call.
+    currentLocalStreamUrl = url; 
+    console.log(`[PLAYER] Playing channel "${name}" locally. Tracking URL for cleanup: ${currentLocalStreamUrl}`);
+    
     setLocalPlayerState(streamUrlToPlay, name, logo);
     
     if (appState.player) {
         appState.player.destroy();
         appState.player = null;
     }
-    // NEW: Clear any existing info interval before starting a new player
     if (streamInfoInterval) {
         clearInterval(streamInfoInterval);
         streamInfoInterval = null;
@@ -152,8 +151,7 @@ export const playChannel = (url, name, channelId) => {
             stopAndCleanupPlayer();
         });
 
-        // NEW: Start the stream info interval
-        streamInfoInterval = setInterval(updateStreamInfo, 2000); // Update every 2 seconds
+        streamInfoInterval = setInterval(updateStreamInfo, 2000);
 
     } else {
         showNotification('Your browser does not support Media Source Extensions (MSE).', true);
@@ -172,14 +170,10 @@ export function setupPlayerEventListeners() {
         }
     });
 
-    // NEW: Stream Info Toggle Listener
     UIElements.streamInfoToggleBtn.addEventListener('click', () => {
         UIElements.streamInfoOverlay.classList.toggle('hidden');
     });
 
-    // --- FINAL FIX ---
-    // This listener on our custom button unconditionally calls requestSession(),
-    // which is the correct way to open the Google Cast device selection dialog.
     if (UIElements.castBtn) {
         UIElements.castBtn.addEventListener('click', () => {
             console.log('[PLAYER] Custom cast button clicked. Requesting session...');
@@ -187,7 +181,6 @@ export function setupPlayerEventListeners() {
                 const castContext = cast.framework.CastContext.getInstance();
                 castContext.requestSession().catch((error) => {
                     console.error('Error requesting cast session:', error);
-                    // "cancel" is a normal user action, not a technical error.
                     if (error !== "cancel") { 
                         showNotification('Could not initiate Cast session. See console for details.', true);
                     }
@@ -200,7 +193,6 @@ export function setupPlayerEventListeners() {
     } else {
         console.error('[PLAYER] CRITICAL: Cast button #cast-btn NOT FOUND.');
     }
-    // --- END FINAL FIX ---
 
     UIElements.videoElement.addEventListener('enterpictureinpicture', () => closeModal(UIElements.videoModal));
     UIElements.videoElement.addEventListener('leavepictureinpicture', () => {
@@ -215,4 +207,3 @@ export function setupPlayerEventListeners() {
         localStorage.setItem('iptvPlayerVolume', UIElements.videoElement.volume);
     });
 }
-
