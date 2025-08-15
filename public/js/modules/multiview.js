@@ -12,10 +12,10 @@ import { ICONS } from './icons.js';
 
 let grid;
 const players = new Map(); // Stores player instances (mpegts) by widget ID
-// NEW: Map to store original stream URLs by widget ID for cleanup
-const playerUrls = new Map();
+const playerUrls = new Map(); // Stores original stream URLs by widget ID
 let activePlayerId = null;
 let channelSelectorCallback = null;
+let lastLayoutBeforeHide = null; // NEW: Store layout when tab is hidden
 
 const MAX_PLAYERS = 9;
 
@@ -58,38 +58,25 @@ export function isMultiViewActive() {
 
 /**
  * Destroys all players, clears the grid, and resets the Multi-View state.
- * Called when navigating away from the page.
  */
-export async function cleanupMultiView() { // MODIFIED: Made function async
+export async function cleanupMultiView() {
     if (grid) {
         console.log('[MultiView] Cleaning up all players and grid.');
-
-        // MODIFIED: Create an array of promises for all the stop operations
-        const stopPromises = [];
-        players.forEach((player, widgetId) => {
-            // Add the cleanup promise to the array. This now handles both client and server cleanup.
-            stopPromises.push(stopAndCleanupPlayer(widgetId));
-        });
-
-        // Wait for all stop operations to complete before proceeding
+        const stopPromises = Array.from(players.keys()).map(widgetId => stopAndCleanupPlayer(widgetId));
         await Promise.all(stopPromises);
         console.log('[MultiView] All streams have been stopped on the server.');
-
-        // Now that all streams are stopped, it's safe to clear the UI.
         grid.removeAll();
     }
-
-    // Reset all state variables related to Multi-View.
     players.clear();
-    playerUrls.clear(); // Also clear the URL map
+    playerUrls.clear();
     activePlayerId = null;
     channelSelectorCallback = null;
+    lastLayoutBeforeHide = null;
     console.log('[MultiView] Cleanup complete.');
 }
 
-
 /**
- * Adjusts the grid's background pattern size to match the current column layout.
+ * Adjusts the grid's background pattern size.
  */
 function updateGridBackground() {
     const container = UIElements.multiviewContainer.querySelector('.grid-stack');
@@ -97,7 +84,6 @@ function updateGridBackground() {
     const columnWidth = container.offsetWidth / grid.getColumn();
     container.style.backgroundSize = `${columnWidth}px ${columnWidth}px`;
 }
-
 
 /**
  * Sets up global event listeners for the Multi-View page controls.
@@ -114,41 +100,13 @@ function setupMultiViewEventListeners() {
     UIElements.saveLayoutForm.addEventListener('submit', saveLayout);
     UIElements.saveLayoutCancelBtn.addEventListener('click', () => closeModal(UIElements.saveLayoutModal));
     
-    // NEW: Add listener for page visibility to prevent crashes
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    // MODIFIED: Replaced direct visibilitychange with a function in ui.js
+    // that can be controlled (added/removed) to prevent duplicate listeners.
 }
 
 /**
- * NEW: Pauses or plays all videos when the browser tab is hidden or shown.
- * This prevents the browser from crashing due to high background resource usage.
- */
-function handleVisibilityChange() {
-    if (!isMultiViewActive()) return;
-
-    if (document.hidden) {
-        console.log('[MultiView] Tab hidden. Pausing all players.');
-        players.forEach(player => {
-            try {
-                player.pause();
-            } catch (e) {
-                console.warn('[MultiView] Could not pause player on visibility change:', e);
-            }
-        });
-    } else {
-        console.log('[MultiView] Tab visible. Resuming all players.');
-        players.forEach(player => {
-            try {
-                player.play();
-            } catch (e) {
-                console.warn('[MultiView] Could not resume player on visibility change:', e);
-            }
-        });
-    }
-}
-
-/**
- * Handles the channel selection logic specifically for the Multi-View page.
- * @param {HTMLElement} channelItem - The clicked channel item element from the modal list.
+ * Handles the channel selection logic for the Multi-View page.
+ * @param {HTMLElement} channelItem - The clicked channel item element.
  */
 export function handleMultiViewChannelClick(channelItem) {
     if (channelItem && channelSelectorCallback) {
@@ -162,7 +120,6 @@ export function handleMultiViewChannelClick(channelItem) {
         closeModal(UIElements.multiviewChannelSelectorModal);
     }
 }
-
 
 /**
  * Creates and adds a new player widget to the grid.
@@ -221,7 +178,7 @@ function addPlayerWidget(channel = null, layout = {}) {
 /**
  * Removes the most recently added player from the grid.
  */
-function removeLastPlayer() {
+async function removeLastPlayer() {
     const items = grid.getGridItems();
     if (items.length > 0) {
         const sortedItems = items.sort((a, b) => {
@@ -234,7 +191,7 @@ function removeLastPlayer() {
             const playerPlaceholder = lastItem.querySelector('.player-placeholder');
             const widgetId = playerPlaceholder ? playerPlaceholder.id : lastItem.gridstackNode.id;
             
-            stopAndCleanupPlayer(widgetId);
+            await stopAndCleanupPlayer(widgetId);
             grid.removeWidget(lastItem);
             console.log(`[MultiView] Removed last player: ${widgetId}`);
         }
@@ -256,8 +213,8 @@ function applyPresetLayout(layoutName) {
         return;
     }
 
-    const createLayout = async () => { // MODIFIED: Made async
-        await cleanupMultiView(); // Clears any existing players and the grid.
+    const createLayout = async () => {
+        await cleanupMultiView();
 
         let layout = [];
 
@@ -324,7 +281,7 @@ function applyPresetLayout(layoutName) {
 /**
  * Attaches event listeners to the controls within a player widget.
  * @param {HTMLElement} widgetContentEl - The widget's .grid-stack-item-content element.
- * @param {string} widgetId - The unique ID of the widget (now assigned to player-placeholder).
+ * @param {string} widgetId - The unique ID of the widget.
  */
 function attachWidgetEventListeners(widgetContentEl, widgetId) {
     const playerPlaceholderEl = widgetContentEl.querySelector(`.player-placeholder[id="${widgetId}"]`);
@@ -388,7 +345,7 @@ function attachWidgetEventListeners(widgetContentEl, widgetId) {
 
 /**
  * Sets the currently active player, highlighting it and handling audio.
- * @param {string} widgetId - The ID of the player-placeholder to set as active.
+ * @param {string} widgetId - The ID of the player to set as active.
  */
 function setActivePlayer(widgetId) {
     if (activePlayerId === widgetId) return;
@@ -421,9 +378,9 @@ function setActivePlayer(widgetId) {
 
 /**
  * Starts playing a selected channel in a specific player widget.
- * @param {string} widgetId - The ID of the target player-placeholder.
+ * @param {string} widgetId - The ID of the target player.
  * @param {object} channel - The channel object with id, name, and url.
- * @param {HTMLElement} gridstackItemContentEl - The player widget's actual content container (.grid-stack-item-content).
+ * @param {HTMLElement} gridstackItemContentEl - The player widget's content container.
  */
 function playChannelInWidget(widgetId, channel, gridstackItemContentEl) {
     if (!gridstackItemContentEl) return;
@@ -439,7 +396,6 @@ function playChannelInWidget(widgetId, channel, gridstackItemContentEl) {
         playerPlaceholderEl.dataset.channelId = channel.id;
     }
 
-    // MODIFIED: Store the original URL for cleanup
     playerUrls.set(widgetId, channel.url);
     console.log(`[MultiView] Stored URL for widget ${widgetId}: ${channel.url}`);
 
@@ -487,11 +443,10 @@ function playChannelInWidget(widgetId, channel, gridstackItemContentEl) {
 
 /**
  * Stops the stream and cleans up resources for a specific player widget.
- * @param {string} widgetId - The ID of the player-placeholder.
+ * @param {string} widgetId - The ID of the player.
  * @param {boolean} resetUI - If true, resets the widget's UI to the placeholder state.
  */
-async function stopAndCleanupPlayer(widgetId, resetUI = true) { // MODIFIED: Made function async
-    // NEW: Explicitly call the server to stop the stream process.
+async function stopAndCleanupPlayer(widgetId, resetUI = true) {
     if (playerUrls.has(widgetId)) {
         const originalUrl = playerUrls.get(widgetId);
         console.log(`[MultiView] Sending stop request for widget ${widgetId}, URL: ${originalUrl}`);
@@ -532,7 +487,7 @@ async function stopAndCleanupPlayer(widgetId, resetUI = true) { // MODIFIED: Mad
 
 
 /**
- * Populates the channel selector modal with available channels based on the selected filter.
+ * Populates the channel selector modal.
  */
 export function populateChannelSelector() {
     const listEl = UIElements.channelSelectorList;
@@ -583,7 +538,7 @@ export function populateChannelSelector() {
 // --- Layout Management ---
 
 /**
- * Fetches saved layouts from the server and populates the dropdown.
+ * Fetches saved layouts from the server.
  */
 async function loadLayouts() {
     const res = await apiFetch('/api/multiview/layouts');
@@ -597,7 +552,7 @@ async function loadLayouts() {
 }
 
 /**
- * Populates the 'Saved Layouts' dropdown menu.
+ * Populates the 'Saved Layouts' dropdown.
  */
 function populateLayoutsDropdown() {
     const select = UIElements.savedLayoutsSelect;
@@ -611,7 +566,7 @@ function populateLayoutsDropdown() {
 }
 
 /**
- * Saves the current grid layout to the server.
+ * Saves the current grid layout.
  * @param {Event} e - The form submission event.
  */
 async function saveLayout(e) {
@@ -658,7 +613,7 @@ async function saveLayout(e) {
 
 
 /**
- * Loads a selected layout from the dropdown onto the grid.
+ * Loads a selected layout from the dropdown.
  */
 function loadSelectedLayout() {
     const layoutId = UIElements.savedLayoutsSelect.value;
@@ -673,7 +628,7 @@ function loadSelectedLayout() {
     showConfirm(
         `Load '${layout.name}'?`,
         "This will stop all current streams and load the selected layout. Are you sure?",
-        async () => { // MODIFIED: Made async
+        async () => {
             await cleanupMultiView();
             grid.batchUpdate();
             try {
@@ -690,7 +645,7 @@ function loadSelectedLayout() {
 
 
 /**
- * Deletes the currently selected layout from the server.
+ * Deletes the currently selected layout.
  */
 async function deleteLayout() {
     const layoutId = UIElements.savedLayoutsSelect.value;
@@ -707,4 +662,3 @@ async function deleteLayout() {
         }
     });
 }
-
