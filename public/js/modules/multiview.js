@@ -519,13 +519,30 @@ function playChannelInWidget(widgetId, channel, gridstackItemContentEl) {
             isLive: true,
             url: streamUrlToPlay
         });
+
+        // Add robust error handling
+        player.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
+            console.error(`[MultiView] MPEGTS Player Error for ${widgetId}:`, errorType, errorDetail);
+            // If the tab is hidden, this error is expected as part of cleanup. Don't show a notification.
+            if (document.hidden) {
+                console.warn(`[MultiView] Player error occurred while tab was hidden for ${widgetId}. Suppressing notification.`);
+            } else {
+                showNotification(`Could not play stream: ${channel.name}`, true);
+            }
+            stopAndCleanupPlayer(widgetId, true);
+        });
         
         players.set(widgetId, player);
         player.attachMediaElement(videoEl);
         player.load();
         player.play().catch(err => {
-            console.error(`[MultiView] MPEGTS Player Error for ${widgetId}:`, err);
-            showNotification(`Could not play stream: ${channel.name}`, true);
+            // This catch block might handle initial play errors
+            if (document.hidden) {
+                 console.warn(`[MultiView] player.play() failed for ${widgetId} while hidden. Suppressing notification.`);
+            } else {
+                console.error(`[MultiView] player.play() caught an error for ${widgetId}:`, err);
+                showNotification(`Could not play stream: ${channel.name}`, true);
+            }
             stopAndCleanupPlayer(widgetId, true);
         });
 
