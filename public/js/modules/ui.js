@@ -19,7 +19,6 @@ let confirmCallback = null;
 let currentPage = '/';
 let activeModalCloseListener = null;
 let isResizing = false;
-let beforeUnloadListener = null; // NEW: To hold the beforeunload listener
 
 
 /**
@@ -264,12 +263,6 @@ export const handleRouteChange = () => {
     const wasPlayer = currentPage.startsWith('/player');
     const path = window.location.pathname;
     
-    // NEW: Remove the beforeunload warning if we are navigating within the app
-    if (beforeUnloadListener) {
-        window.removeEventListener('beforeunload', beforeUnloadListener);
-        beforeUnloadListener = null;
-    }
-    
     if (wasMultiView && !path.startsWith('/multiview')) {
         if (isMultiViewActive()) {
             showConfirm(
@@ -383,14 +376,6 @@ async function proceedWithRouteChange(path) {
             await loadAndScheduleNotifications();
         } else if (isMultiView) {
             initMultiView();
-            // NEW: Add beforeunload listener when entering multiview
-            beforeUnloadListener = (e) => {
-                if (isMultiViewActive()) {
-                    e.preventDefault();
-                    e.returnValue = 'Leaving this page will stop all active streams. Are you sure?';
-                }
-            };
-            window.addEventListener('beforeunload', beforeUnloadListener);
         } else if (isPlayer) {
             initDirectPlayer();
         } else if (isDvr && hasDvrAccess) {
