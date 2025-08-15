@@ -75,6 +75,9 @@ const handleVisibilityChange = async () => {
  * Initializes the Multi-View page, sets up the grid and event listeners.
  */
 export function initMultiView() {
+    // Add the visibility change listener when the page is active.
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     if (grid) {
         loadLayouts();
         return;
@@ -110,6 +113,9 @@ export function isMultiViewActive() {
  * Destroys all players, clears the grid, and resets the Multi-View state.
  */
 export async function cleanupMultiView() {
+    // Remove the visibility change listener when leaving the page.
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+
     if (grid) {
         console.log('[MultiView] Cleaning up all players and grid.');
         const stopPromises = Array.from(players.keys()).map(widgetId => stopAndCleanupPlayer(widgetId, true));
@@ -149,10 +155,6 @@ function setupMultiViewEventListeners() {
     UIElements.multiviewDeleteLayoutBtn.addEventListener('click', deleteLayout);
     UIElements.saveLayoutForm.addEventListener('submit', saveLayout);
     UIElements.saveLayoutCancelBtn.addEventListener('click', () => closeModal(UIElements.saveLayoutModal));
-    
-    // Add the visibility change listener
-    document.removeEventListener('visibilitychange', handleVisibilityChange);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
 }
 
 /**
@@ -713,4 +715,3 @@ async function deleteLayout() {
         }
     });
 }
-
