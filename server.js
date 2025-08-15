@@ -35,9 +35,10 @@ const sseClients = new Map();
 const activeDvrJobs = new Map(); // Stores active node-schedule jobs
 const runningFFmpegProcesses = new Map(); // Stores PIDs of running ffmpeg recordings
 
-// --- NEW: Active Stream Management ---
+// --- MODIFIED: Active Stream Management ---
 // Stores active FFMPEG processes for a given stream URL, along with a reference count.
 const activeStreamProcesses = new Map();
+const STREAM_INACTIVITY_TIMEOUT = 30000; // 30 seconds to kill an inactive stream process
 
 // --- Configuration ---
 const DATA_DIR = '/data';
@@ -217,6 +218,31 @@ const requireDvrAccess = (req, res, next) => {
 app.use('/dvr', requireAuth, requireDvrAccess, express.static(DVR_DIR));
 
 // --- Helper Functions ---
+
+/**
+ * NEW: Periodically checks for and cleans up inactive/orphaned FFmpeg stream processes.
+ * This acts as a safety net for any streams that are not cleanly disconnected.
+ */
+function cleanupInactiveStreams() {
+    const now = Date.now();
+    console.log(`[JANITOR] Running cleanup for inactive streams. Current active processes: ${activeStreamProcesses.size}`);
+    
+    activeStreamProcesses.forEach((streamInfo, url) => {
+        // Check if a stream has no connected clients and hasn't been accessed recently
+        if (streamInfo.references <= 0 && (now - streamInfo.lastAccess > STREAM_INACTIVITY_TIMEOUT)) {
+            console.log(`[JANITOR] Found stale stream process for URL: ${url}. Terminating PID: ${streamInfo.process.pid}.`);
+            try {
+                // Use SIGKILL to ensure the process is terminated forcefully.
+                streamInfo.process.kill('SIGKILL'); 
+                activeStreamProcesses.delete(url);
+            } catch (e) {
+                console.warn(`[JANITOR] Error killing stale process for ${url}: ${e.message}`);
+                // Still remove from map if kill fails (process might be gone already)
+                activeStreamProcesses.delete(url);
+            }
+        }
+    });
+}
 
 // --- NEW: Function to send Server-Sent Events to a specific user ---
 function sendSseEvent(userId, eventName, data) {
@@ -1391,31 +1417,19 @@ app.get('/stream', requireAuth, (req, res) => {
     const activeStreamInfo = activeStreamProcesses.get(streamUrl);
     
     if (activeStreamInfo) {
-        // Stream is already active, increment reference count
+        // Stream is already active, increment reference count and update last access time
         activeStreamInfo.references++;
         activeStreamInfo.lastAccess = Date.now();
         console.log(`[STREAM] Existing stream requested. URL: ${streamUrl}. New ref count: ${activeStreamInfo.references}.`);
         activeStreamInfo.process.stdout.pipe(res);
+        
         // Bind the connection close handler to decrement the count
         req.on('close', () => {
             console.log(`[STREAM] Client closed connection for existing stream ${streamUrl}. Decrementing ref count.`);
             activeStreamInfo.references--;
             activeStreamInfo.lastAccess = Date.now();
             if (activeStreamInfo.references <= 0) {
-                // If this was the last client, gracefully kill the process after a timeout
-                console.log(`[STREAM] Last client disconnected. Scheduling graceful termination for PID: ${activeStreamInfo.process.pid}.`);
-                setTimeout(() => {
-                    const latestInfo = activeStreamProcesses.get(streamUrl);
-                    if (latestInfo && latestInfo.references <= 0) {
-                        try {
-                           latestInfo.process.kill('SIGINT');
-                           activeStreamProcesses.delete(streamUrl);
-                           console.log(`[STREAM] Gracefully terminated FFMPEG process for ${streamUrl}.`);
-                        } catch (e) {
-                           console.warn(`[STREAM] Could not kill process for ${streamUrl}. It may have already exited.`);
-                        }
-                    }
-                }, 5000); // Wait 5 seconds before killing to allow for short disconnects/reconnects
+                console.log(`[STREAM] Last client disconnected. Ref count is 0. Process for PID: ${activeStreamInfo.process.pid} will be cleaned up by the janitor.`);
             }
         });
         return;
@@ -1494,7 +1508,6 @@ app.get('/stream', requireAuth, (req, res) => {
         }
     });
     
-    // FIXED: Reworked the connection close handler to use the reference count
     req.on('close', () => {
         const info = activeStreamProcesses.get(streamUrl);
         if (info) {
@@ -1502,22 +1515,9 @@ app.get('/stream', requireAuth, (req, res) => {
              info.references--;
              info.lastAccess = Date.now();
              if (info.references <= 0) {
-                console.log(`[STREAM] Last client disconnected. Scheduling graceful termination for PID: ${info.process.pid}.`);
-                setTimeout(() => {
-                    const latestInfo = activeStreamProcesses.get(streamUrl);
-                    if (latestInfo && latestInfo.references <= 0) {
-                         try {
-                           latestInfo.process.kill('SIGINT');
-                           activeStreamProcesses.delete(streamUrl);
-                           console.log(`[STREAM] Gracefully terminated FFMPEG process for ${streamUrl}.`);
-                        } catch (e) {
-                           console.warn(`[STREAM] Could not kill process for ${streamUrl}. It may have already exited.`);
-                        }
-                    }
-                }, 5000);
+                console.log(`[STREAM] Last client disconnected. Ref count is 0. Process for PID: ${info.process.pid} will be cleaned up by the janitor.`);
             }
         } else {
-            // Fallback for a process that died unexpectedly
             console.log(`[STREAM] Client closed connection for ${streamUrl}, but no process was found in the map.`);
         }
     });
@@ -1525,7 +1525,6 @@ app.get('/stream', requireAuth, (req, res) => {
 
 // --- NEW: API Endpoint to explicitly stop a stream ---
 app.post('/api/stream/stop', requireAuth, (req, res) => {
-    // The client now sends the stream URL to be stopped
     const { url: streamUrl } = req.body;
     if (!streamUrl) {
         return res.status(400).json({ error: "Stream URL is required to stop the stream." });
@@ -2322,6 +2321,10 @@ app.listen(port, () => {
     if (notificationCheckInterval) clearInterval(notificationCheckInterval);
     notificationCheckInterval = setInterval(checkAndSendNotifications, 60000);
     console.log('[Push] Notification checker started.');
+    
+    // NEW: Start the stream cleanup janitor
+    setInterval(cleanupInactiveStreams, 60000);
+    console.log('[JANITOR] Inactive stream cleanup process started.');
 
     schedule.scheduleJob('0 2 * * *', autoDeleteOldRecordings);
     console.log('[DVR_STORAGE] Scheduled daily cleanup of old recordings.');
