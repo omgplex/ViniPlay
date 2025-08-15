@@ -5,12 +5,15 @@
  */
 
 import { appState, guideState, UIElements } from './state.js';
-import { apiFetch } from './api.js';
+// MODIFIED: Imported stopStream to make explicit API calls
+import { apiFetch, stopStream } from './api.js';
 import { showNotification, openModal, closeModal, showConfirm } from './ui.js';
-import { ICONS } from './icons.js'; // MODIFIED: Import the new icon library
+import { ICONS } from './icons.js';
 
 let grid;
 const players = new Map(); // Stores player instances (mpegts) by widget ID
+// NEW: Map to store original stream URLs by widget ID for cleanup
+const playerUrls = new Map();
 let activePlayerId = null;
 let channelSelectorCallback = null;
 
@@ -32,7 +35,6 @@ export function initMultiView() {
         margin: 5,
         column: 12,
         alwaysShowResizeHandle: 'mobile',
-        // Make items resizable from all handles
         resizable: {
             handles: 'e, se, s, sw, w'
         }
@@ -43,7 +45,7 @@ export function initMultiView() {
     grid.on('change', updateGridBackground);
 
     setupMultiViewEventListeners();
-    loadLayouts(); // Fetch and display saved layouts on initial load
+    loadLayouts();
 }
 
 /**
@@ -58,26 +60,28 @@ export function isMultiViewActive() {
  * Destroys all players, clears the grid, and resets the Multi-View state.
  * Called when navigating away from the page.
  */
-export function cleanupMultiView() {
+export async function cleanupMultiView() { // MODIFIED: Made function async
     if (grid) {
         console.log('[MultiView] Cleaning up all players and grid.');
 
-        // First, destroy all active mpegts player instances to stop streams.
-        // We iterate over the players Map directly.
+        // MODIFIED: Create an array of promises for all the stop operations
+        const stopPromises = [];
         players.forEach((player, widgetId) => {
-            player.pause();
-            player.unload();
-            player.detachMediaElement();
-            player.destroy();
-            console.log(`[MultiView] Stream stopped for widget ${widgetId}`);
+            // Add the cleanup promise to the array. This now handles both client and server cleanup.
+            stopPromises.push(stopAndCleanupPlayer(widgetId));
         });
 
-        // After stopping streams, clear the grid UI entirely.
+        // Wait for all stop operations to complete before proceeding
+        await Promise.all(stopPromises);
+        console.log('[MultiView] All streams have been stopped on the server.');
+
+        // Now that all streams are stopped, it's safe to clear the UI.
         grid.removeAll();
     }
 
-    // Finally, reset all state variables related to Multi-View.
+    // Reset all state variables related to Multi-View.
     players.clear();
+    playerUrls.clear(); // Also clear the URL map
     activePlayerId = null;
     channelSelectorCallback = null;
     console.log('[MultiView] Cleanup complete.');
@@ -97,30 +101,22 @@ function updateGridBackground() {
 
 /**
  * Sets up global event listeners for the Multi-View page controls.
- * NOTE: Event listeners for the shared channel selector modal have been moved to main.js.
  */
 function setupMultiViewEventListeners() {
     UIElements.multiviewAddPlayer.addEventListener('click', () => addPlayerWidget());
     UIElements.multiviewRemovePlayer.addEventListener('click', removeLastPlayer);
-
-    // Layout buttons
     UIElements.layoutBtnAuto.addEventListener('click', () => applyPresetLayout('auto'));
     UIElements.layoutBtn2x2.addEventListener('click', () => applyPresetLayout('2x2'));
     UIElements.layoutBtn1x3.addEventListener('click', () => applyPresetLayout('1x3'));
-
-    // Save/Load Layout Buttons
     UIElements.multiviewSaveLayoutBtn.addEventListener('click', () => openModal(UIElements.saveLayoutModal));
     UIElements.multiviewLoadLayoutBtn.addEventListener('click', loadSelectedLayout);
     UIElements.multiviewDeleteLayoutBtn.addEventListener('click', deleteLayout);
     UIElements.saveLayoutForm.addEventListener('submit', saveLayout);
     UIElements.saveLayoutCancelBtn.addEventListener('click', () => closeModal(UIElements.saveLayoutModal));
-
-    // Channel Selector Modal Listeners are now handled globally in main.js to allow sharing with the DVR page.
 }
 
 /**
- * NEW: Handles the channel selection logic specifically for the Multi-View page.
- * This function is exported and called by the central event listener in main.js.
+ * Handles the channel selection logic specifically for the Multi-View page.
  * @param {HTMLElement} channelItem - The clicked channel item element from the modal list.
  */
 export function handleMultiViewChannelClick(channelItem) {
@@ -197,7 +193,6 @@ function addPlayerWidget(channel = null, layout = {}) {
 function removeLastPlayer() {
     const items = grid.getGridItems();
     if (items.length > 0) {
-        // Sort items by creation time (using timestamp from ID) to be sure
         const sortedItems = items.sort((a, b) => {
             const timeA = parseInt((a.gridstackNode.id || '0').split('-')[1]);
             const timeB = parseInt((b.gridstackNode.id || '0').split('-')[1]);
@@ -205,10 +200,8 @@ function removeLastPlayer() {
         });
         const lastItem = sortedItems[sortedItems.length - 1];
         if (lastItem) {
-            // The widgetId is stored on the player-placeholder now, not gridstackNode directly
-            // We need to retrieve it from the DOM element that Gridstack holds
             const playerPlaceholder = lastItem.querySelector('.player-placeholder');
-            const widgetId = playerPlaceholder ? playerPlaceholder.id : lastItem.gridstackNode.id; // Fallback if not found
+            const widgetId = playerPlaceholder ? playerPlaceholder.id : lastItem.gridstackNode.id;
             
             stopAndCleanupPlayer(widgetId);
             grid.removeWidget(lastItem);
@@ -222,33 +215,29 @@ function removeLastPlayer() {
 
 /**
  * Applies a predefined layout to the player grid.
- * This function now CLEARS the grid and creates empty players in the specified layout.
  * @param {'auto'|'2x2'|'1x3'} layoutName - The name of the layout to apply.
  */
 function applyPresetLayout(layoutName) {
     const numPlayers = grid.getGridItems().length;
 
-    // Special case for 'auto' layout: if the grid is empty, it should just add one player.
     if (layoutName === 'auto' && numPlayers === 0) {
         addPlayerWidget();
         return;
     }
 
-    // The core logic for creating the layout.
-    const createLayout = () => {
-        cleanupMultiView(); // Clears any existing players and the grid.
+    const createLayout = async () => { // MODIFIED: Made async
+        await cleanupMultiView(); // Clears any existing players and the grid.
 
         let layout = [];
 
         if (layoutName === 'auto') {
-            // This part only runs if numPlayers > 0 because of the check above.
             let cols, rows;
             if (numPlayers <= 1) { cols = 1; rows = 1; }
             else if (numPlayers === 2) { cols = 2; rows = 1; }
             else if (numPlayers === 3) { cols = 3; rows = 1; }
             else if (numPlayers === 4) { cols = 2; rows = 2; }
             else if (numPlayers >= 5 && numPlayers <= 6) { cols = 3; rows = 2; }
-            else { cols = 3; rows = 3; } // For 7-9 players
+            else { cols = 3; rows = 3; }
 
             const widgetWidth = Math.floor(12 / cols);
             const totalGridHeight = 9;
@@ -270,14 +259,13 @@ function applyPresetLayout(layoutName) {
                 {x: 0, y: 5, w: 6, h: 5}, {x: 6, y: 5, w: 6, h: 5}
             ];
         } else if (layoutName === '1x3') {
-             // Corrected heights and positions to prevent overlap
              const largeHeight = 9;
              const smallHeight = 3;
              layout = [
-                { x: 0, y: 0, w: 8, h: largeHeight },      // Large player
-                { x: 8, y: 0, w: 4, h: smallHeight },        // Top small
-                { x: 8, y: smallHeight, w: 4, h: smallHeight },    // Middle small
-                { x: 8, y: smallHeight * 2, w: 4, h: smallHeight } // Bottom small
+                { x: 0, y: 0, w: 8, h: largeHeight },
+                { x: 8, y: 0, w: 4, h: smallHeight },
+                { x: 8, y: smallHeight, w: 4, h: smallHeight },
+                { x: 8, y: smallHeight * 2, w: 4, h: smallHeight }
              ];
         }
 
@@ -291,16 +279,13 @@ function applyPresetLayout(layoutName) {
         }
     };
 
-    // If there are existing players, ask for confirmation before clearing them.
     if (numPlayers > 0) {
         showConfirm(
             `Apply '${layoutName}' Layout?`,
             "This will stop all current streams and apply the new layout with empty players. Are you sure?",
-            createLayout // The callback function to run on confirmation
+            createLayout
         );
     } else {
-        // If the grid is empty, just create the layout directly without confirmation.
-        // This handles the user's request for 2x2 and 1x3 on an empty grid.
         createLayout();
     }
 }
@@ -316,7 +301,6 @@ function attachWidgetEventListeners(widgetContentEl, widgetId) {
     const gridStackItem = widgetContentEl.closest('.grid-stack-item');
 
     const openSelector = () => {
-        // Clear any previous context before opening for Multi-View
         if (document.body.dataset.channelSelectorContext) {
             delete document.body.dataset.channelSelectorContext;
         }
@@ -343,7 +327,6 @@ function attachWidgetEventListeners(widgetContentEl, widgetId) {
         }
     });
     
-    // MODIFIED: Updated mute button logic to replace the whole icon
     const muteBtn = widgetContentEl.querySelector('.mute-btn');
     muteBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -386,7 +369,6 @@ function setActivePlayer(widgetId) {
         oldActiveWidgetContent.classList.remove('active-player');
         const oldVideo = oldActiveWidgetContent.querySelector('video');
         if (oldVideo) oldVideo.muted = true;
-        // MODIFIED: Update the mute icon in the old player
         const oldMuteBtn = oldActiveWidgetContent.querySelector('.mute-btn');
         if (oldMuteBtn) oldMuteBtn.innerHTML = ICONS.mute;
     }
@@ -399,7 +381,6 @@ function setActivePlayer(widgetId) {
         const videoEl = newActiveWidgetContent.querySelector('video');
         if (videoEl) {
             videoEl.muted = false;
-            // MODIFIED: Update the mute icon in the new player
             const newMuteBtn = newActiveWidgetContent.querySelector('.mute-btn');
             if (newMuteBtn) newMuteBtn.innerHTML = ICONS.unmute;
         }
@@ -423,10 +404,13 @@ function playChannelInWidget(widgetId, channel, gridstackItemContentEl) {
     const titleEl = gridstackItemContentEl.querySelector('.player-header-title');
 
     titleEl.textContent = channel.name;
-    // VINI-MOD: Set the channel ID on the placeholder, not the content element
     if (playerPlaceholderEl) {
         playerPlaceholderEl.dataset.channelId = channel.id;
     }
+
+    // MODIFIED: Store the original URL for cleanup
+    playerUrls.set(widgetId, channel.url);
+    console.log(`[MultiView] Stored URL for widget ${widgetId}: ${channel.url}`);
 
 
     videoEl.classList.remove('hidden');
@@ -475,7 +459,15 @@ function playChannelInWidget(widgetId, channel, gridstackItemContentEl) {
  * @param {string} widgetId - The ID of the player-placeholder.
  * @param {boolean} resetUI - If true, resets the widget's UI to the placeholder state.
  */
-function stopAndCleanupPlayer(widgetId, resetUI = true) {
+async function stopAndCleanupPlayer(widgetId, resetUI = true) { // MODIFIED: Made function async
+    // NEW: Explicitly call the server to stop the stream process.
+    if (playerUrls.has(widgetId)) {
+        const originalUrl = playerUrls.get(widgetId);
+        console.log(`[MultiView] Sending stop request for widget ${widgetId}, URL: ${originalUrl}`);
+        await stopStream(originalUrl);
+        playerUrls.delete(widgetId);
+    }
+
     if (players.has(widgetId)) {
         const player = players.get(widgetId);
         player.pause();
@@ -483,7 +475,7 @@ function stopAndCleanupPlayer(widgetId, resetUI = true) {
         player.detachMediaElement();
         player.destroy();
         players.delete(widgetId);
-        console.log(`[MultiView] Player destroyed for widget ${widgetId}`);
+        console.log(`[MultiView] Client-side player destroyed for widget ${widgetId}`);
     }
 
     if (resetUI) {
@@ -500,7 +492,7 @@ function stopAndCleanupPlayer(widgetId, resetUI = true) {
             
             if (playerPlaceholderEl) {
                 playerPlaceholderEl.classList.remove('hidden');
-                playerPlaceholderEl.dataset.channelId = ''; // VINI-MOD: Clear channelId from placeholder
+                playerPlaceholderEl.dataset.channelId = '';
             }
             widgetContentEl.querySelector('.player-header-title').textContent = 'No Channel';
         }
@@ -599,7 +591,6 @@ async function saveLayout(e) {
         return;
     }
 
-    // VINI-MOD: Get the grid items directly from the DOM to ensure we only save what's visible.
     const gridItems = grid.getGridItems();
     if (gridItems.length === 0) {
         showNotification("Cannot save an empty layout.", true);
@@ -651,12 +642,11 @@ function loadSelectedLayout() {
     showConfirm(
         `Load '${layout.name}'?`,
         "This will stop all current streams and load the selected layout. Are you sure?",
-        () => {
-            cleanupMultiView();
+        async () => { // MODIFIED: Made async
+            await cleanupMultiView();
             grid.batchUpdate();
             try {
                 layout.layout_data.forEach(widgetData => {
-                    // Try to find the channel to pre-load it
                     const channel = widgetData.channelId ? guideState.channels.find(c => c.id === widgetData.channelId) : null;
                     addPlayerWidget(channel, widgetData);
                 });
