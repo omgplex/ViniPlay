@@ -5,25 +5,77 @@
  */
 
 import { appState, guideState, UIElements } from './state.js';
-// MODIFIED: Imported stopStream to make explicit API calls
 import { apiFetch, stopStream } from './api.js';
 import { showNotification, openModal, closeModal, showConfirm } from './ui.js';
 import { ICONS } from './icons.js';
 
 let grid;
-const players = new Map(); // Stores player instances (mpegts) by widget ID
-const playerUrls = new Map(); // Stores original stream URLs by widget ID
+const players = new Map();
+const playerUrls = new Map();
 let activePlayerId = null;
 let channelSelectorCallback = null;
-let lastLayoutBeforeHide = null; // NEW: Store layout when tab is hidden
+let lastLayoutBeforeHide = null; // To store layout when tab is hidden
 
 const MAX_PLAYERS = 9;
+
+/**
+ * Handles the visibility change of the tab to prevent crashes.
+ */
+const handleVisibilityChange = async () => {
+    if (document.hidden) {
+        if (isMultiViewActive()) {
+            console.log('[MultiView] Tab hidden. Saving layout and cleaning up all players.');
+            // Save the current layout
+            const gridItems = grid.getGridItems();
+            lastLayoutBeforeHide = gridItems.map(item => {
+                const node = item.gridstackNode;
+                const placeholder = item.querySelector('.player-placeholder');
+                return {
+                    x: node.x,
+                    y: node.y,
+                    w: node.w,
+                    h: node.h,
+                    id: placeholder?.id || node.id,
+                    channelId: placeholder?.dataset.channelId || null
+                };
+            });
+            // Aggressively clean up everything
+            await cleanupMultiView();
+        }
+    } else {
+        if (lastLayoutBeforeHide) {
+            console.log('[MultiView] Tab visible. Offering to restore previous session.');
+            showConfirm(
+                'Restore Session?',
+                'Would you like to restore your previous Multi-View session?',
+                () => {
+                    if (lastLayoutBeforeHide) {
+                        grid.batchUpdate();
+                        try {
+                            lastLayoutBeforeHide.forEach(widgetData => {
+                                const channel = widgetData.channelId ? guideState.channels.find(c => c.id === widgetData.channelId) : null;
+                                addPlayerWidget(channel, widgetData);
+                            });
+                        } finally {
+                            grid.commit();
+                            lastLayoutBeforeHide = null; // Clear after restoring
+                        }
+                    }
+                },
+                () => {
+                    lastLayoutBeforeHide = null; // Clear if user cancels
+                }
+            );
+        }
+    }
+};
+
 
 /**
  * Initializes the Multi-View page, sets up the grid and event listeners.
  */
 export function initMultiView() {
-    if (grid) { // If grid exists, just reload layouts
+    if (grid) {
         loadLayouts();
         return;
     }
@@ -35,9 +87,7 @@ export function initMultiView() {
         margin: 5,
         column: 12,
         alwaysShowResizeHandle: 'mobile',
-        resizable: {
-            handles: 'e, se, s, sw, w'
-        }
+        resizable: { handles: 'e, se, s, sw, w' }
     };
     grid = GridStack.init(options, '#multiview-grid');
 
@@ -62,16 +112,16 @@ export function isMultiViewActive() {
 export async function cleanupMultiView() {
     if (grid) {
         console.log('[MultiView] Cleaning up all players and grid.');
-        const stopPromises = Array.from(players.keys()).map(widgetId => stopAndCleanupPlayer(widgetId));
+        const stopPromises = Array.from(players.keys()).map(widgetId => stopAndCleanupPlayer(widgetId, true));
         await Promise.all(stopPromises);
-        console.log('[MultiView] All streams have been stopped on the server.');
+        console.log('[MultiView] All streams have been stopped and players cleaned up.');
         grid.removeAll();
     }
     players.clear();
     playerUrls.clear();
     activePlayerId = null;
     channelSelectorCallback = null;
-    lastLayoutBeforeHide = null;
+    // Do NOT clear lastLayoutBeforeHide here, it's needed for session restore
     console.log('[MultiView] Cleanup complete.');
 }
 
@@ -100,8 +150,9 @@ function setupMultiViewEventListeners() {
     UIElements.saveLayoutForm.addEventListener('submit', saveLayout);
     UIElements.saveLayoutCancelBtn.addEventListener('click', () => closeModal(UIElements.saveLayoutModal));
     
-    // MODIFIED: Replaced direct visibilitychange with a function in ui.js
-    // that can be controlled (added/removed) to prevent duplicate listeners.
+    // Add the visibility change listener
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 }
 
 /**
@@ -662,3 +713,4 @@ async function deleteLayout() {
         }
     });
 }
+
