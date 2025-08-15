@@ -113,6 +113,37 @@ function setupMultiViewEventListeners() {
     UIElements.multiviewDeleteLayoutBtn.addEventListener('click', deleteLayout);
     UIElements.saveLayoutForm.addEventListener('submit', saveLayout);
     UIElements.saveLayoutCancelBtn.addEventListener('click', () => closeModal(UIElements.saveLayoutModal));
+    
+    // NEW: Add listener for page visibility to prevent crashes
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+}
+
+/**
+ * NEW: Pauses or plays all videos when the browser tab is hidden or shown.
+ * This prevents the browser from crashing due to high background resource usage.
+ */
+function handleVisibilityChange() {
+    if (!isMultiViewActive()) return;
+
+    if (document.hidden) {
+        console.log('[MultiView] Tab hidden. Pausing all players.');
+        players.forEach(player => {
+            try {
+                player.pause();
+            } catch (e) {
+                console.warn('[MultiView] Could not pause player on visibility change:', e);
+            }
+        });
+    } else {
+        console.log('[MultiView] Tab visible. Resuming all players.');
+        players.forEach(player => {
+            try {
+                player.play();
+            } catch (e) {
+                console.warn('[MultiView] Could not resume player on visibility change:', e);
+            }
+        });
+    }
 }
 
 /**
@@ -676,3 +707,4 @@ async function deleteLayout() {
         }
     });
 }
+
