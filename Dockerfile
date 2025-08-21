@@ -1,35 +1,45 @@
-# Use an official Node.js runtime as a parent image
-FROM node:18
+# Use an official NVIDIA CUDA runtime as a parent image to ensure drivers are present.
+FROM nvidia/cuda:11.8.0-base-ubuntu22.04
 
-# Create and set the working directory in the container
-WORKDIR /usr/src/app
+# Set environment to non-interactive to prevent installation prompts.
+ENV DEBIAN_FRONTEND=noninteractive
 
-# Copy package.json and package-lock.json to the working directory
-# This is done first to leverage Docker's layer caching.
-COPY package*.json ./
-
-# Install app dependencies inside the container
-RUN npm install
-
-# Copy the rest of your application's source code
-COPY . .
-
-# Make your app's port available to the host
-EXPOSE 8998
-
-# Install ffmpeg, which is required for stream proxying.
-RUN apt-get update && apt-get install -y ffmpeg --no-install-recommends && \
-    apt-get clean && \
+# Install essential dependencies including curl for downloading Node.js and ffmpeg.
+RUN apt-get update && apt-get install -y \
+    curl \
+    xz-utils \
+    --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
-# Create and declare volumes for persistent data.
-# The server.js file is now configured to use /data as its storage root.
-# This instruction ensures the directory is created and tells Docker that this
-# path is intended for persistent data storage.
-RUN mkdir /data
-RUN mkdir /dvr # NEW: Create the directory for DVR recordings
-VOLUME /data
-VOLUME /dvr   # NEW: Declare the DVR directory as a volume
+# Install Node.js v18, which is required to run the application server.
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+RUN apt-get install -y nodejs
 
-# Define the command to run your app
+# Create and set the working directory in the container.
+WORKDIR /usr/src/app
+
+# Copy package files first to leverage Docker's layer caching for faster builds.
+COPY package*.json ./
+
+# Install the application's Node.js dependencies.
+RUN npm install
+
+# Copy the rest of the application's source code into the container.
+COPY . .
+
+# Expose the application's port to the host machine.
+EXPOSE 8998
+
+# Download and install a static build of ffmpeg that includes NVIDIA NVENC support.
+# This is crucial for GPU-accelerated transcoding. The default ffmpeg in apt does not have this.
+RUN FFMPEG_URL="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz" && \
+    curl -sSL ${FFMPEG_URL} | tar xJ --strip-components=1 -C /usr/local/bin/
+
+# Create and declare volumes for persistent data (settings, sources, DVR recordings).
+RUN mkdir -p /data
+RUN mkdir -p /dvr
+VOLUME /data
+VOLUME /dvr
+
+# Define the command to run the application when the container starts.
 CMD [ "npm", "start" ]
