@@ -5,10 +5,11 @@ FROM jrottenberg/ffmpeg:6.0-nvidia
 # Set environment to non-interactive to prevent installation prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# The base image is Debian-based. We'll install Node.js v18.
-# We also install curl to fetch the Node.js setup script.
+# The base image is Debian-based. We'll install Node.js v18,
+# curl for fetching the Node.js setup script,
+# and build-essential & python3 for compiling native npm packages (like bcrypt and sqlite3).
 RUN apt-get update && \
-    apt-get install -y curl ca-certificates && \
+    apt-get install -y curl ca-certificates build-essential python3 && \
     curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
     apt-get install -y nodejs && \
     apt-get clean && \
