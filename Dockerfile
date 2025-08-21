@@ -1,49 +1,100 @@
-# Use an official NVIDIA CUDA runtime as a parent image to ensure drivers are present.
-FROM nvidia/cuda:11.8.0-base-ubuntu22.04
+#
+# STAGE 1: Build a custom FFmpeg with NVIDIA NVENC support
+#
+# We use the -devel image because it contains the necessary headers and libraries
+# for compiling software against the CUDA toolkit.
+FROM nvidia/cuda:11.8.0-devel-ubuntu22.04 as builder
 
-# Set environment to non-interactive to prevent installation prompts.
+# Set environment to non-interactive to prevent installation prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install essential dependencies including build tools for compiling native Node.js modules.
+# Install build-essential tools and dependencies required to compile FFmpeg
 RUN apt-get update && apt-get install -y \
-    curl \
-    xz-utils \
     build-essential \
-    python3 \
-    --no-install-recommends && \
+    yasm \
+    cmake \
+    libtool \
+    curl \
+    ca-certificates \
+    git \
+    libx264-dev \
+    libx265-dev \
+    libnuma-dev \
+    libvpx-dev \
+    libfdk-aac-dev \
+    libmp3lame-dev \
+    libopus-dev \
+    nasm \
+    --no-install-recommends
+
+# FFmpeg requires NVIDIA's video codec headers
+RUN git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git /usr/src/nv-codec-headers && \
+    cd /usr/src/nv-codec-headers && \
+    make install
+
+# Download and compile a stable version of FFmpeg from source
+RUN curl -sSL https://ffmpeg.org/releases/ffmpeg-6.0.tar.bz2 | tar -xj -C /usr/src && \
+    cd /usr/src/ffmpeg-6.0 && \
+    ./configure \
+      --enable-gpl \
+      --enable-nonfree \
+      --enable-cuda-nvcc \
+      --enable-libnpp \
+      --extra-cflags="-I/usr/local/cuda/include" \
+      --extra-ldflags="-L/usr/local/cuda/lib64" \
+      --disable-static \
+      --enable-shared \
+      --enable-nvenc \
+      --enable-libx264 \
+      --enable-libx265 \
+      --enable-libvpx \
+      --enable-libfdk-aac \
+      --enable-libmp3lame \
+      --enable-libopus && \
+    make -j$(nproc) && \
+    make install
+
+#
+# STAGE 2: Create the final, smaller application image
+#
+# We switch back to a -base image which is smaller because it doesn't contain
+# all the build tools and development libraries from the -devel image.
+FROM nvidia/cuda:11.8.0-base-ubuntu22.04
+
+# Set environment to non-interactive
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Node.js v18 and runtime dependencies
+RUN apt-get update && \
+    apt-get install -y curl && \
+    curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
+    apt-get install -y nodejs && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Node.js v18, which is required to run the application server.
-RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
-RUN apt-get install -y nodejs
+# Copy the compiled FFmpeg and its libraries from the builder stage
+COPY --from=builder /usr/local/bin/ffmpeg /usr/local/bin/
+COPY --from=builder /usr/local/lib/ /usr/local/lib/
+# Update the library cache so the system can find the new FFmpeg libraries
+RUN ldconfig
 
-# Create and set the working directory in the container.
+# Create and set the working directory in the container
 WORKDIR /usr/src/app
 
-# Copy package files first to leverage Docker's layer caching for faster builds.
+# Copy package files and install application dependencies
 COPY package*.json ./
-
-# Install the application's Node.js dependencies.
-# This requires the build tools installed above for packages like bcrypt and sqlite3.
 RUN npm install
 
-# Copy the rest of the application's source code into the container.
+# Copy the rest of the application's source code
 COPY . .
 
-# Expose the application's port to the host machine.
+# Expose the application's port
 EXPOSE 8998
 
-# Download and install a static build of ffmpeg that includes NVIDIA NVENC support.
-# This is crucial for GPU-accelerated transcoding. The default ffmpeg in apt does not have this.
-RUN FFMPEG_URL="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz" && \
-    curl -sSL ${FFMPEG_URL} | tar xJ --strip-components=1 -C /usr/local/bin/
-
-# Create and declare volumes for persistent data (settings, sources, DVR recordings).
+# Create and declare volumes for persistent data
 RUN mkdir -p /data
 RUN mkdir -p /dvr
 VOLUME /data
 VOLUME /dvr
 
-# Define the command to run the application when the container starts.
+# Define the command to run the application
 CMD [ "npm", "start" ]
-
