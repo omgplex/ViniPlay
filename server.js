@@ -1,11 +1,11 @@
-// A Node.js server for the VINI PLAY IPTV Player. (re-run)
+// A Node.js server for the VINI PLAY IPTV Player.
 // Implements server-side EPG parsing, secure environment variables, and improved logging.
 
 // Load environment variables from .env file
 require('dotenv').config();
 
 const express = require('express');
-const { spawn, exec } = require('child_process'); // MODIFIED: Added exec
+const { spawn } = require('child_process');
 const http = require('http');
 const https = require('https');
 const fs = require('fs');
@@ -19,15 +19,14 @@ const SQLiteStore = require('connect-sqlite3')(session);
 const xmlJS = require('xml-js');
 const webpush = require('web-push');
 const schedule = require('node-schedule');
-const disk = require('diskusage');
+const disk = require('diskusage'); // NEW: For storage management
 
 const app = express();
 const port = 8998;
 const saltRounds = 10;
 // Initialize global variables at the top-level scope
 let notificationCheckInterval = null;
-const sourceRefreshTimers = new Map();
-let isGpuAvailable = false; // NEW: Global flag for GPU availability
+const sourceRefreshTimers = new Map(); // FIXED: Initialize sourceRefreshTimers here
 
 // --- NEW: For Server-Sent Events (SSE) ---
 const sseClients = new Map();
@@ -37,12 +36,13 @@ const activeDvrJobs = new Map(); // Stores active node-schedule jobs
 const runningFFmpegProcesses = new Map(); // Stores PIDs of running ffmpeg recordings
 
 // --- MODIFIED: Active Stream Management ---
+// Stores active FFMPEG processes for a given stream URL, along with a reference count.
 const activeStreamProcesses = new Map();
-const STREAM_INACTIVITY_TIMEOUT = 30000;
+const STREAM_INACTIVITY_TIMEOUT = 30000; // 30 seconds to kill an inactive stream process
 
 // --- Configuration ---
 const DATA_DIR = '/data';
-const DVR_DIR = '/dvr';
+const DVR_DIR = '/dvr'; // NEW: DVR recordings directory
 const VAPID_KEYS_PATH = path.join(DATA_DIR, 'vapid.json');
 const SOURCES_DIR = path.join(DATA_DIR, 'sources');
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -65,6 +65,8 @@ try {
         fs.writeFileSync(VAPID_KEYS_PATH, JSON.stringify(vapidKeys, null, 2));
         console.log('[Push] New VAPID keys generated and saved.');
     }
+    // MODIFIED: Use a configurable email from .env for VAPID details.
+    // This is required by push services and helps prevent rejection errors.
     const vapidContactEmail = process.env.VAPID_CONTACT_EMAIL || 'mailto:admin@example.com';
     console.log(`[Push] Setting VAPID contact to: ${vapidContactEmail}`);
     webpush.setVapidDetails(vapidContactEmail, vapidKeys.publicKey, vapidKeys.privateKey);
@@ -77,7 +79,7 @@ try {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
     if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true });
     if (!fs.existsSync(SOURCES_DIR)) fs.mkdirSync(SOURCES_DIR, { recursive: true });
-    if (!fs.existsSync(DVR_DIR)) fs.mkdirSync(DVR_DIR, { recursive: true });
+    if (!fs.existsSync(DVR_DIR)) fs.mkdirSync(DVR_DIR, { recursive: true }); // NEW: Ensure DVR dir exists
     console.log(`[INIT] All required directories checked/created.`);
 } catch (mkdirError) {
     console.error(`[INIT] FATAL: Failed to create necessary directories: ${mkdirError.message}`);
@@ -190,6 +192,7 @@ app.use(
 );
 
 app.use((req, res, next) => {
+    // Exclude SSE endpoint from logging to avoid clutter
     if (req.path === '/api/events') {
         return next();
     }
@@ -216,24 +219,32 @@ app.use('/dvr', requireAuth, requireDvrAccess, express.static(DVR_DIR));
 
 // --- Helper Functions ---
 
+/**
+ * NEW: Periodically checks for and cleans up inactive/orphaned FFmpeg stream processes.
+ * This acts as a safety net for any streams that are not cleanly disconnected.
+ */
 function cleanupInactiveStreams() {
     const now = Date.now();
     console.log(`[JANITOR] Running cleanup for inactive streams. Current active processes: ${activeStreamProcesses.size}`);
     
     activeStreamProcesses.forEach((streamInfo, url) => {
+        // Check if a stream has no connected clients and hasn't been accessed recently
         if (streamInfo.references <= 0 && (now - streamInfo.lastAccess > STREAM_INACTIVITY_TIMEOUT)) {
             console.log(`[JANITOR] Found stale stream process for URL: ${url}. Terminating PID: ${streamInfo.process.pid}.`);
             try {
+                // Use SIGKILL to ensure the process is terminated forcefully.
                 streamInfo.process.kill('SIGKILL'); 
                 activeStreamProcesses.delete(url);
             } catch (e) {
                 console.warn(`[JANITOR] Error killing stale process for ${url}: ${e.message}`);
+                // Still remove from map if kill fails (process might be gone already)
                 activeStreamProcesses.delete(url);
             }
         }
     });
 }
 
+// --- NEW: Function to send Server-Sent Events to a specific user ---
 function sendSseEvent(userId, eventName, data) {
     const clients = sseClients.get(userId);
     if (clients && clients.length > 0) {
@@ -252,9 +263,7 @@ function getSettings() {
             userAgents: [{ id: `default-ua-${Date.now()}`, name: 'ViniPlay Default', value: 'VLC/3.0.20 (Linux; x86_64)', isDefault: true }],
             streamProfiles: [
                 { id: 'ffmpeg-default', name: 'ffmpeg (Built in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: true },
-                { id: 'redirect', name: 'Redirect (No Transcoding)', command: 'redirect', isDefault: false },
-                // NEW: GPU Transcoding Profile
-                { id: 'ffmpeg-nvenc', name: 'NVIDIA NVENC (GPU)', command: '-hwaccel cuda -i "{streamUrl}" -c:v h264_nvenc -preset p5 -tune hq -b:v 5M -maxrate:v 8M -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false }
+                { id: 'redirect', name: 'Redirect (No Transcoding)', command: 'redirect', isDefault: false }
             ],
             dvr: {
                 preBufferMinutes: 1,
@@ -262,11 +271,12 @@ function getSettings() {
                 maxConcurrentRecordings: 1,
                 autoDeleteDays: 0,
                 activeRecordingProfileId: 'dvr-mp4-default',
-                recordingProfiles: [
-                    { id: 'dvr-mp4-default', name: 'Default MP4 (H.264/AAC)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: true },
-                    // NEW: GPU DVR Profile
-                    { id: 'dvr-nvenc-mp4', name: 'NVIDIA NVENC (GPU) MP4', command: '-hwaccel cuda -i "{streamUrl}" -c:v h264_nvenc -preset p5 -tune hq -b:v 5M -maxrate:v 8M -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: false }
-                ]
+                recordingProfiles: [{
+                    id: 'dvr-mp4-default',
+                    name: 'Default MP4 (H.264/AAC)',
+                    command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"',
+                    isDefault: true
+                }]
             },
             activeUserAgentId: `default-ua-${Date.now()}`,
             activeStreamProfileId: 'ffmpeg-default',
@@ -279,9 +289,16 @@ function getSettings() {
     }
     try {
         const settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
-        // Ensure DVR settings and profiles exist to prevent crashes
-        if (!settings.dvr) settings.dvr = {};
-        if (!settings.dvr.recordingProfiles) settings.dvr.recordingProfiles = [];
+        if (!settings.dvr) {
+            settings.dvr = {
+                preBufferMinutes: 1,
+                postBufferMinutes: 2,
+                maxConcurrentRecordings: 1,
+                autoDeleteDays: 0,
+                activeRecordingProfileId: 'dvr-mp4-default',
+                recordingProfiles: [{ id: 'dvr-mp4-default', name: 'Default MP4 (H.264/AAC)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: true }]
+            };
+        }
         return settings;
     } catch (e) {
         console.error("[SETTINGS] Could not parse settings.json, returning default. Error:", e.message);
@@ -302,13 +319,13 @@ function saveSettings(settings) {
 function fetchUrlContent(url) {
     return new Promise((resolve, reject) => {
         const protocol = url.startsWith('https') ? https : http;
-        const TIMEOUT_DURATION = 60000;
+        const TIMEOUT_DURATION = 60000; // 60 seconds
         console.log(`[FETCH] Attempting to fetch URL content: ${url} (Timeout: ${TIMEOUT_DURATION/1000}s)`);
 
         const request = protocol.get(url, { timeout: TIMEOUT_DURATION }, (res) => {
             if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
                 console.log(`[FETCH] Redirecting to: ${res.headers.location}`);
-                request.abort();
+                request.abort(); // Abort the current request before following redirect
                 return fetchUrlContent(new URL(res.headers.location, url).href).then(resolve, reject);
             }
             if (res.statusCode !== 200) {
@@ -528,6 +545,7 @@ async function processAndMergeSources() {
         console.error(`[EPG] Error writing merged EPG JSON file: ${writeErr.message}`);
     }
     
+    // FIX: Add a timestamp to the settings file after a successful processing run.
     settings.sourcesLastUpdated = new Date().toISOString();
     console.log(`[PROCESS] Finished processing. New 'sourcesLastUpdated' timestamp: ${settings.sourcesLastUpdated}`);
     
@@ -1255,6 +1273,7 @@ app.post('/api/notifications', requireAuth, (req, res) => {
     );
 });
 
+// --- **FIX: Modified `GET /api/notifications` to provide accurate, consolidated status** ---
 app.get('/api/notifications', requireAuth, (req, res) => {
     console.log(`[PUSH_API] Fetching notifications for user ${req.session.userId}.`);
     const query = `
@@ -1270,11 +1289,13 @@ app.get('/api/notifications', requireAuth, (req, res) => {
             n.programStop,
             n.notificationTime as scheduledTime,
             n.programId,
+            -- Determine the overall status based on its deliveries
             CASE
                 WHEN (SELECT COUNT(*) FROM notification_deliveries WHERE notification_id = n.id AND status = 'sent') > 0 THEN 'sent'
                 WHEN (SELECT COUNT(*) FROM notification_deliveries WHERE notification_id = n.id AND status = 'expired') > 0 THEN 'expired'
                 ELSE n.status
             END as status,
+            -- Use the latest delivery update time as the triggeredAt time for consistency
             (SELECT MAX(updatedAt) FROM notification_deliveries WHERE notification_id = n.id AND status = 'sent') as triggeredAt
         FROM notifications n
         WHERE n.user_id = ?
@@ -1290,11 +1311,13 @@ app.get('/api/notifications', requireAuth, (req, res) => {
     });
 });
 
+// MODIFIED: Reordered this route to be BEFORE the /:id route to fix the 404 error.
 app.delete('/api/notifications/past', requireAuth, (req, res) => {
     const userId = req.session.userId;
     const now = new Date().toISOString();
     console.log(`[PUSH_API] Clearing all past notifications for user ${userId}.`);
     
+    // This query deletes notifications whose scheduled trigger time is in the past.
     db.run(`DELETE FROM notifications WHERE user_id = ? AND notificationTime <= ?`,
         [userId, now],
         function(err) {
@@ -1327,15 +1350,18 @@ app.delete('/api/notifications/:id', requireAuth, (req, res) => {
     });
 });
 
+// MODIFIED: This endpoint is now admin-only and performs a full hard reset.
 app.delete('/api/data', requireAuth, requireAdmin, (req, res) => {
     console.log(`[API_RESET] ADMIN ACTION: Received request to /api/data (HARD RESET) from admin ${req.session.username}.`);
     try {
+        // Stop all timers
         console.log('[API_RESET] Stopping all scheduled tasks...');
         if (notificationCheckInterval) clearInterval(notificationCheckInterval);
         for (const timer of sourceRefreshTimers.values()) clearTimeout(timer);
         sourceRefreshTimers.clear();
         for (const job of activeDvrJobs.values()) job.cancel();
         activeDvrJobs.clear();
+        // FIXED: Now also kill active streams from the global map
         for (const { process: ffmpegProcess } of activeStreamProcesses.values()) {
              try { ffmpegProcess.kill('SIGKILL'); } catch (e) {}
         }
@@ -1345,12 +1371,14 @@ app.delete('/api/data', requireAuth, requireAdmin, (req, res) => {
         }
         runningFFmpegProcesses.clear();
 
+        // Wipe files
         console.log('[API_RESET] Wiping all data files...');
         const filesToDelete = [MERGED_M3U_PATH, MERGED_EPG_JSON_PATH, SETTINGS_PATH, VAPID_KEYS_PATH];
         filesToDelete.forEach(file => {
             if (fs.existsSync(file)) fs.unlinkSync(file);
         });
         
+        // Wipe directories
         [SOURCES_DIR, DVR_DIR].forEach(dir => {
             if(fs.existsSync(dir)) {
                 fs.rmSync(dir, { recursive: true, force: true });
@@ -1358,6 +1386,7 @@ app.delete('/api/data', requireAuth, requireAdmin, (req, res) => {
             }
         });
         
+        // Wipe database tables
         console.log('[API_RESET] Wiping all database tables...');
         const tables = ['dvr_recordings', 'dvr_jobs', 'notification_deliveries', 'notifications', 'push_subscriptions', 'multiview_layouts', 'user_settings', 'users', 'sessions'];
         db.serialize(() => {
@@ -1384,14 +1413,17 @@ app.get('/stream', requireAuth, (req, res) => {
     const userAgentId = req.query.userAgentId;
     const userId = req.session.userId;
     
+    // Check if the stream is already active
     const activeStreamInfo = activeStreamProcesses.get(streamUrl);
     
     if (activeStreamInfo) {
+        // Stream is already active, increment reference count and update last access time
         activeStreamInfo.references++;
         activeStreamInfo.lastAccess = Date.now();
         console.log(`[STREAM] Existing stream requested. URL: ${streamUrl}. New ref count: ${activeStreamInfo.references}.`);
         activeStreamInfo.process.stdout.pipe(res);
         
+        // Bind the connection close handler to decrement the count
         req.on('close', () => {
             console.log(`[STREAM] Client closed connection for existing stream ${streamUrl}. Decrementing ref count.`);
             activeStreamInfo.references--;
@@ -1403,6 +1435,7 @@ app.get('/stream', requireAuth, (req, res) => {
         return;
     }
 
+    // Stream is not active, proceed to spawn new process
     console.log(`[STREAM] New stream request. URL: ${streamUrl}, Profile ID: ${profileId}, User Agent ID: ${userAgentId}`);
 
     if (!streamUrl) {
@@ -1412,24 +1445,11 @@ app.get('/stream', requireAuth, (req, res) => {
 
     let settings = getSettings();
     
-    const selectedProfile = (settings.streamProfiles || []).find(p => p.id === profileId);
-    if (!selectedProfile) {
+    const profile = (settings.streamProfiles || []).find(p => p.id === profileId);
+    if (!profile) {
         console.error(`[STREAM] Stream profile with ID "${profileId}" not found in settings.`);
         return res.status(404).send(`Error: Stream profile with ID "${profileId}" not found.`);
     }
-
-    // --- NEW: GPU Fallback Logic ---
-    let profile = selectedProfile;
-    if (profile.command.includes('nvenc') && !isGpuAvailable) {
-        console.warn(`[STREAM] GPU profile "${profile.name}" selected, but no GPU is available. Falling back to default CPU profile.`);
-        profile = settings.streamProfiles.find(p => p.id === 'ffmpeg-default');
-        if (!profile) {
-            // This is a safety net in case the default profile is deleted.
-            console.error('[STREAM] CRITICAL: GPU fallback failed. Default CPU profile "ffmpeg-default" not found.');
-            return res.status(500).send('Error: GPU not available and default CPU profile is missing.');
-        }
-    }
-    // --- End of Fallback Logic ---
 
     if (profile.command === 'redirect') {
         console.log(`[STREAM] Redirecting to stream URL: ${streamUrl}`);
@@ -1455,6 +1475,7 @@ app.get('/stream', requireAuth, (req, res) => {
     console.log(`[STREAM] FFmpeg command args: ${args.join(' ')}`);
     const ffmpeg = spawn('ffmpeg', args);
 
+    // Store the process in our global map
     activeStreamProcesses.set(streamUrl, {
         process: ffmpeg,
         references: 1,
@@ -1502,6 +1523,7 @@ app.get('/stream', requireAuth, (req, res) => {
     });
 });
 
+// --- NEW: API Endpoint to explicitly stop a stream ---
 app.post('/api/stream/stop', requireAuth, (req, res) => {
     const { url: streamUrl } = req.body;
     if (!streamUrl) {
@@ -1668,6 +1690,7 @@ async function checkAndSendNotifications() {
                     if (error.statusCode === 410 || error.statusCode === 404) {
                         console.log(`[PUSH_CHECKER] Subscription ${delivery.subscription_id} is invalid (410/404). Deleting subscription and failing deliveries.`);
                         
+                        // --- NEW: Notify connected clients about the invalid subscription ---
                         sendSseEvent(delivery.user_id, 'subscription-invalidated', {
                             endpoint: delivery.endpoint,
                             reason: `Push service returned status ${error.statusCode}.`
@@ -1717,27 +1740,13 @@ function startRecording(job) {
         return;
     }
 
-    const selectedRecProfile = (settings.dvr.recordingProfiles || []).find(p => p.id === job.profileId);
-    if (!selectedRecProfile) {
+    const recProfile = (settings.dvr.recordingProfiles || []).find(p => p.id === job.profileId);
+    if (!recProfile) {
         const errorMsg = `Active recording profile not found.`;
         console.error(`[DVR] Cannot start recording job ${job.id}: ${errorMsg}`);
         db.run("UPDATE dvr_jobs SET status = 'error', ffmpeg_pid = NULL, errorMessage = ? WHERE id = ?", [errorMsg, job.id]);
         return;
     }
-
-    // --- NEW: DVR GPU Fallback Logic ---
-    let recProfile = selectedRecProfile;
-    if (recProfile.command.includes('nvenc') && !isGpuAvailable) {
-        console.warn(`[DVR] GPU recording profile selected for job ${job.id}, but no GPU is available. Falling back to default CPU profile.`);
-        recProfile = settings.dvr.recordingProfiles.find(p => p.isDefault);
-        if (!recProfile) {
-            const errorMsg = `GPU not available and default DVR profile is missing.`;
-            console.error(`[DVR] Cannot start recording job ${job.id}: ${errorMsg}`);
-            db.run("UPDATE dvr_jobs SET status = 'error', ffmpeg_pid = NULL, errorMessage = ? WHERE id = ?", [errorMsg, job.id]);
-            return;
-        }
-    }
-    // --- End of DVR Fallback Logic ---
 
     const userAgent = (settings.userAgents || []).find(ua => ua.id === job.userAgentId);
     if (!userAgent) {
@@ -2050,6 +2059,8 @@ app.get('/api/dvr/storage', requireAuth, requireDvrAccess, (req, res) => {
     }
 });
 
+// --- FIX: Route Order Correction ---
+// Specific bulk-delete routes are now placed BEFORE dynamic routes with :id
 app.delete('/api/dvr/jobs/all', requireAuth, requireDvrAccess, (req, res) => {
     const userId = req.session.userId;
     console.log(`[DVR_API] Clearing all scheduled/historical jobs for user ${userId}.`);
@@ -2188,10 +2199,12 @@ app.delete('/api/dvr/jobs/:id/history', requireAuth, requireDvrAccess, (req, res
 });
 
 
+// --- NEW: Server-Sent Events endpoint for real-time updates ---
 app.get('/api/events', requireAuth, (req, res) => {
     const userId = req.session.userId;
-    const clientId = Date.now();
+    const clientId = Date.now(); // A unique ID for this specific connection
     
+    // Set headers for SSE
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -2205,6 +2218,7 @@ app.get('/api/events', requireAuth, (req, res) => {
     clients.push({ id: clientId, res });
     console.log(`[SSE] Client ${clientId} connected for user ID ${userId}. Total clients for user: ${clients.length}.`);
 
+    // Send a connected message to confirm connection
     res.write(`event: connected\ndata: ${JSON.stringify({ message: "Connection established" })}\n\n`);
 
     req.on('close', () => {
@@ -2222,6 +2236,7 @@ app.get('/api/events', requireAuth, (req, res) => {
     });
 });
 
+// --- NEW: URL Validation Endpoint ---
 app.post('/api/validate-url', requireAuth, async (req, res) => {
     const { url } = req.body;
     if (!url) {
@@ -2237,35 +2252,7 @@ app.post('/api/validate-url', requireAuth, async (req, res) => {
 });
 
 
-// --- NEW: GPU Status Endpoint ---
-app.get('/api/gpu-status', requireAdmin, (req, res) => {
-    if (!isGpuAvailable) {
-        return res.json({ available: false, error: 'NVIDIA GPU drivers not found in the container.' });
-    }
-
-    exec('nvidia-smi --query-gpu=name,utilization.gpu,pstate --format=csv,noheader,nounits', (error, stdout, stderr) => {
-        if (error) {
-            console.error('[GPU_STATUS] nvidia-smi command failed:', stderr);
-            return res.json({ available: true, name: 'NVIDIA GPU', error: 'Could not query GPU stats.' });
-        }
-
-        const [name, utilization, pstate] = stdout.trim().split(', ');
-        
-        // Check running ffmpeg processes for 'nvenc' to see if GPU is in use for transcoding
-        exec("pgrep -a ffmpeg | grep 'nvenc' | wc -l", (err, pgrep_stdout) => {
-            const transcodingSessions = (err || !pgrep_stdout) ? 0 : parseInt(pgrep_stdout.trim(), 10);
-            res.json({
-                available: true,
-                name: name || 'NVIDIA GPU',
-                utilization: parseInt(utilization, 10) || 0,
-                performanceState: pstate || 'N/A',
-                transcodingSessions: transcodingSessions
-            });
-        });
-    });
-});
-
-
+// --- NEW: Backup & Restore Endpoints ---
 const settingsUpload = multer({
     storage: multer.diskStorage({
         destination: (req, file, cb) => cb(null, DATA_DIR),
@@ -2299,7 +2286,7 @@ app.post('/api/settings/import', requireAdmin, settingsUpload.single('settingsFi
     const tempPath = path.join(DATA_DIR, 'settings.tmp.json');
     try {
         const fileContent = fs.readFileSync(tempPath, 'utf-8');
-        JSON.parse(fileContent);
+        JSON.parse(fileContent); // Validate that it's valid JSON
         fs.renameSync(tempPath, SETTINGS_PATH);
         console.log('[SETTINGS_IMPORT] Settings file imported successfully. App will now use new settings.');
         res.json({ success: true, message: 'Settings imported. The application will use them on next load.' });
@@ -2320,26 +2307,10 @@ app.get('*', (req, res) => {
 });
 
 // --- Server Start ---
-
-// NEW: Function to check for GPU on startup
-function checkGpuAvailability() {
-    exec('nvidia-smi', (error, stdout, stderr) => {
-        if (error) {
-            console.warn('[GPU_INIT] nvidia-smi command failed. NVIDIA GPU not available or drivers not installed correctly in the container.');
-            isGpuAvailable = false;
-        } else {
-            console.log('[GPU_INIT] nvidia-smi command successful. NVIDIA GPU is available.');
-            isGpuAvailable = true;
-        }
-    });
-}
-
 app.listen(port, () => {
     console.log(`\n======================================================`);
     console.log(` VINI PLAY server listening at http://localhost:${port}`);
     console.log(`======================================================\n`);
-
-    checkGpuAvailability();
 
     processAndMergeSources().then((result) => {
         console.log('[INIT] Initial source processing complete.');
@@ -2351,6 +2322,7 @@ app.listen(port, () => {
     notificationCheckInterval = setInterval(checkAndSendNotifications, 60000);
     console.log('[Push] Notification checker started.');
     
+    // NEW: Start the stream cleanup janitor
     setInterval(cleanupInactiveStreams, 60000);
     console.log('[JANITOR] Inactive stream cleanup process started.');
 
@@ -2367,6 +2339,7 @@ function parseM3U(data) {
         const line = lines[i].trim();
         if (line.startsWith('#EXTINF:')) {
             const nextLine = lines[i + 1]?.trim();
+            // Ensure the next line is a valid URL
             if (nextLine && (nextLine.startsWith('http') || nextLine.startsWith('rtp'))) {
                 const idMatch = line.match(/tvg-id="([^"]*)"/);
                 const logoMatch = line.match(/tvg-logo="([^"]*)"/);
@@ -2392,4 +2365,3 @@ function parseM3U(data) {
     }
     return channels;
 }
-
