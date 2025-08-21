@@ -1,40 +1,37 @@
-# Use a pre-built FFmpeg image with NVIDIA support as the base.
-# This is much more reliable than compiling from source and includes ffmpeg, drivers, and nvidia-smi.
-FROM jrottenberg/ffmpeg:6.0-nvidia
-
-# Set environment to non-interactive to prevent installation prompts
-ENV DEBIAN_FRONTEND=noninteractive
-
-# The base image is Debian-based. We'll install Node.js v18,
-# curl for fetching the Node.js setup script,
-# and build-essential & python3 for compiling native npm packages (like bcrypt and sqlite3).
-RUN apt-get update && \
-    apt-get install -y curl ca-certificates build-essential python3 && \
-    curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
-    apt-get install -y nodejs && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+# Use an official Node.js runtime as a parent image
+FROM node:18
 
 # Create and set the working directory in the container
 WORKDIR /usr/src/app
 
-# Copy package files and install application dependencies
+# Copy package.json and package-lock.json to the working directory
+# This is done first to leverage Docker's layer caching.
 COPY package*.json ./
+
+# Install app dependencies inside the container
 RUN npm install
 
-# Copy the rest of the application's source code
+# Copy the rest of your application's source code
 COPY . .
 
-# Expose the application's port
+# Make your app's port available to the host
 EXPOSE 8998
 
-# Create and declare volumes for persistent data
-# The server.js file is configured to use these directories.
-RUN mkdir -p /data
-RUN mkdir -p /dvr
-VOLUME /data
-VOLUME /dvr
+# Install ffmpeg, which is required for stream proxying.
+RUN apt-get update && apt-get install -y ffmpeg --no-install-recommends && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-# Define the command to run the application
+# Create and declare volumes for persistent data.
+# The server.js file is now configured to use /data as its storage root.
+# This instruction ensures the directory is created and tells Docker that this
+# path is intended for persistent data storage.
+RUN mkdir /data
+RUN mkdir /dvr # NEW: Create the directory for DVR recordings
+VOLUME /data
+VOLUME /dvr   # NEW: Declare the DVR directory as a volume
+
+# Define the command to run your app
 CMD [ "npm", "start" ]
+
 
