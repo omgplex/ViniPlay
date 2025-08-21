@@ -5,7 +5,7 @@
 require('dotenv').config();
 
 const express = require('express');
-const { spawn } = require('child_process');
+const { spawn, exec } = require('child_process'); // Added 'exec' for nvidia-smi
 const http = require('http');
 const https = require('https');
 const fs = require('fs');
@@ -262,8 +262,10 @@ function getSettings() {
             epgSources: [],
             userAgents: [{ id: `default-ua-${Date.now()}`, name: 'ViniPlay Default', value: 'VLC/3.0.20 (Linux; x86_64)', isDefault: true }],
             streamProfiles: [
-                { id: 'ffmpeg-default', name: 'ffmpeg (Built in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: true },
-                { id: 'redirect', name: 'Redirect (No Transcoding)', command: 'redirect', isDefault: false }
+                { id: 'redirect', name: 'Redirect (No Transcoding)', command: 'redirect', isDefault: false },
+                { id: 'ffmpeg-default', name: 'ffmpeg CPU (Built-in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: true },
+                // NEW: NVIDIA GPU Transcoding Profile for Streaming
+                { id: 'ffmpeg-nvenc', name: 'NVIDIA NVENC (GPU)', command: '-hwaccel cuda -user_agent "{userAgent}" -i "{streamUrl}" -c:v h264_nvenc -preset p5 -cq 23 -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false }
             ],
             dvr: {
                 preBufferMinutes: 1,
@@ -271,12 +273,11 @@ function getSettings() {
                 maxConcurrentRecordings: 1,
                 autoDeleteDays: 0,
                 activeRecordingProfileId: 'dvr-mp4-default',
-                recordingProfiles: [{
-                    id: 'dvr-mp4-default',
-                    name: 'Default MP4 (H.264/AAC)',
-                    command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"',
-                    isDefault: true
-                }]
+                recordingProfiles: [
+                    { id: 'dvr-mp4-default', name: 'Default MP4 (CPU)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: true },
+                    // NEW: NVIDIA GPU Transcoding Profile for DVR
+                    { id: 'dvr-mp4-nvenc', name: 'NVIDIA MP4 (GPU)', command: '-hwaccel cuda -user_agent "{userAgent}" -i "{streamUrl}" -c:v h264_nvenc -preset p5 -cq 23 -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: false }
+                ]
             },
             activeUserAgentId: `default-ua-${Date.now()}`,
             activeStreamProfileId: 'ffmpeg-default',
@@ -296,7 +297,10 @@ function getSettings() {
                 maxConcurrentRecordings: 1,
                 autoDeleteDays: 0,
                 activeRecordingProfileId: 'dvr-mp4-default',
-                recordingProfiles: [{ id: 'dvr-mp4-default', name: 'Default MP4 (H.264/AAC)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: true }]
+                recordingProfiles: [
+                    { id: 'dvr-mp4-default', name: 'Default MP4 (CPU)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: true },
+                    { id: 'dvr-mp4-nvenc', name: 'NVIDIA MP4 (GPU)', command: '-hwaccel cuda -user_agent "{userAgent}" -i "{streamUrl}" -c:v h264_nvenc -preset p5 -cq 23 -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: false }
+                ]
             };
         }
         return settings;
@@ -1546,6 +1550,38 @@ app.post('/api/stream/stop', requireAuth, (req, res) => {
         console.log(`[STREAM_STOP_API] Received stop request for user ${req.session.userId}, but no active stream was found for URL: ${streamUrl}`);
         res.json({ success: true, message: 'No active stream to stop.' });
     }
+});
+
+// --- NEW: GPU Status API Endpoint ---
+app.get('/api/gpu-status', requireAdmin, (req, res) => {
+    // This command queries the GPU for its name, utilization, and a list of processes running on it.
+    exec('nvidia-smi --query-gpu=gpu_name,utilization.gpu,pstate,processes.pid,processes.process_name --format=csv,noheader', (error, stdout, stderr) => {
+        if (error) {
+            console.warn('[GPU_STATUS] nvidia-smi command failed or not found. GPU not available.', stderr);
+            return res.json({
+                gpuAvailable: false,
+                inUse: false,
+                error: 'NVIDIA GPU not detected or nvidia-smi command failed.'
+            });
+        }
+
+        const lines = stdout.trim().split('\n');
+        const gpuData = lines[0].split(', ');
+        const gpuName = gpuData[0];
+        const utilization = gpuData[1];
+        const performanceState = gpuData[2];
+
+        // Check if any of the running processes are ffmpeg
+        const inUse = lines.some(line => line.toLowerCase().includes('ffmpeg'));
+
+        res.json({
+            gpuAvailable: true,
+            gpuName: gpuName,
+            utilization: utilization,
+            performanceState: performanceState,
+            inUse: inUse,
+        });
+    });
 });
 
 
