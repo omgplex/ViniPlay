@@ -4,10 +4,12 @@ FROM nvidia/cuda:11.8.0-base-ubuntu22.04
 # Set environment to non-interactive to prevent installation prompts.
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install essential dependencies including curl for downloading Node.js and ffmpeg.
+# Install essential dependencies including build tools for compiling native Node.js modules.
 RUN apt-get update && apt-get install -y \
     curl \
     xz-utils \
+    build-essential \
+    python3 \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
@@ -22,6 +24,7 @@ WORKDIR /usr/src/app
 COPY package*.json ./
 
 # Install the application's Node.js dependencies.
+# This requires the build tools installed above for packages like bcrypt and sqlite3.
 RUN npm install
 
 # Copy the rest of the application's source code into the container.
@@ -43,3 +46,4 @@ VOLUME /dvr
 
 # Define the command to run the application when the container starts.
 CMD [ "npm", "start" ]
+
