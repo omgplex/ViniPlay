@@ -34,3 +34,12 @@ services:
     env_file:
       - ./.env
 
+    # NEW: Add GPU support for NVIDIA transcoding.
+    # This requires the NVIDIA Container Toolkit to be installed on your Docker host.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all # Use 'all' available GPUs. You can also specify by ID e.g., count: 1
+              capabilities: [gpu]
