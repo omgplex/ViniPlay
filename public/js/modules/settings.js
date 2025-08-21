@@ -12,8 +12,42 @@ import { navigate } from './ui.js';
 import { ICONS } from './icons.js'; // MODIFIED: Import the new icon library
 
 let currentSourceTypeForEditor = 'url';
+let gpuStatusInterval = null; // NEW: Interval for checking GPU status
 
 // --- UI Rendering ---
+
+/**
+ * NEW: Fetches and displays the NVIDIA GPU status.
+ */
+async function refreshGpuStatus() {
+    if (!appState.currentUser?.isAdmin) {
+        if (gpuStatusInterval) clearInterval(gpuStatusInterval);
+        return;
+    }
+
+    const res = await apiFetch('/api/gpu-status');
+    const statusContentEl = document.getElementById('gpu-status-content');
+    if (!statusContentEl) return;
+
+    if (res && res.ok) {
+        const data = await res.json();
+        if (data.gpuAvailable) {
+            const inUseClass = data.inUse ? 'text-green-400' : 'text-gray-500';
+            const inUseText = data.inUse ? 'Yes' : 'No';
+            statusContentEl.innerHTML = `
+                <p><strong>Device:</strong> <span class="text-white">${data.gpuName}</span></p>
+                <p><strong>Utilization:</strong> <span class="text-white">${data.utilization}</span></p>
+                <p><strong>Performance State:</strong> <span class="text-white">${data.performanceState}</span></p>
+                <p><strong>Actively Transcoding:</strong> <span class="font-bold ${inUseClass}">${inUseText}</span></p>
+            `;
+        } else {
+            statusContentEl.innerHTML = `<p class="text-yellow-400">${data.error || 'NVIDIA GPU not detected in the container.'}</p>`;
+        }
+    } else {
+        statusContentEl.innerHTML = `<p class="text-red-400">Could not fetch GPU status.</p>`;
+    }
+}
+
 
 /**
  * Populates the timezone selector dropdown.
@@ -170,6 +204,16 @@ export const updateUIFromSettings = () => {
     // Ensure user list is always populated for admins when this page is viewed.
     if (appState.currentUser?.isAdmin) {
         refreshUserList();
+        // NEW: Show GPU section and start polling for status
+        document.getElementById('gpu-status-section').classList.remove('hidden');
+        if (gpuStatusInterval) clearInterval(gpuStatusInterval);
+        refreshGpuStatus(); // Initial fetch
+        gpuStatusInterval = setInterval(refreshGpuStatus, 5000); // Poll every 5 seconds
+    } else {
+        // NEW: Hide GPU section and stop polling if not admin
+        document.getElementById('gpu-status-section').classList.add('hidden');
+        if (gpuStatusInterval) clearInterval(gpuStatusInterval);
+        gpuStatusInterval = null;
     }
     
     // NEW: Show/hide the Danger Zone section based on admin status
