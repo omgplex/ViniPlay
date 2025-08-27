@@ -201,15 +201,41 @@ function playDirectStream(url) {
 
     if (!isDirectPlay) {
         logToPlayerConsole('Direct Play is OFF. Using server proxy.');
-        const profileId = guideState.settings.activeStreamProfileId;
-        const userAgentId = guideState.settings.activeUserAgentId;
-        if (!profileId || !userAgentId) {
+        
+        // --- START FIX: Hardware Acceleration Logic ---
+        const settings = guideState.settings;
+        const hardwarePref = settings.hardwareAcceleration || 'auto';
+        let profileIdToUse = settings.activeStreamProfileId; // Default to CPU
+
+        logToPlayerConsole(`Hardware preference from settings: ${hardwarePref}`);
+
+        if (hardwarePref === 'nvidia') {
+            profileIdToUse = 'ffmpeg-nvidia';
+        } else if (hardwarePref === 'intel') {
+            profileIdToUse = 'ffmpeg-intel';
+        } else if (hardwarePref === 'auto') {
+            // In 'auto', we need to check what the server detected.
+            // This requires assuming the settings UI has been populated.
+            const nvidiaOption = UIElements.hardwareAccelerationSelect.querySelector('option[value="nvidia"]');
+            const intelOption = UIElements.hardwareAccelerationSelect.querySelector('option[value="intel"]');
+            if (nvidiaOption && !nvidiaOption.disabled) {
+                profileIdToUse = 'ffmpeg-nvidia';
+            } else if (intelOption && !intelOption.disabled) {
+                profileIdToUse = 'ffmpeg-intel';
+            }
+        }
+        
+        logToPlayerConsole(`Selected profile ID: ${profileIdToUse}`);
+        // --- END FIX ---
+        
+        const userAgentId = settings.activeUserAgentId;
+        if (!profileIdToUse || !userAgentId) {
             const errorMsg = "Active stream profile or user agent not set. Please check settings.";
             logToPlayerConsole(errorMsg, true);
             showNotification(errorMsg, true);
             return;
         }
-        streamUrlToPlay = `/stream?url=${encodeURIComponent(url)}&profileId=${profileId}&userAgentId=${userAgentId}`;
+        streamUrlToPlay = `/stream?url=${encodeURIComponent(url)}&profileId=${profileIdToUse}&userAgentId=${userAgentId}`;
         logToPlayerConsole(`Proxy URL: ${streamUrlToPlay}`);
     } else {
         logToPlayerConsole('Direct Play is ON. Connecting directly to stream.');
@@ -225,7 +251,7 @@ function playDirectStream(url) {
         try {
             console.log(`[DEBUG] playDirectStream: Creating new mpegts.js player for URL: ${streamUrlToPlay}`);
             const newPlayer = mpegts.createPlayer({
-                type: url.includes('.m3u8') ? 'mse' : 'mpegts', // Auto-detect type based on extension
+                type: 'mse',
                 isLive: true,
                 url: streamUrlToPlay
             });
