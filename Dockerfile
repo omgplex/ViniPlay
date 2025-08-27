@@ -30,7 +30,8 @@ WORKDIR /usr/src/app
 COPY package*.json ./
 
 # Install app dependencies inside the container
-RUN npm install
+# --force is used to resolve dependency conflicts that can occur in CI/CD environments.
+RUN npm install --force
 
 # Copy the rest of your application's source code
 COPY . .
