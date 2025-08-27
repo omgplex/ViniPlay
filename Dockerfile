@@ -2,6 +2,10 @@
 # This is the key change to fix the transcoding issue.
 FROM nvidia/cuda:11.8.0-base-ubuntu20.04
 
+# Set environment variables to ensure the container can find and use NVIDIA tools.
+ENV PATH /usr/local/nvidia/bin:${PATH}
+ENV NVIDIA_DRIVER_CAPABILITIES all
+
 # Set environment variables to prevent interactive prompts during installation.
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -54,3 +58,4 @@ VOLUME /dvr   # Declare the DVR directory as a volume
 
 # Define the command to run your app
 CMD [ "npm", "start" ]
+
