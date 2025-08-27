@@ -5,7 +5,7 @@
 require('dotenv').config();
 
 const express = require('express');
-const { spawn } = require('child_process');
+const { spawn, exec } = require('child_process');
 const http = require('http');
 const https = require('https');
 const fs = require('fs');
@@ -19,14 +19,15 @@ const SQLiteStore = require('connect-sqlite3')(session);
 const xmlJS = require('xml-js');
 const webpush = require('web-push');
 const schedule = require('node-schedule');
-const disk = require('diskusage'); // NEW: For storage management
+const disk = require('diskusage');
 
 const app = express();
 const port = 8998;
 const saltRounds = 10;
 // Initialize global variables at the top-level scope
 let notificationCheckInterval = null;
-const sourceRefreshTimers = new Map(); // FIXED: Initialize sourceRefreshTimers here
+const sourceRefreshTimers = new Map();
+let detectedHardware = { nvidia: null, intel: null }; // NEW: To store detected GPU info
 
 // --- NEW: For Server-Sent Events (SSE) ---
 const sseClients = new Map();
@@ -36,13 +37,12 @@ const activeDvrJobs = new Map(); // Stores active node-schedule jobs
 const runningFFmpegProcesses = new Map(); // Stores PIDs of running ffmpeg recordings
 
 // --- MODIFIED: Active Stream Management ---
-// Stores active FFMPEG processes for a given stream URL, along with a reference count.
 const activeStreamProcesses = new Map();
 const STREAM_INACTIVITY_TIMEOUT = 30000; // 30 seconds to kill an inactive stream process
 
 // --- Configuration ---
 const DATA_DIR = '/data';
-const DVR_DIR = '/dvr'; // NEW: DVR recordings directory
+const DVR_DIR = '/dvr';
 const VAPID_KEYS_PATH = path.join(DATA_DIR, 'vapid.json');
 const SOURCES_DIR = path.join(DATA_DIR, 'sources');
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -65,8 +65,6 @@ try {
         fs.writeFileSync(VAPID_KEYS_PATH, JSON.stringify(vapidKeys, null, 2));
         console.log('[Push] New VAPID keys generated and saved.');
     }
-    // MODIFIED: Use a configurable email from .env for VAPID details.
-    // This is required by push services and helps prevent rejection errors.
     const vapidContactEmail = process.env.VAPID_CONTACT_EMAIL || 'mailto:admin@example.com';
     console.log(`[Push] Setting VAPID contact to: ${vapidContactEmail}`);
     webpush.setVapidDetails(vapidContactEmail, vapidKeys.publicKey, vapidKeys.privateKey);
@@ -79,7 +77,7 @@ try {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
     if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true });
     if (!fs.existsSync(SOURCES_DIR)) fs.mkdirSync(SOURCES_DIR, { recursive: true });
-    if (!fs.existsSync(DVR_DIR)) fs.mkdirSync(DVR_DIR, { recursive: true }); // NEW: Ensure DVR dir exists
+    if (!fs.existsSync(DVR_DIR)) fs.mkdirSync(DVR_DIR, { recursive: true });
     console.log(`[INIT] All required directories checked/created.`);
 } catch (mkdirError) {
     console.error(`[INIT] FATAL: Failed to create necessary directories: ${mkdirError.message}`);
@@ -106,67 +104,9 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
             db.run(`CREATE TABLE IF NOT EXISTS multiview_layouts (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, name TEXT NOT NULL, layout_data TEXT NOT NULL, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)`);
             db.run(`CREATE TABLE IF NOT EXISTS notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, channelId TEXT NOT NULL, channelName TEXT NOT NULL, channelLogo TEXT, programTitle TEXT NOT NULL, programDesc TEXT, programStart TEXT NOT NULL, programStop TEXT NOT NULL, notificationTime TEXT NOT NULL, programId TEXT NOT NULL, status TEXT DEFAULT 'pending', triggeredAt TEXT, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)`);
             db.run(`CREATE TABLE IF NOT EXISTS push_subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, endpoint TEXT UNIQUE NOT NULL, p256dh TEXT NOT NULL, auth TEXT NOT NULL, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)`);
-
-            db.run(`CREATE TABLE IF NOT EXISTS notification_deliveries (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                notification_id INTEGER NOT NULL,
-                subscription_id INTEGER NOT NULL,
-                status TEXT NOT NULL DEFAULT 'pending', -- pending, sent, failed, expired
-                updatedAt TEXT NOT NULL,
-                FOREIGN KEY (notification_id) REFERENCES notifications(id) ON DELETE CASCADE,
-                FOREIGN KEY (subscription_id) REFERENCES push_subscriptions(id) ON DELETE CASCADE
-            )`, (err) => {
-                if (err) console.error("[DB] Error creating 'notification_deliveries' table:", err.message);
-                else console.log("[DB] 'notification_deliveries' table checked/created.");
-            });
-
-            db.run(`CREATE TABLE IF NOT EXISTS dvr_jobs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                channelId TEXT NOT NULL,
-                channelName TEXT NOT NULL,
-                programTitle TEXT NOT NULL,
-                startTime TEXT NOT NULL,
-                endTime TEXT NOT NULL,
-                status TEXT NOT NULL, -- scheduled, recording, completed, error, cancelled
-                ffmpeg_pid INTEGER,
-                filePath TEXT,
-                profileId TEXT,
-                userAgentId TEXT,
-                preBufferMinutes INTEGER,
-                postBufferMinutes INTEGER,
-                errorMessage TEXT,
-                isConflicting INTEGER DEFAULT 0,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            )`, (err) => {
-                if(err) {
-                    console.error("[DB] Error creating/altering 'dvr_jobs' table:", err.message);
-                } else {
-                    console.log("[DB] 'dvr_jobs' table checked/created.");
-                    db.run("ALTER TABLE dvr_jobs ADD COLUMN errorMessage TEXT", () => {});
-                    db.run("ALTER TABLE dvr_jobs ADD COLUMN isConflicting INTEGER DEFAULT 0", () => {});
-                }
-            });
-
-            db.run(`CREATE TABLE IF NOT EXISTS dvr_recordings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                job_id INTEGER,
-                user_id INTEGER NOT NULL,
-                channelName TEXT NOT NULL,
-                programTitle TEXT NOT NULL,
-                startTime TEXT NOT NULL,
-                durationSeconds INTEGER,
-                fileSizeBytes INTEGER,
-                filePath TEXT UNIQUE NOT NULL,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-                FOREIGN KEY (job_id) REFERENCES dvr_jobs(id) ON DELETE SET NULL
-            )`, (err) => {
-                if(err) console.error("[DB] Error creating 'dvr_recordings' table:", err.message);
-                else {
-                    console.log("[DB] 'dvr_recordings' table checked/created.");
-                    loadAndScheduleAllDvrJobs();
-                }
-            });
+            db.run(`CREATE TABLE IF NOT EXISTS notification_deliveries (id INTEGER PRIMARY KEY AUTOINCREMENT, notification_id INTEGER NOT NULL, subscription_id INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending', updatedAt TEXT NOT NULL, FOREIGN KEY (notification_id) REFERENCES notifications(id) ON DELETE CASCADE, FOREIGN KEY (subscription_id) REFERENCES push_subscriptions(id) ON DELETE CASCADE)`);
+            db.run(`CREATE TABLE IF NOT EXISTS dvr_jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, channelId TEXT NOT NULL, channelName TEXT NOT NULL, programTitle TEXT NOT NULL, startTime TEXT NOT NULL, endTime TEXT NOT NULL, status TEXT NOT NULL, ffmpeg_pid INTEGER, filePath TEXT, profileId TEXT, userAgentId TEXT, preBufferMinutes INTEGER, postBufferMinutes INTEGER, errorMessage TEXT, isConflicting INTEGER DEFAULT 0, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)`);
+            db.run(`CREATE TABLE IF NOT EXISTS dvr_recordings (id INTEGER PRIMARY KEY AUTOINCREMENT, job_id INTEGER, user_id INTEGER NOT NULL, channelName TEXT NOT NULL, programTitle TEXT NOT NULL, startTime TEXT NOT NULL, durationSeconds INTEGER, fileSizeBytes INTEGER, filePath TEXT UNIQUE NOT NULL, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE, FOREIGN KEY (job_id) REFERENCES dvr_jobs(id) ON DELETE SET NULL)`);
         });
     }
 });
@@ -192,7 +132,6 @@ app.use(
 );
 
 app.use((req, res, next) => {
-    // Exclude SSE endpoint from logging to avoid clutter
     if (req.path === '/api/events') {
         return next();
     }
@@ -218,33 +157,49 @@ const requireDvrAccess = (req, res, next) => {
 app.use('/dvr', requireAuth, requireDvrAccess, express.static(DVR_DIR));
 
 // --- Helper Functions ---
-
 /**
- * NEW: Periodically checks for and cleans up inactive/orphaned FFmpeg stream processes.
- * This acts as a safety net for any streams that are not cleanly disconnected.
+ * NEW: Detects available hardware for transcoding.
  */
+async function detectHardwareAcceleration() {
+    console.log('[HW] Detecting hardware acceleration capabilities...');
+    // Detect NVIDIA GPU
+    exec('nvidia-smi --query-gpu=gpu_name --format=csv,noheader', (err, stdout, stderr) => {
+        if (err || stderr) {
+            console.log('[HW] NVIDIA GPU not detected or nvidia-smi failed.');
+        } else {
+            const gpuName = stdout.trim();
+            detectedHardware.nvidia = gpuName;
+            console.log(`[HW] NVIDIA GPU detected: ${gpuName}`);
+        }
+    });
+
+    // Detect Intel Quick Sync Video (QSV)
+    if (fs.existsSync('/dev/dri/renderD128')) {
+        detectedHardware.intel = 'Intel Quick Sync Video';
+        console.log('[HW] Intel QSV detected.');
+    } else {
+        console.log('[HW] Intel QSV not detected.');
+    }
+}
+
 function cleanupInactiveStreams() {
     const now = Date.now();
     console.log(`[JANITOR] Running cleanup for inactive streams. Current active processes: ${activeStreamProcesses.size}`);
     
     activeStreamProcesses.forEach((streamInfo, url) => {
-        // Check if a stream has no connected clients and hasn't been accessed recently
         if (streamInfo.references <= 0 && (now - streamInfo.lastAccess > STREAM_INACTIVITY_TIMEOUT)) {
             console.log(`[JANITOR] Found stale stream process for URL: ${url}. Terminating PID: ${streamInfo.process.pid}.`);
             try {
-                // Use SIGKILL to ensure the process is terminated forcefully.
                 streamInfo.process.kill('SIGKILL'); 
                 activeStreamProcesses.delete(url);
             } catch (e) {
                 console.warn(`[JANITOR] Error killing stale process for ${url}: ${e.message}`);
-                // Still remove from map if kill fails (process might be gone already)
                 activeStreamProcesses.delete(url);
             }
         }
     });
 }
 
-// --- NEW: Function to send Server-Sent Events to a specific user ---
 function sendSseEvent(userId, eventName, data) {
     const clients = sseClients.get(userId);
     if (clients && clients.length > 0) {
@@ -263,6 +218,8 @@ function getSettings() {
             userAgents: [{ id: `default-ua-${Date.now()}`, name: 'ViniPlay Default', value: 'VLC/3.0.20 (Linux; x86_64)', isDefault: true }],
             streamProfiles: [
                 { id: 'ffmpeg-default', name: 'ffmpeg (Built in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: true },
+                { id: 'ffmpeg-nvidia', name: 'ffmpeg (NVIDIA NVENC)', command: '-hwaccel cuda -c:v h264_cuvid -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: true },
+                { id: 'ffmpeg-intel', name: 'ffmpeg (Intel QSV)', command: '-hwaccel qsv -c:v h264_qsv -i "{streamUrl}" -c:v h264_qsv -preset medium -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: true },
                 { id: 'redirect', name: 'Redirect (No Transcoding)', command: 'redirect', isDefault: false }
             ],
             dvr: {
@@ -271,13 +228,13 @@ function getSettings() {
                 maxConcurrentRecordings: 1,
                 autoDeleteDays: 0,
                 activeRecordingProfileId: 'dvr-mp4-default',
-                recordingProfiles: [{
-                    id: 'dvr-mp4-default',
-                    name: 'Default MP4 (H.264/AAC)',
-                    command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"',
-                    isDefault: true
-                }]
+                recordingProfiles: [
+                    { id: 'dvr-mp4-default', name: 'Default MP4 (H.264/AAC)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: true },
+                    { id: 'dvr-mp4-nvidia', name: 'NVIDIA NVENC MP4 (H.264/AAC)', command: '-hwaccel cuda -c:v h264_cuvid -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: true },
+                    { id: 'dvr-mp4-intel', name: 'Intel QSV MP4 (H.264/AAC)', command: '-hwaccel qsv -c:v h264_qsv -i "{streamUrl}" -c:v h264_qsv -preset medium -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: true }
+                ]
             },
+            hardwareAcceleration: 'auto', // auto, nvidia, intel, cpu
             activeUserAgentId: `default-ua-${Date.now()}`,
             activeStreamProfileId: 'ffmpeg-default',
             searchScope: 'channels_only',
@@ -306,6 +263,7 @@ function getSettings() {
     }
 }
 
+// ... existing helper functions (saveSettings, fetchUrlContent, parseEpgTime, processAndMergeSources, updateAndScheduleSourceRefreshes) remain the same ...
 function saveSettings(settings) {
     try {
         fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
@@ -545,7 +503,6 @@ async function processAndMergeSources() {
         console.error(`[EPG] Error writing merged EPG JSON file: ${writeErr.message}`);
     }
     
-    // FIX: Add a timestamp to the settings file after a successful processing run.
     settings.sourcesLastUpdated = new Date().toISOString();
     console.log(`[PROCESS] Finished processing. New 'sourcesLastUpdated' timestamp: ${settings.sourcesLastUpdated}`);
     
@@ -599,7 +556,7 @@ const updateAndScheduleSourceRefreshes = () => {
     }
     console.log(`[SCHEDULER] Finished scheduling. Active timers: ${sourceRefreshTimers.size}`);
 };
-
+// ... existing helper functions ...
 
 // --- Authentication API Endpoints ---
 app.get('/api/auth/needs-setup', (req, res) => {
@@ -714,8 +671,7 @@ app.get('/api/auth/status', (req, res) => {
         res.json({ isLoggedIn: false });
     }
 });
-
-// --- User Management API Endpoints (Admin only) ---
+// ... existing User Management API Endpoints ...
 app.get('/api/users', requireAdmin, (req, res) => {
     console.log('[USER_API] Fetching all users.');
     db.all("SELECT id, username, isAdmin, canUseDvr FROM users ORDER BY username", [], (err, rows) => {
@@ -836,8 +792,6 @@ app.delete('/api/users/:id', requireAdmin, (req, res) => {
         res.json({ success: true });
     });
 });
-
-
 // --- Protected IPTV API Endpoints ---
 app.get('/api/config', requireAuth, (req, res) => {
     console.log('[API] Fetching /api/config for user:', req.session.username);
@@ -1128,7 +1082,7 @@ app.post('/api/save/settings', requireAuth, async (req, res) => {
         res.status(500).json({ error: "Could not save settings. Check server logs." });
     }
 });
-
+// ... existing endpoint ...
 app.post('/api/user/settings', requireAuth, (req, res) => {
     console.log(`[API] Received request to /api/user/settings for user ${req.session.userId}.`);
     const { key, value } = req.body;
@@ -1170,8 +1124,8 @@ app.post('/api/user/settings', requireAuth, (req, res) => {
         }
     );
 });
-
 // --- Notification Endpoints ---
+// ... existing endpoints ...
 app.get('/api/notifications/vapid-public-key', requireAuth, (req, res) => {
     console.log('[PUSH_API] Request for VAPID public key.');
     if (!vapidKeys.publicKey) {
@@ -1272,8 +1226,6 @@ app.post('/api/notifications', requireAuth, (req, res) => {
         }
     );
 });
-
-// --- **FIX: Modified `GET /api/notifications` to provide accurate, consolidated status** ---
 app.get('/api/notifications', requireAuth, (req, res) => {
     console.log(`[PUSH_API] Fetching notifications for user ${req.session.userId}.`);
     const query = `
@@ -1350,18 +1302,15 @@ app.delete('/api/notifications/:id', requireAuth, (req, res) => {
     });
 });
 
-// MODIFIED: This endpoint is now admin-only and performs a full hard reset.
 app.delete('/api/data', requireAuth, requireAdmin, (req, res) => {
     console.log(`[API_RESET] ADMIN ACTION: Received request to /api/data (HARD RESET) from admin ${req.session.username}.`);
     try {
-        // Stop all timers
         console.log('[API_RESET] Stopping all scheduled tasks...');
         if (notificationCheckInterval) clearInterval(notificationCheckInterval);
         for (const timer of sourceRefreshTimers.values()) clearTimeout(timer);
         sourceRefreshTimers.clear();
         for (const job of activeDvrJobs.values()) job.cancel();
         activeDvrJobs.clear();
-        // FIXED: Now also kill active streams from the global map
         for (const { process: ffmpegProcess } of activeStreamProcesses.values()) {
              try { ffmpegProcess.kill('SIGKILL'); } catch (e) {}
         }
@@ -1371,14 +1320,12 @@ app.delete('/api/data', requireAuth, requireAdmin, (req, res) => {
         }
         runningFFmpegProcesses.clear();
 
-        // Wipe files
         console.log('[API_RESET] Wiping all data files...');
         const filesToDelete = [MERGED_M3U_PATH, MERGED_EPG_JSON_PATH, SETTINGS_PATH, VAPID_KEYS_PATH];
         filesToDelete.forEach(file => {
             if (fs.existsSync(file)) fs.unlinkSync(file);
         });
         
-        // Wipe directories
         [SOURCES_DIR, DVR_DIR].forEach(dir => {
             if(fs.existsSync(dir)) {
                 fs.rmSync(dir, { recursive: true, force: true });
@@ -1386,7 +1333,6 @@ app.delete('/api/data', requireAuth, requireAdmin, (req, res) => {
             }
         });
         
-        // Wipe database tables
         console.log('[API_RESET] Wiping all database tables...');
         const tables = ['dvr_recordings', 'dvr_jobs', 'notification_deliveries', 'notifications', 'push_subscriptions', 'multiview_layouts', 'user_settings', 'users', 'sessions'];
         db.serialize(() => {
@@ -1407,7 +1353,8 @@ app.delete('/api/data', requireAuth, requireAdmin, (req, res) => {
 });
 
 
-app.get('/stream', requireAuth, (req, res) => {
+// ... existing /stream and /api/stream/stop endpoints ...
+app.get('/stream', requireAuth, async (req, res) => {
     const streamUrl = req.query.url;
     const profileId = req.query.profileId;
     const userAgentId = req.query.userAgentId;
@@ -1417,13 +1364,11 @@ app.get('/stream', requireAuth, (req, res) => {
     const activeStreamInfo = activeStreamProcesses.get(streamUrl);
     
     if (activeStreamInfo) {
-        // Stream is already active, increment reference count and update last access time
         activeStreamInfo.references++;
         activeStreamInfo.lastAccess = Date.now();
         console.log(`[STREAM] Existing stream requested. URL: ${streamUrl}. New ref count: ${activeStreamInfo.references}.`);
         activeStreamInfo.process.stdout.pipe(res);
         
-        // Bind the connection close handler to decrement the count
         req.on('close', () => {
             console.log(`[STREAM] Client closed connection for existing stream ${streamUrl}. Decrementing ref count.`);
             activeStreamInfo.references--;
@@ -1435,20 +1380,37 @@ app.get('/stream', requireAuth, (req, res) => {
         return;
     }
 
-    // Stream is not active, proceed to spawn new process
     console.log(`[STREAM] New stream request. URL: ${streamUrl}, Profile ID: ${profileId}, User Agent ID: ${userAgentId}`);
-
-    if (!streamUrl) {
-        console.warn('[STREAM] Missing stream URL in request.');
-        return res.status(400).send('Error: `url` query parameter is required.');
-    }
+    if (!streamUrl) return res.status(400).send('Error: `url` query parameter is required.');
 
     let settings = getSettings();
-    
-    const profile = (settings.streamProfiles || []).find(p => p.id === profileId);
+    let userSettings = {};
+    try {
+        const rows = await new Promise((resolve, reject) => db.all(`SELECT key, value FROM user_settings WHERE user_id = ?`, [userId], (err, rows) => err ? reject(err) : resolve(rows)));
+        rows.forEach(row => userSettings[row.key] = JSON.parse(row.value));
+    } catch (e) { console.error('[STREAM] Could not fetch user settings for hardware acceleration.'); }
+
+    let finalProfileId = profileId;
+    const accelSetting = userSettings.hardwareAcceleration || settings.hardwareAcceleration;
+    console.log(`[STREAM] User HW Accel setting is: ${accelSetting}`);
+
+    if (accelSetting === 'auto') {
+        if (detectedHardware.nvidia) finalProfileId = 'ffmpeg-nvidia';
+        else if (detectedHardware.intel) finalProfileId = 'ffmpeg-intel';
+        else finalProfileId = 'ffmpeg-default';
+    } else if (accelSetting === 'nvidia' && detectedHardware.nvidia) {
+        finalProfileId = 'ffmpeg-nvidia';
+    } else if (accelSetting === 'intel' && detectedHardware.intel) {
+        finalProfileId = 'ffmpeg-intel';
+    } else {
+        finalProfileId = 'ffmpeg-default';
+    }
+
+    const profile = (settings.streamProfiles || []).find(p => p.id === finalProfileId);
+
     if (!profile) {
-        console.error(`[STREAM] Stream profile with ID "${profileId}" not found in settings.`);
-        return res.status(404).send(`Error: Stream profile with ID "${profileId}" not found.`);
+        console.error(`[STREAM] Stream profile with ID "${finalProfileId}" not found in settings.`);
+        return res.status(404).send(`Error: Stream profile with ID "${finalProfileId}" not found.`);
     }
 
     if (profile.command === 'redirect') {
@@ -1463,7 +1425,7 @@ app.get('/stream', requireAuth, (req, res) => {
     }
     
     console.log(`[STREAM] Proxying stream: ${streamUrl}`);
-    console.log(`[STREAM] Using Profile: "${profile.name}"`);
+    console.log(`[STREAM] Using Profile: "${profile.name}" (ID: ${profile.id})`);
     console.log(`[STREAM] Using User Agent: "${userAgent.name}"`);
 
     const commandTemplate = profile.command
@@ -1475,37 +1437,23 @@ app.get('/stream', requireAuth, (req, res) => {
     console.log(`[STREAM] FFmpeg command args: ${args.join(' ')}`);
     const ffmpeg = spawn('ffmpeg', args);
 
-    // Store the process in our global map
-    activeStreamProcesses.set(streamUrl, {
-        process: ffmpeg,
-        references: 1,
-        lastAccess: Date.now()
-    });
+    activeStreamProcesses.set(streamUrl, { process: ffmpeg, references: 1, lastAccess: Date.now() });
     console.log(`[STREAM] Started FFMPEG process with PID: ${ffmpeg.pid} for user ${userId} for URL: ${streamUrl}. Storing in global map.`);
     
     res.setHeader('Content-Type', 'video/mp2t');
     ffmpeg.stdout.pipe(res);
     
-    ffmpeg.stderr.on('data', (data) => {
-        console.error(`[FFMPEG_ERROR] Stream: ${streamUrl} - ${data.toString().trim()}`);
-    });
-
+    ffmpeg.stderr.on('data', (data) => console.error(`[FFMPEG_ERROR] Stream: ${streamUrl} - ${data.toString().trim()}`));
     ffmpeg.on('close', (code) => {
         console.log(`[STREAM] ffmpeg process for ${streamUrl} exited with code ${code}`);
         activeStreamProcesses.delete(streamUrl);
-        if (!res.headersSent) {
-             res.status(500).send('FFmpeg stream ended unexpectedly or failed to start.');
-        } else {
-            res.end();
-        }
+        if (!res.headersSent) res.status(500).send('FFmpeg stream ended unexpectedly or failed to start.');
+        else res.end();
     });
-
     ffmpeg.on('error', (err) => {
         console.error(`[STREAM] Failed to start ffmpeg process for ${streamUrl}: ${err.message}`);
         activeStreamProcesses.delete(streamUrl);
-        if (!res.headersSent) {
-            res.status(500).send('Failed to start streaming service. Check server logs.');
-        }
+        if (!res.headersSent) res.status(500).send('Failed to start streaming service. Check server logs.');
     });
     
     req.on('close', () => {
@@ -1522,8 +1470,6 @@ app.get('/stream', requireAuth, (req, res) => {
         }
     });
 });
-
-// --- NEW: API Endpoint to explicitly stop a stream ---
 app.post('/api/stream/stop', requireAuth, (req, res) => {
     const { url: streamUrl } = req.body;
     if (!streamUrl) {
@@ -1547,9 +1493,7 @@ app.post('/api/stream/stop', requireAuth, (req, res) => {
         res.json({ success: true, message: 'No active stream to stop.' });
     }
 });
-
-
-// --- Multi-View Layout API Endpoints ---
+// ... existing Multi-View Layout API Endpoints ...
 app.get('/api/multiview/layouts', requireAuth, (req, res) => {
     console.log(`[LAYOUT_API] Fetching layouts for user ${req.session.userId}.`);
     db.all("SELECT id, name, layout_data FROM multiview_layouts WHERE user_id = ?", [req.session.userId], (err, rows) => {
@@ -1605,8 +1549,8 @@ app.delete('/api/multiview/layouts/:id', requireAuth, (req, res) => {
         res.json({ success: true });
     });
 });
-
-
+// --- Notification Scheduler ---
+// ... existing checkAndSendNotifications ...
 async function checkAndSendNotifications() {
     console.log('[PUSH_CHECKER] Running scheduled notification check for all devices.');
     const now = new Date();
@@ -1690,7 +1634,6 @@ async function checkAndSendNotifications() {
                     if (error.statusCode === 410 || error.statusCode === 404) {
                         console.log(`[PUSH_CHECKER] Subscription ${delivery.subscription_id} is invalid (410/404). Deleting subscription and failing deliveries.`);
                         
-                        // --- NEW: Notify connected clients about the invalid subscription ---
                         sendSseEvent(delivery.user_id, 'subscription-invalidated', {
                             endpoint: delivery.endpoint,
                             reason: `Push service returned status ${error.statusCode}.`
@@ -1707,10 +1650,8 @@ async function checkAndSendNotifications() {
         console.error('[PUSH_CHECKER] Unhandled error in checkAndSendNotifications:', error);
     }
 }
-
-
-// --- DVR Engine (MODIFIED & NEW) ---
-
+// --- DVR Engine ---
+// ... existing DVR functions (stopRecording, startRecording, etc.) ...
 function stopRecording(jobId) {
     const pid = runningFFmpegProcesses.get(jobId);
     if (pid) {
@@ -1727,7 +1668,7 @@ function stopRecording(jobId) {
 }
 
 
-function startRecording(job) {
+async function startRecording(job) {
     console.log(`[DVR] Starting recording for job ${job.id}: "${job.programTitle}"`);
     const settings = getSettings();
     const allChannels = parseM3U(fs.existsSync(MERGED_M3U_PATH) ? fs.readFileSync(MERGED_M3U_PATH, 'utf-8') : '');
@@ -1739,10 +1680,31 @@ function startRecording(job) {
         db.run("UPDATE dvr_jobs SET status = 'error', ffmpeg_pid = NULL, errorMessage = ? WHERE id = ?", [errorMsg, job.id]);
         return;
     }
+    
+    let userSettings = {};
+    try {
+        const rows = await new Promise((resolve, reject) => db.all(`SELECT key, value FROM user_settings WHERE user_id = ?`, [job.user_id], (err, rows) => err ? reject(err) : resolve(rows)));
+        rows.forEach(row => userSettings[row.key] = JSON.parse(row.value));
+    } catch (e) { console.error('[DVR] Could not fetch user settings for hardware acceleration.'); }
 
-    const recProfile = (settings.dvr.recordingProfiles || []).find(p => p.id === job.profileId);
+    let finalProfileId = job.profileId;
+    const accelSetting = userSettings.hardwareAcceleration || settings.hardwareAcceleration;
+
+    if (accelSetting === 'auto') {
+        if (detectedHardware.nvidia) finalProfileId = 'dvr-mp4-nvidia';
+        else if (detectedHardware.intel) finalProfileId = 'dvr-mp4-intel';
+        else finalProfileId = 'dvr-mp4-default';
+    } else if (accelSetting === 'nvidia' && detectedHardware.nvidia) {
+        finalProfileId = 'dvr-mp4-nvidia';
+    } else if (accelSetting === 'intel' && detectedHardware.intel) {
+        finalProfileId = 'dvr-mp4-intel';
+    } else {
+        finalProfileId = 'dvr-mp4-default';
+    }
+
+    const recProfile = (settings.dvr.recordingProfiles || []).find(p => p.id === finalProfileId);
     if (!recProfile) {
-        const errorMsg = `Active recording profile not found.`;
+        const errorMsg = `Recording profile ID "${finalProfileId}" not found.`;
         console.error(`[DVR] Cannot start recording job ${job.id}: ${errorMsg}`);
         db.run("UPDATE dvr_jobs SET status = 'error', ffmpeg_pid = NULL, errorMessage = ? WHERE id = ?", [errorMsg, job.id]);
         return;
@@ -1872,6 +1834,7 @@ function loadAndScheduleAllDvrJobs() {
         });
     });
 }
+// ... existing functions ...
 
 async function checkForConflicts(newJob, userId) {
     return new Promise((resolve, reject) => {
@@ -1942,10 +1905,8 @@ async function autoDeleteOldRecordings() {
         });
     });
 }
-
-
 // --- DVR API Endpoints (MODIFIED & NEW) ---
-
+// ... existing DVR API Endpoints ...
 app.post('/api/dvr/schedule', requireAuth, requireDvrAccess, async (req, res) => {
     const { channelId, channelName, programTitle, programStart, programStop } = req.body;
     const settings = getSettings();
@@ -2059,8 +2020,6 @@ app.get('/api/dvr/storage', requireAuth, requireDvrAccess, (req, res) => {
     }
 });
 
-// --- FIX: Route Order Correction ---
-// Specific bulk-delete routes are now placed BEFORE dynamic routes with :id
 app.delete('/api/dvr/jobs/all', requireAuth, requireDvrAccess, (req, res) => {
     const userId = req.session.userId;
     console.log(`[DVR_API] Clearing all scheduled/historical jobs for user ${userId}.`);
@@ -2197,14 +2156,11 @@ app.delete('/api/dvr/jobs/:id/history', requireAuth, requireDvrAccess, (req, res
         }
     });
 });
-
-
-// --- NEW: Server-Sent Events endpoint for real-time updates ---
+// ... existing SSE and other endpoints ...
 app.get('/api/events', requireAuth, (req, res) => {
     const userId = req.session.userId;
-    const clientId = Date.now(); // A unique ID for this specific connection
+    const clientId = Date.now();
     
-    // Set headers for SSE
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -2218,7 +2174,6 @@ app.get('/api/events', requireAuth, (req, res) => {
     clients.push({ id: clientId, res });
     console.log(`[SSE] Client ${clientId} connected for user ID ${userId}. Total clients for user: ${clients.length}.`);
 
-    // Send a connected message to confirm connection
     res.write(`event: connected\ndata: ${JSON.stringify({ message: "Connection established" })}\n\n`);
 
     req.on('close', () => {
@@ -2236,7 +2191,6 @@ app.get('/api/events', requireAuth, (req, res) => {
     });
 });
 
-// --- NEW: URL Validation Endpoint ---
 app.post('/api/validate-url', requireAuth, async (req, res) => {
     const { url } = req.body;
     if (!url) {
@@ -2251,8 +2205,12 @@ app.post('/api/validate-url', requireAuth, async (req, res) => {
     }
 });
 
+// --- NEW: Hardware Info Endpoint ---
+app.get('/api/hardware', requireAuth, (req, res) => {
+    res.json(detectedHardware);
+});
 
-// --- NEW: Backup & Restore Endpoints ---
+// --- Backup & Restore Endpoints ---
 const settingsUpload = multer({
     storage: multer.diskStorage({
         destination: (req, file, cb) => cb(null, DATA_DIR),
@@ -2296,7 +2254,6 @@ app.post('/api/settings/import', requireAdmin, settingsUpload.single('settingsFi
         res.status(400).json({ error: `Invalid settings file. Error: ${error.message}` });
     }
 });
-
 // --- Main Route Handling ---
 app.get('*', (req, res) => {
     const filePath = path.join(PUBLIC_DIR, req.path);
@@ -2307,27 +2264,29 @@ app.get('*', (req, res) => {
 });
 
 // --- Server Start ---
-app.listen(port, () => {
-    console.log(`\n======================================================`);
-    console.log(` VINI PLAY server listening at http://localhost:${port}`);
-    console.log(`======================================================\n`);
+// NEW: Run hardware detection before starting the server
+detectHardwareAcceleration().then(() => {
+    app.listen(port, () => {
+        console.log(`\n======================================================`);
+        console.log(` VINI PLAY server listening at http://localhost:${port}`);
+        console.log(`======================================================\n`);
 
-    processAndMergeSources().then((result) => {
-        console.log('[INIT] Initial source processing complete.');
-        if(result.success) fs.writeFileSync(SETTINGS_PATH, JSON.stringify(result.updatedSettings, null, 2));
-        updateAndScheduleSourceRefreshes();
-    }).catch(error => console.error('[INIT] Initial source processing failed:', error.message));
+        processAndMergeSources().then((result) => {
+            console.log('[INIT] Initial source processing complete.');
+            if(result.success) fs.writeFileSync(SETTINGS_PATH, JSON.stringify(result.updatedSettings, null, 2));
+            updateAndScheduleSourceRefreshes();
+        }).catch(error => console.error('[INIT] Initial source processing failed:', error.message));
 
-    if (notificationCheckInterval) clearInterval(notificationCheckInterval);
-    notificationCheckInterval = setInterval(checkAndSendNotifications, 60000);
-    console.log('[Push] Notification checker started.');
-    
-    // NEW: Start the stream cleanup janitor
-    setInterval(cleanupInactiveStreams, 60000);
-    console.log('[JANITOR] Inactive stream cleanup process started.');
+        if (notificationCheckInterval) clearInterval(notificationCheckInterval);
+        notificationCheckInterval = setInterval(checkAndSendNotifications, 60000);
+        console.log('[Push] Notification checker started.');
+        
+        setInterval(cleanupInactiveStreams, 60000);
+        console.log('[JANITOR] Inactive stream cleanup process started.');
 
-    schedule.scheduleJob('0 2 * * *', autoDeleteOldRecordings);
-    console.log('[DVR_STORAGE] Scheduled daily cleanup of old recordings.');
+        schedule.scheduleJob('0 2 * * *', autoDeleteOldRecordings);
+        console.log('[DVR_STORAGE] Scheduled daily cleanup of old recordings.');
+    });
 });
 
 // --- Helper Functions (Full Implementation) ---
@@ -2339,7 +2298,6 @@ function parseM3U(data) {
         const line = lines[i].trim();
         if (line.startsWith('#EXTINF:')) {
             const nextLine = lines[i + 1]?.trim();
-            // Ensure the next line is a valid URL
             if (nextLine && (nextLine.startsWith('http') || nextLine.startsWith('rtp'))) {
                 const idMatch = line.match(/tvg-id="([^"]*)"/);
                 const logoMatch = line.match(/tvg-logo="([^"]*)"/);
