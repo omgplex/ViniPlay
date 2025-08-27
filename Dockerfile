@@ -6,12 +6,15 @@ FROM nvidia/cuda:11.8.0-base-ubuntu20.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install necessary dependencies:
+# - build-essential & python3 are required for compiling native Node.js modules.
 # - curl and gnupg are needed to add the Node.js repository.
 # - nodejs will install Node.js and npm.
 # - ffmpeg will be installed from the standard Ubuntu repositories. It will be able
 #   to leverage the NVIDIA drivers present in the base image.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+    build-essential \
+    python3 \
     curl \
     gnupg && \
     curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
@@ -30,8 +33,7 @@ WORKDIR /usr/src/app
 COPY package*.json ./
 
 # Install app dependencies inside the container
-# --force is used to resolve dependency conflicts that can occur in CI/CD environments.
-RUN npm install --force
+RUN npm install
 
 # Copy the rest of your application's source code
 COPY . .
