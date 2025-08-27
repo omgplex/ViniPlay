@@ -1,6 +1,5 @@
-# Use a more recent and available NVIDIA CUDA runtime as a parent image.
-# This image contains the necessary libraries for ffmpeg to access the GPU.
-FROM nvidia/cuda:11.8.0-base-ubuntu20.04
+# Use the NVIDIA CUDA RUNTIME image, which includes necessary video libraries.
+FROM nvidia/cuda:11.8.0-runtime-ubuntu20.04
 
 # Set environment variables to prevent interactive prompts during installation.
 ENV DEBIAN_FRONTEND=noninteractive
@@ -52,4 +51,3 @@ VOLUME /dvr   # Declare the DVR directory as a volume
 
 # Define the command to run your app
 CMD [ "npm", "start" ]
-
