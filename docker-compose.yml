@@ -38,7 +38,7 @@ services:
     # To enable GPU transcoding, you must expose your GPU to the container.
     # This requires the NVIDIA Container Toolkit to be installed on your host.
     #
-    # UNCOMMENT the 'deploy' section below to enable it.
+    # THIS SECTION IS NOW UNCOMMENTED TO ENABLE GPU ACCESS.
     #
     # For NVIDIA GPUs:
     # The 'deploy' block is the modern way to request GPU resources.
@@ -48,13 +48,13 @@ services:
     # For Intel Quick Sync Video (QSV):
     # You need to map the /dev/dri device. UNCOMMENT the 'devices' section below.
     #
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     #
     # devices:
     #   - /dev/dri:/dev/dri
