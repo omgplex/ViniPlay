@@ -210,56 +210,83 @@ function sendSseEvent(userId, eventName, data) {
 }
 
 function getSettings() {
+    const defaultSettings = {
+        m3uSources: [],
+        epgSources: [],
+        userAgents: [{ id: `default-ua-1724778434000`, name: 'ViniPlay Default', value: 'VLC/3.0.20 (Linux; x86_64)', isDefault: true }],
+        streamProfiles: [
+            { id: 'ffmpeg-default', name: 'ffmpeg (Built in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: true },
+            { id: 'ffmpeg-nvidia', name: 'ffmpeg (NVIDIA NVENC)', command: '-hwaccel cuda -c:v h264_cuvid -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false },
+            { id: 'ffmpeg-intel', name: 'ffmpeg (Intel QSV)', command: '-hwaccel qsv -c:v h264_qsv -i "{streamUrl}" -c:v h264_qsv -preset medium -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false },
+            { id: 'redirect', name: 'Redirect (No Transcoding)', command: 'redirect', isDefault: false }
+        ],
+        dvr: {
+            preBufferMinutes: 1,
+            postBufferMinutes: 2,
+            maxConcurrentRecordings: 1,
+            autoDeleteDays: 0,
+            activeRecordingProfileId: 'dvr-mp4-default',
+            recordingProfiles: [
+                { id: 'dvr-mp4-default', name: 'Default MP4 (H.264/AAC)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: true },
+                { id: 'dvr-mp4-nvidia', name: 'NVIDIA NVENC MP4 (H.264/AAC)', command: '-hwaccel cuda -c:v h264_cuvid -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: false },
+                { id: 'dvr-mp4-intel', name: 'Intel QSV MP4 (H.264/AAC)', command: '-hwaccel qsv -c:v h264_qsv -i "{streamUrl}" -c:v h264_qsv -preset medium -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: false }
+            ]
+        },
+        hardwareAcceleration: 'auto',
+        activeUserAgentId: `default-ua-1724778434000`,
+        activeStreamProfileId: 'ffmpeg-default',
+        searchScope: 'channels_only',
+        notificationLeadTime: 10,
+        sourcesLastUpdated: null
+    };
+
     if (!fs.existsSync(SETTINGS_PATH)) {
         console.log('[SETTINGS] settings.json not found, creating default settings.');
-        const defaultSettings = {
-            m3uSources: [],
-            epgSources: [],
-            userAgents: [{ id: `default-ua-${Date.now()}`, name: 'ViniPlay Default', value: 'VLC/3.0.20 (Linux; x86_64)', isDefault: true }],
-            streamProfiles: [
-                { id: 'ffmpeg-default', name: 'ffmpeg (Built in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: true },
-                { id: 'ffmpeg-nvidia', name: 'ffmpeg (NVIDIA NVENC)', command: '-hwaccel cuda -c:v h264_cuvid -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: true },
-                { id: 'ffmpeg-intel', name: 'ffmpeg (Intel QSV)', command: '-hwaccel qsv -c:v h264_qsv -i "{streamUrl}" -c:v h264_qsv -preset medium -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: true },
-                { id: 'redirect', name: 'Redirect (No Transcoding)', command: 'redirect', isDefault: false }
-            ],
-            dvr: {
-                preBufferMinutes: 1,
-                postBufferMinutes: 2,
-                maxConcurrentRecordings: 1,
-                autoDeleteDays: 0,
-                activeRecordingProfileId: 'dvr-mp4-default',
-                recordingProfiles: [
-                    { id: 'dvr-mp4-default', name: 'Default MP4 (H.264/AAC)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: true },
-                    { id: 'dvr-mp4-nvidia', name: 'NVIDIA NVENC MP4 (H.264/AAC)', command: '-hwaccel cuda -c:v h264_cuvid -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: true },
-                    { id: 'dvr-mp4-intel', name: 'Intel QSV MP4 (H.264/AAC)', command: '-hwaccel qsv -c:v h264_qsv -i "{streamUrl}" -c:v h264_qsv -preset medium -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: true }
-                ]
-            },
-            hardwareAcceleration: 'auto', // auto, nvidia, intel, cpu
-            activeUserAgentId: `default-ua-${Date.now()}`,
-            activeStreamProfileId: 'ffmpeg-default',
-            searchScope: 'channels_only',
-            notificationLeadTime: 10,
-            sourcesLastUpdated: null
-        };
         fs.writeFileSync(SETTINGS_PATH, JSON.stringify(defaultSettings, null, 2));
         return defaultSettings;
     }
     try {
-        const settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
+        let settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
+        
+        // --- SETTINGS MIGRATION LOGIC ---
+        let needsSave = false;
+        
+        // Check for and add missing stream profiles
+        defaultSettings.streamProfiles.forEach(defaultProfile => {
+            if (!settings.streamProfiles.some(p => p.id === defaultProfile.id)) {
+                console.log(`[SETTINGS_MIGRATE] Adding missing stream profile: ${defaultProfile.name}`);
+                settings.streamProfiles.push(defaultProfile);
+                needsSave = true;
+            }
+        });
+        
+        // Initialize DVR settings if they don't exist
         if (!settings.dvr) {
-            settings.dvr = {
-                preBufferMinutes: 1,
-                postBufferMinutes: 2,
-                maxConcurrentRecordings: 1,
-                autoDeleteDays: 0,
-                activeRecordingProfileId: 'dvr-mp4-default',
-                recordingProfiles: [{ id: 'dvr-mp4-default', name: 'Default MP4 (H.264/AAC)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: true }]
-            };
+            console.log(`[SETTINGS_MIGRATE] Initializing DVR settings block.`);
+            settings.dvr = defaultSettings.dvr;
+            needsSave = true;
+        } else {
+            // Check for and add missing DVR recording profiles
+            defaultSettings.dvr.recordingProfiles.forEach(defaultProfile => {
+                if (!settings.dvr.recordingProfiles.some(p => p.id === defaultProfile.id)) {
+                    console.log(`[SETTINGS_MIGRATE] Adding missing DVR recording profile: ${defaultProfile.name}`);
+                    settings.dvr.recordingProfiles.push(defaultProfile);
+                    needsSave = true;
+                }
+            });
         }
+        
+        // If changes were made, write them back to the file
+        if (needsSave) {
+            console.log('[SETTINGS_MIGRATE] Saving updated settings file after migration.');
+            fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
+        }
+
         return settings;
+
     } catch (e) {
         console.error("[SETTINGS] Could not parse settings.json, returning default. Error:", e.message);
-        return {};
+        return defaultSettings;
     }
 }
 
@@ -1390,19 +1417,23 @@ app.get('/stream', requireAuth, async (req, res) => {
         rows.forEach(row => userSettings[row.key] = JSON.parse(row.value));
     } catch (e) { console.error('[STREAM] Could not fetch user settings for hardware acceleration.'); }
 
-    let finalProfileId = profileId;
-    const accelSetting = userSettings.hardwareAcceleration || settings.hardwareAcceleration;
+    let finalProfileId;
+    const accelSetting = userSettings.hardwareAcceleration || settings.hardwareAcceleration || 'auto';
     console.log(`[STREAM] User HW Accel setting is: ${accelSetting}`);
 
-    if (accelSetting === 'auto') {
+    if (accelSetting === 'cpu') {
+        finalProfileId = profileId; // Use the profile explicitly selected by the user
+    } else if (accelSetting === 'auto') {
         if (detectedHardware.nvidia) finalProfileId = 'ffmpeg-nvidia';
         else if (detectedHardware.intel) finalProfileId = 'ffmpeg-intel';
-        else finalProfileId = 'ffmpeg-default';
+        else finalProfileId = 'ffmpeg-default'; // Fallback for auto
     } else if (accelSetting === 'nvidia' && detectedHardware.nvidia) {
         finalProfileId = 'ffmpeg-nvidia';
     } else if (accelSetting === 'intel' && detectedHardware.intel) {
         finalProfileId = 'ffmpeg-intel';
     } else {
+        // Fallback if user selects a GPU that isn't detected or for any other case
+        console.warn(`[STREAM] Hardware preference "${accelSetting}" not available or detected. Falling back to default CPU profile.`);
         finalProfileId = 'ffmpeg-default';
     }
 
@@ -1687,10 +1718,12 @@ async function startRecording(job) {
         rows.forEach(row => userSettings[row.key] = JSON.parse(row.value));
     } catch (e) { console.error('[DVR] Could not fetch user settings for hardware acceleration.'); }
 
-    let finalProfileId = job.profileId;
-    const accelSetting = userSettings.hardwareAcceleration || settings.hardwareAcceleration;
+    let finalProfileId;
+    const accelSetting = userSettings.hardwareAcceleration || settings.hardwareAcceleration || 'auto';
 
-    if (accelSetting === 'auto') {
+    if (accelSetting === 'cpu') {
+        finalProfileId = job.profileId; // Use the profile explicitly selected by the user
+    } else if (accelSetting === 'auto') {
         if (detectedHardware.nvidia) finalProfileId = 'dvr-mp4-nvidia';
         else if (detectedHardware.intel) finalProfileId = 'dvr-mp4-intel';
         else finalProfileId = 'dvr-mp4-default';
@@ -1699,6 +1732,7 @@ async function startRecording(job) {
     } else if (accelSetting === 'intel' && detectedHardware.intel) {
         finalProfileId = 'dvr-mp4-intel';
     } else {
+        console.warn(`[DVR] Hardware preference "${accelSetting}" not available for recording. Falling back to default DVR profile.`);
         finalProfileId = 'dvr-mp4-default';
     }
 
@@ -2323,3 +2357,4 @@ function parseM3U(data) {
     }
     return channels;
 }
+
