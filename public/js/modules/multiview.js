@@ -500,18 +500,42 @@ function playChannelInWidget(widgetId, channel, gridstackItemContentEl) {
         playerPlaceholderEl.classList.add('hidden');
     }
 
-    const profileId = guideState.settings.activeStreamProfileId;
-    const userAgentId = guideState.settings.activeUserAgentId;
-    const profile = (guideState.settings.streamProfiles || []).find(p => p.id === profileId);
+    // --- START FIX: Hardware Acceleration Logic ---
+    const settings = guideState.settings;
+    const hardwarePref = settings.hardwareAcceleration || 'auto';
+    let profileIdToUse = settings.activeStreamProfileId; // Default to CPU-based profile from settings
+
+    console.log(`[MultiView] Hardware preference from settings: ${hardwarePref}`);
+
+    if (hardwarePref === 'nvidia') {
+        profileIdToUse = 'ffmpeg-nvidia';
+    } else if (hardwarePref === 'intel') {
+        profileIdToUse = 'ffmpeg-intel';
+    } else if (hardwarePref === 'auto') {
+        // In 'auto', check what the server detected via the UI elements
+        const nvidiaOption = UIElements.hardwareAccelerationSelect.querySelector('option[value="nvidia"]');
+        const intelOption = UIElements.hardwareAccelerationSelect.querySelector('option[value="intel"]');
+        if (nvidiaOption && !nvidiaOption.disabled) {
+            profileIdToUse = 'ffmpeg-nvidia';
+        } else if (intelOption && !intelOption.disabled) {
+            profileIdToUse = 'ffmpeg-intel';
+        }
+    }
+    
+    console.log(`[MultiView] Selected profile ID: ${profileIdToUse}`);
+    // --- END FIX ---
+
+    const userAgentId = settings.activeUserAgentId;
+    const profile = (settings.streamProfiles || []).find(p => p.id === profileIdToUse);
 
     if (!profile) {
-        showNotification("Active stream profile not found.", true);
+        showNotification("Active stream profile not found for selected hardware.", true);
         return;
     }
 
     const streamUrlToPlay = profile.command === 'redirect' 
         ? channel.url 
-        : `/stream?url=${encodeURIComponent(channel.url)}&profileId=${profileId}&userAgentId=${userAgentId}`;
+        : `/stream?url=${encodeURIComponent(channel.url)}&profileId=${profileIdToUse}&userAgentId=${userAgentId}`;
 
     if (mpegts.isSupported()) {
         const player = mpegts.createPlayer({
