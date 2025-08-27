@@ -13,6 +13,44 @@ import { ICONS } from './icons.js'; // MODIFIED: Import the new icon library
 
 let currentSourceTypeForEditor = 'url';
 
+// --- NEW: Hardware Acceleration ---
+
+/**
+ * Fetches detected hardware from the backend and updates the UI.
+ */
+async function loadHardwareInfo() {
+    console.log('[SETTINGS] Fetching hardware acceleration info...');
+    const res = await apiFetch('/api/hardware');
+    if (res && res.ok) {
+        const hardware = await res.json();
+        const nvidiaOption = UIElements.hardwareAccelerationSelect.querySelector('option[value="nvidia"]');
+        const intelOption = UIElements.hardwareAccelerationSelect.querySelector('option[value="intel"]');
+        let infoText = 'None';
+
+        if (hardware.nvidia) {
+            nvidiaOption.disabled = false;
+            nvidiaOption.textContent = `NVIDIA (NVENC) - ${hardware.nvidia}`;
+            infoText = hardware.nvidia;
+            console.log(`[SETTINGS] NVIDIA GPU found: ${hardware.nvidia}`);
+        }
+        if (hardware.intel) {
+            intelOption.disabled = false;
+            intelOption.textContent = `Intel (QSV)`;
+             if (infoText !== 'None') {
+                infoText += ` & ${hardware.intel}`;
+             } else {
+                infoText = hardware.intel;
+             }
+            console.log(`[SETTINGS] Intel QSV found.`);
+        }
+        UIElements.hardwareInfoText.textContent = infoText;
+    } else {
+        UIElements.hardwareInfoText.textContent = 'Could not detect hardware.';
+        console.error('[SETTINGS] Failed to load hardware info from backend.');
+    }
+}
+
+
 // --- UI Rendering ---
 
 /**
@@ -117,6 +155,11 @@ export const updateUIFromSettings = () => {
     UIElements.searchScopeSelect.value = settings.searchScope;
     UIElements.notificationLeadTimeInput.value = settings.notificationLeadTime;
     
+    // NEW: Update hardware acceleration UI
+    loadHardwareInfo();
+    UIElements.hardwareAccelerationSelect.value = settings.hardwareAcceleration || 'auto';
+
+
     // Update DVR inputs and section visibility
     const hasDvrAccess = appState.currentUser?.isAdmin || appState.currentUser?.canUseDvr;
     const dvrSettingsSection = document.getElementById('dvr-settings-section');
@@ -497,6 +540,12 @@ export function setupSettingsEventListeners() {
             return;
         }
         await saveSettingAndNotify(saveGlobalSetting, { notificationLeadTime: value });
+    });
+    
+    // NEW: Hardware acceleration listener
+    UIElements.hardwareAccelerationSelect.addEventListener('change', (e) => {
+        saveUserSetting('hardwareAcceleration', e.target.value);
+        showNotification('Hardware acceleration preference saved.');
     });
 
     // --- DVR Settings ---
