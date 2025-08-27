@@ -34,3 +34,27 @@ services:
     env_file:
       - ./.env
 
+    # --- GPU HARDWARE ACCELERATION ---
+    # To enable GPU transcoding, you must expose your GPU to the container.
+    # This requires the NVIDIA Container Toolkit to be installed on your host.
+    #
+    # UNCOMMENT the 'deploy' section below to enable it.
+    #
+    # For NVIDIA GPUs:
+    # The 'deploy' block is the modern way to request GPU resources.
+    # 'count: 1' requests one GPU. Use 'all' to pass all available GPUs.
+    # The 'capabilities' should include 'gpu'.
+    #
+    # For Intel Quick Sync Video (QSV):
+    # You need to map the /dev/dri device. UNCOMMENT the 'devices' section below.
+    #
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    #
+    # devices:
+    #   - /dev/dri:/dev/dri
