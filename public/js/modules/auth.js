@@ -38,7 +38,7 @@ const initializeUIElements = () => {
     // Program Details Modal and its Buttons
     UIElements.programDetailsModal = document.getElementById('program-details-modal');
     UIElements.programDetailsNotifyBtn = document.getElementById('program-details-notify-btn');
-    UIElements.programDetailsRecordBtn = document.getElementById('program-details-record-btn');
+    UIElements.programDetailsRecordBtn = document.getElementById('details-record-btn');
 
     // Mobile menu elements
     UIElements.mobileMenuToggle = document.getElementById('mobile-menu-toggle');
@@ -112,13 +112,16 @@ const initializeUIElements = () => {
     UIElements.closeRecordingPlayerBtn = document.getElementById('close-recording-player-btn');
     UIElements.dvrPreBufferInput = document.getElementById('dvr-pre-buffer-input');
     UIElements.dvrPostBufferInput = document.getElementById('dvr-post-buffer-input');
-    UIElements.addRecordingProfileBtn = document.getElementById('add-recording-profile-btn');
-    UIElements.editRecordingProfileBtn = document.getElementById('edit-recording-profile-btn');
-    UIElements.deleteRecordingProfileBtn = document.getElementById('delete-recording-profile-btn');
-    UIElements.recordingProfileSelect = document.getElementById('recording-profile-select');
+    UIElements.addDvrProfileBtn = document.getElementById('add-dvr-profile-btn');
+    UIElements.editDvrProfileBtn = document.getElementById('edit-dvr-profile-btn');
+    UIElements.deleteDvrProfileBtn = document.getElementById('delete-dvr-profile-btn');
+    UIElements.dvrRecordingProfileSelect = document.getElementById('dvr-recording-profile-select');
     // FIX: Add explicit references for the clear all buttons
     UIElements.clearScheduledDvrBtn = document.getElementById('clear-scheduled-dvr-btn');
     UIElements.clearCompletedDvrBtn = document.getElementById('clear-completed-dvr-btn');
+    // UX IMPROVEMENT: Add references for profile containers
+    UIElements.streamProfileContainer = document.getElementById('stream-profile-container');
+    UIElements.dvrProfileContainer = document.getElementById('dvr-profile-container');
 
     // Settings Buttons
     UIElements.addM3uBtn = document.getElementById('add-m3u-btn');
@@ -358,3 +361,4 @@ export function setupAuthEventListeners() {
         }
     });
 }
+
