@@ -1,5 +1,6 @@
-# Use the NVIDIA CUDA RUNTIME image, which includes necessary video libraries.
-FROM nvidia/cuda:11.8.0-runtime-ubuntu20.04
+# Use the NVIDIA CUDA BASE image, which includes the Video Codec SDK.
+# This is the key change to fix the transcoding issue.
+FROM nvidia/cuda:11.8.0-base-ubuntu20.04
 
 # Set environment variables to prevent interactive prompts during installation.
 ENV DEBIAN_FRONTEND=noninteractive
@@ -8,14 +9,16 @@ ENV DEBIAN_FRONTEND=noninteractive
 # - build-essential & python3 are required for compiling native Node.js modules.
 # - curl and gnupg are needed to add the Node.js repository.
 # - nodejs will install Node.js and npm.
-# - ffmpeg will be installed from the standard Ubuntu repositories. It will be able
-#   to leverage the NVIDIA drivers present in the base image.
+# - ffmpeg will be installed from the standard Ubuntu repositories.
+# - nvidia-utils-520 provides additional driver utilities that can help FFmpeg.
+#   (Version should ideally match the driver on your host, 520 is a common version for CUDA 11.8)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
     python3 \
     curl \
-    gnupg && \
+    gnupg \
+    nvidia-utils-520 && \
     curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
     apt-get install -y --no-install-recommends \
     nodejs \
