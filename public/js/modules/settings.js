@@ -157,7 +157,13 @@ export const updateUIFromSettings = () => {
     
     // NEW: Update hardware acceleration UI
     loadHardwareInfo();
-    UIElements.hardwareAccelerationSelect.value = settings.hardwareAcceleration || 'auto';
+    const hardwareAccelerationValue = settings.hardwareAcceleration || 'auto';
+    UIElements.hardwareAccelerationSelect.value = hardwareAccelerationValue;
+
+    // UX Improvement: Show/hide profile selectors based on hardware choice
+    const showProfiles = hardwareAccelerationValue === 'cpu';
+    UIElements.streamProfileContainer.classList.toggle('hidden', !showProfiles);
+    UIElements.dvrProfileContainer.classList.toggle('hidden', !showProfiles);
 
 
     // Update DVR inputs and section visibility
@@ -544,7 +550,14 @@ export function setupSettingsEventListeners() {
     
     // NEW: Hardware acceleration listener
     UIElements.hardwareAccelerationSelect.addEventListener('change', (e) => {
-        saveUserSetting('hardwareAcceleration', e.target.value);
+        const selectedValue = e.target.value;
+        saveUserSetting('hardwareAcceleration', selectedValue);
+        
+        // UX Improvement: Show/hide profile selectors based on choice
+        const showProfiles = selectedValue === 'cpu';
+        UIElements.streamProfileContainer.classList.toggle('hidden', !showProfiles);
+        UIElements.dvrProfileContainer.classList.toggle('hidden', !showProfiles);
+        
         showNotification('Hardware acceleration preference saved.');
     });
 
@@ -772,3 +785,4 @@ export function setupSettingsEventListeners() {
         e.target.value = '';
     });
 }
+
