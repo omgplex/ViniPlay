@@ -1,6 +1,7 @@
-# Use the NVIDIA CUDA BASE image, which includes the Video Codec SDK.
-# This is the key change to fix the transcoding issue.
-FROM nvidia/cuda:11.8.0-base-ubuntu20.04
+# Use a CUDA base image that is compatible with the NVIDIA 535 driver series.
+# CUDA 12.2.2 is a stable release for this driver version.
+# Using the 'devel' tag ensures all development libraries (like NVML) are included.
+FROM nvidia/cuda:12.2.2-devel-ubuntu22.04
 
 # Set environment variables to ensure the container can find and use NVIDIA tools.
 ENV PATH /usr/local/nvidia/bin:${PATH}
@@ -10,19 +11,13 @@ ENV NVIDIA_DRIVER_CAPABILITIES all
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install necessary dependencies:
-# - build-essential & python3 are required for compiling native Node.js modules.
-# - curl and gnupg are needed to add the Node.js repository.
-# - nodejs will install Node.js and npm.
-# - ffmpeg will be installed from the standard Ubuntu repositories.
-# - nvidia-utils-520 provides additional driver utilities that can help FFmpeg.
-#   (Version should ideally match the driver on your host, 520 is a common version for CUDA 11.8)
+# NOTE: We no longer need to install nvidia-utils-*** as it's included in the devel image.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
     python3 \
     curl \
-    gnupg \
-    nvidia-utils-520 && \
+    gnupg && \
     curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
     apt-get install -y --no-install-recommends \
     nodejs \
