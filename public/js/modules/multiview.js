@@ -500,42 +500,28 @@ function playChannelInWidget(widgetId, channel, gridstackItemContentEl) {
         playerPlaceholderEl.classList.add('hidden');
     }
 
-    // --- START FIX: Hardware Acceleration Logic ---
+    // --- FIX: Simplified Profile Selection ---
+    // This now mirrors the logic in player_direct.js. The client sends the
+    // active profile from settings, and the server handles the HW accel logic.
     const settings = guideState.settings;
-    const hardwarePref = settings.hardwareAcceleration || 'auto';
-    let profileIdToUse = settings.activeStreamProfileId; // Default to CPU-based profile from settings
-
-    console.log(`[MultiView] Hardware preference from settings: ${hardwarePref}`);
-
-    if (hardwarePref === 'nvidia') {
-        profileIdToUse = 'ffmpeg-nvidia';
-    } else if (hardwarePref === 'intel') {
-        profileIdToUse = 'ffmpeg-intel';
-    } else if (hardwarePref === 'auto') {
-        // In 'auto', check what the server detected via the UI elements
-        const nvidiaOption = UIElements.hardwareAccelerationSelect.querySelector('option[value="nvidia"]');
-        const intelOption = UIElements.hardwareAccelerationSelect.querySelector('option[value="intel"]');
-        if (nvidiaOption && !nvidiaOption.disabled) {
-            profileIdToUse = 'ffmpeg-nvidia';
-        } else if (intelOption && !intelOption.disabled) {
-            profileIdToUse = 'ffmpeg-intel';
-        }
-    }
-    
-    console.log(`[MultiView] Selected profile ID: ${profileIdToUse}`);
-    // --- END FIX ---
-
+    const profileIdToUse = settings.activeStreamProfileId;
     const userAgentId = settings.activeUserAgentId;
+    
+    console.log(`[MultiView] Using active stream profile from settings: ${profileIdToUse}`);
+
     const profile = (settings.streamProfiles || []).find(p => p.id === profileIdToUse);
 
     if (!profile) {
-        showNotification("Active stream profile not found for selected hardware.", true);
+        showNotification("Active stream profile not found in settings.", true);
         return;
     }
 
     const streamUrlToPlay = profile.command === 'redirect' 
         ? channel.url 
         : `/stream?url=${encodeURIComponent(channel.url)}&profileId=${profileIdToUse}&userAgentId=${userAgentId}`;
+    
+    console.log(`[MultiView] Final stream URL for widget ${widgetId}: ${streamUrlToPlay}`);
+    // --- END FIX ---
 
     if (mpegts.isSupported()) {
         const player = mpegts.createPlayer({
