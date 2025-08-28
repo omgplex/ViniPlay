@@ -202,33 +202,16 @@ function playDirectStream(url) {
     if (!isDirectPlay) {
         logToPlayerConsole('Direct Play is OFF. Using server proxy.');
         
-        // --- START FIX: Hardware Acceleration Logic ---
+        // --- FIX: Simplified Profile Selection ---
+        // The client no longer decides which hardware profile to use.
+        // It simply sends the active profile selected by the user in the settings.
+        // The server is now responsible for interpreting the 'hardwareAcceleration' setting.
         const settings = guideState.settings;
-        const hardwarePref = settings.hardwareAcceleration || 'auto';
-        let profileIdToUse = settings.activeStreamProfileId; // Default to CPU
-
-        logToPlayerConsole(`Hardware preference from settings: ${hardwarePref}`);
-
-        if (hardwarePref === 'nvidia') {
-            profileIdToUse = 'ffmpeg-nvidia';
-        } else if (hardwarePref === 'intel') {
-            profileIdToUse = 'ffmpeg-intel';
-        } else if (hardwarePref === 'auto') {
-            // In 'auto', we need to check what the server detected.
-            // This requires assuming the settings UI has been populated.
-            const nvidiaOption = UIElements.hardwareAccelerationSelect.querySelector('option[value="nvidia"]');
-            const intelOption = UIElements.hardwareAccelerationSelect.querySelector('option[value="intel"]');
-            if (nvidiaOption && !nvidiaOption.disabled) {
-                profileIdToUse = 'ffmpeg-nvidia';
-            } else if (intelOption && !intelOption.disabled) {
-                profileIdToUse = 'ffmpeg-intel';
-            }
-        }
-        
-        logToPlayerConsole(`Selected profile ID: ${profileIdToUse}`);
-        // --- END FIX ---
-        
+        const profileIdToUse = settings.activeStreamProfileId;
         const userAgentId = settings.activeUserAgentId;
+
+        logToPlayerConsole(`Using active stream profile from settings: ${profileIdToUse}`);
+
         if (!profileIdToUse || !userAgentId) {
             const errorMsg = "Active stream profile or user agent not set. Please check settings.";
             logToPlayerConsole(errorMsg, true);
@@ -237,6 +220,8 @@ function playDirectStream(url) {
         }
         streamUrlToPlay = `/stream?url=${encodeURIComponent(url)}&profileId=${profileIdToUse}&userAgentId=${userAgentId}`;
         logToPlayerConsole(`Proxy URL: ${streamUrlToPlay}`);
+        // --- END FIX ---
+
     } else {
         logToPlayerConsole('Direct Play is ON. Connecting directly to stream.');
     }
