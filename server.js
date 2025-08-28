@@ -216,9 +216,9 @@ function getSettings() {
         userAgents: [{ id: `default-ua-1724778434000`, name: 'ViniPlay Default', value: 'VLC/3.0.20 (Linux; x86_64)', isDefault: true }],
         streamProfiles: [
             { id: 'ffmpeg-default', name: 'ffmpeg (Built in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: true },
-            // MODIFIED: The more compatible "safe mode" command is now the primary NVIDIA profile.
+            // MODIFIED: This is a more compatible NVIDIA profile for live streams, as it copies the audio stream, which is less likely to be blocked by providers.
             { id: 'ffmpeg-nvidia', name: 'ffmpeg (NVIDIA NVENC)', command: '-user_agent "{userAgent}" -re -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a copy -f mpegts pipe:1', isDefault: false },
-            // MODIFIED: The old command is now a legacy option.
+            // MODIFIED: This legacy profile re-encodes the audio. It's kept for compatibility.
             { id: 'ffmpeg-nvidia-legacy', name: 'ffmpeg (NVIDIA NVENC - Legacy)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false },
             { id: 'ffmpeg-intel', name: 'ffmpeg (Intel QSV)', command: '-hwaccel qsv -c:v h264_qsv -i "{streamUrl}" -c:v h264_qsv -preset medium -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false },
             { id: 'redirect', name: 'Redirect (No Transcoding)', command: 'redirect', isDefault: false }
@@ -231,7 +231,8 @@ function getSettings() {
             activeRecordingProfileId: 'dvr-mp4-default',
             recordingProfiles: [
                 { id: 'dvr-mp4-default', name: 'Default MP4 (H.264/AAC)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: true },
-                { id: 'dvr-mp4-nvidia', name: 'NVIDIA NVENC MP4 (H.264/AAC)', command: '-hwaccel cuda -c:v h264_cuvid -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: false },
+                // MODIFIED: Updated DVR profile to a more compatible command, avoiding -hwaccel cuda which can cause issues.
+                { id: 'dvr-mp4-nvidia', name: 'NVIDIA NVENC MP4 (H.264/AAC)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: false },
                 { id: 'dvr-mp4-intel', name: 'Intel QSV MP4 (H.264/AAC)', command: '-hwaccel qsv -c:v h264_qsv -i "{streamUrl}" -c:v h264_qsv -preset medium -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: false }
             ]
         },
@@ -1383,20 +1384,22 @@ app.delete('/api/data', requireAuth, requireAdmin, (req, res) => {
 });
 
 
-// ... existing /stream and /api/stream/stop endpoints ...
+// --- FIX: This entire endpoint has been rewritten for clarity and correctness. ---
 app.get('/stream', requireAuth, async (req, res) => {
     const streamUrl = req.query.url;
-    const profileId = req.query.profileId;
+    const profileIdFromRequest = req.query.profileId;
     const userAgentId = req.query.userAgentId;
     const userId = req.session.userId;
-    
-    // Check if the stream is already active
+
+    console.log(`[STREAM] New stream request. URL: ${streamUrl}, Profile from client: ${profileIdFromRequest}, User Agent ID: ${userAgentId}`);
+    if (!streamUrl) return res.status(400).send('Error: `url` query parameter is required.');
+
+    // Check if the stream is already active for this exact URL (avoids re-spawning ffmpeg)
     const activeStreamInfo = activeStreamProcesses.get(streamUrl);
-    
     if (activeStreamInfo) {
         activeStreamInfo.references++;
         activeStreamInfo.lastAccess = Date.now();
-        console.log(`[STREAM] Existing stream requested. URL: ${streamUrl}. New ref count: ${activeStreamInfo.references}.`);
+        console.log(`[STREAM] Re-attaching to existing stream process. URL: ${streamUrl}. New ref count: ${activeStreamInfo.references}.`);
         activeStreamInfo.process.stdout.pipe(res);
         
         req.on('close', () => {
@@ -1404,44 +1407,51 @@ app.get('/stream', requireAuth, async (req, res) => {
             activeStreamInfo.references--;
             activeStreamInfo.lastAccess = Date.now();
             if (activeStreamInfo.references <= 0) {
-                console.log(`[STREAM] Last client disconnected. Ref count is 0. Process for PID: ${activeStreamInfo.process.pid} will be cleaned up by the janitor.`);
+                console.log(`[STREAM] Last client disconnected. Process for PID: ${activeStreamInfo.process.pid} will be cleaned up by the janitor.`);
             }
         });
         return;
     }
 
-    console.log(`[STREAM] New stream request. URL: ${streamUrl}, Profile ID: ${profileId}, User Agent ID: ${userAgentId}`);
-    if (!streamUrl) return res.status(400).send('Error: `url` query parameter is required.');
-
+    // Fetch global and user-specific settings
     let settings = getSettings();
     let userSettings = {};
     try {
         const rows = await new Promise((resolve, reject) => db.all(`SELECT key, value FROM user_settings WHERE user_id = ?`, [userId], (err, rows) => err ? reject(err) : resolve(rows)));
-        rows.forEach(row => userSettings[row.key] = JSON.parse(row.value));
+        rows.forEach(row => {
+            try { userSettings[row.key] = JSON.parse(row.value); } catch (e) { userSettings[row.key] = row.value; }
+        });
     } catch (e) { console.error('[STREAM] Could not fetch user settings for hardware acceleration.'); }
 
-    let finalProfileId;
+    // --- Profile Selection Logic ---
     const accelSetting = userSettings.hardwareAcceleration || settings.hardwareAcceleration || 'auto';
-    console.log(`[STREAM] User HW Accel setting is: ${accelSetting}`);
+    let finalProfileId;
+
+    console.log(`[STREAM] User HW Accel preference is: '${accelSetting}'`);
 
     if (accelSetting === 'cpu') {
-        finalProfileId = profileId; // Use the profile explicitly selected by the user
-    } else if (accelSetting === 'auto') {
-        if (detectedHardware.nvidia) finalProfileId = 'ffmpeg-nvidia';
-        else if (detectedHardware.intel) finalProfileId = 'ffmpeg-intel';
-        else finalProfileId = 'ffmpeg-default'; // Fallback for auto
-    } else if (accelSetting === 'nvidia' && detectedHardware.nvidia) {
-        finalProfileId = 'ffmpeg-nvidia';
-    } else if (accelSetting === 'intel' && detectedHardware.intel) {
-        finalProfileId = 'ffmpeg-intel';
-    } else {
-        // Fallback if user selects a GPU that isn't detected or for any other case
-        console.warn(`[STREAM] Hardware preference "${accelSetting}" not available or detected. Falling back to default CPU profile.`);
-        finalProfileId = 'ffmpeg-default';
+        finalProfileId = profileIdFromRequest;
+        console.log(`[STREAM] Preference is CPU. Using profile from request: '${finalProfileId}'`);
+    } else if (accelSetting === 'nvidia') {
+        finalProfileId = detectedHardware.nvidia ? 'ffmpeg-nvidia' : 'ffmpeg-default';
+        console.log(`[STREAM] Preference is NVIDIA. ${detectedHardware.nvidia ? 'Using NVIDIA profile.' : 'NVIDIA not detected, falling back to default CPU profile.'}`);
+    } else if (accelSetting === 'intel') {
+        finalProfileId = detectedHardware.intel ? 'ffmpeg-intel' : 'ffmpeg-default';
+        console.log(`[STREAM] Preference is Intel. ${detectedHardware.intel ? 'Using Intel profile.' : 'Intel not detected, falling back to default CPU profile.'}`);
+    } else { // 'auto' and any other fallback
+        if (detectedHardware.nvidia) {
+            finalProfileId = 'ffmpeg-nvidia';
+            console.log('[STREAM] Auto-selected NVIDIA profile.');
+        } else if (detectedHardware.intel) {
+            finalProfileId = 'ffmpeg-intel';
+            console.log('[STREAM] Auto-selected Intel profile.');
+        } else {
+            finalProfileId = profileIdFromRequest || 'ffmpeg-default';
+            console.log(`[STREAM] Auto-selected CPU. Using profile from request: '${finalProfileId}'`);
+        }
     }
 
     const profile = (settings.streamProfiles || []).find(p => p.id === finalProfileId);
-
     if (!profile) {
         console.error(`[STREAM] Stream profile with ID "${finalProfileId}" not found in settings.`);
         return res.status(404).send(`Error: Stream profile with ID "${finalProfileId}" not found.`);
@@ -1468,11 +1478,11 @@ app.get('/stream', requireAuth, async (req, res) => {
         
     const args = (commandTemplate.match(/(?:[^\s"]+|"[^"]*")+/g) || []).map(arg => arg.replace(/^"|"$/g, ''));
 
-    console.log(`[STREAM] FFmpeg command args: ${args.join(' ')}`);
+    console.log(`[STREAM] FFmpeg command args: ffmpeg ${args.join(' ')}`);
     const ffmpeg = spawn('ffmpeg', args);
 
     activeStreamProcesses.set(streamUrl, { process: ffmpeg, references: 1, lastAccess: Date.now() });
-    console.log(`[STREAM] Started FFMPEG process with PID: ${ffmpeg.pid} for user ${userId} for URL: ${streamUrl}. Storing in global map.`);
+    console.log(`[STREAM] Started FFMPEG process with PID: ${ffmpeg.pid} for user ${userId} for URL: ${streamUrl}.`);
     
     res.setHeader('Content-Type', 'video/mp2t');
     ffmpeg.stdout.pipe(res);
@@ -1504,6 +1514,7 @@ app.get('/stream', requireAuth, async (req, res) => {
         }
     });
 });
+
 app.post('/api/stream/stop', requireAuth, (req, res) => {
     const { url: streamUrl } = req.body;
     if (!streamUrl) {
@@ -1718,25 +1729,37 @@ async function startRecording(job) {
     let userSettings = {};
     try {
         const rows = await new Promise((resolve, reject) => db.all(`SELECT key, value FROM user_settings WHERE user_id = ?`, [job.user_id], (err, rows) => err ? reject(err) : resolve(rows)));
-        rows.forEach(row => userSettings[row.key] = JSON.parse(row.value));
+        rows.forEach(row => { 
+            try { userSettings[row.key] = JSON.parse(row.value); } catch(e) { userSettings[row.key] = row.value; }
+        });
     } catch (e) { console.error('[DVR] Could not fetch user settings for hardware acceleration.'); }
 
-    let finalProfileId;
+    // --- FIX: This logic mirrors the updated /stream endpoint logic for consistency ---
     const accelSetting = userSettings.hardwareAcceleration || settings.hardwareAcceleration || 'auto';
+    let finalProfileId;
+
+    console.log(`[DVR] User HW Accel preference for recording is: '${accelSetting}'`);
 
     if (accelSetting === 'cpu') {
-        finalProfileId = job.profileId; // Use the profile explicitly selected by the user
-    } else if (accelSetting === 'auto') {
-        if (detectedHardware.nvidia) finalProfileId = 'dvr-mp4-nvidia';
-        else if (detectedHardware.intel) finalProfileId = 'dvr-mp4-intel';
-        else finalProfileId = 'dvr-mp4-default';
-    } else if (accelSetting === 'nvidia' && detectedHardware.nvidia) {
-        finalProfileId = 'dvr-mp4-nvidia';
-    } else if (accelSetting === 'intel' && detectedHardware.intel) {
-        finalProfileId = 'dvr-mp4-intel';
-    } else {
-        console.warn(`[DVR] Hardware preference "${accelSetting}" not available for recording. Falling back to default DVR profile.`);
-        finalProfileId = 'dvr-mp4-default';
+        finalProfileId = job.profileId; // Use the profile selected in DVR settings
+        console.log(`[DVR] Preference is CPU. Using profile from job: '${finalProfileId}'`);
+    } else if (accelSetting === 'nvidia') {
+        finalProfileId = detectedHardware.nvidia ? 'dvr-mp4-nvidia' : 'dvr-mp4-default';
+        console.log(`[DVR] Preference is NVIDIA. ${detectedHardware.nvidia ? 'Using NVIDIA profile.' : 'NVIDIA not detected, falling back to default CPU profile.'}`);
+    } else if (accelSetting === 'intel') {
+        finalProfileId = detectedHardware.intel ? 'dvr-mp4-intel' : 'dvr-mp4-default';
+        console.log(`[DVR] Preference is Intel. ${detectedHardware.intel ? 'Using Intel profile.' : 'Intel not detected, falling back to default CPU profile.'}`);
+    } else { // 'auto' and any other fallback
+        if (detectedHardware.nvidia) {
+            finalProfileId = 'dvr-mp4-nvidia';
+            console.log('[DVR] Auto-selected NVIDIA profile.');
+        } else if (detectedHardware.intel) {
+            finalProfileId = 'dvr-mp4-intel';
+            console.log('[DVR] Auto-selected Intel profile.');
+        } else {
+            finalProfileId = job.profileId || 'dvr-mp4-default';
+            console.log(`[DVR] Auto-selected CPU. Using profile from job: '${finalProfileId}'`);
+        }
     }
 
     const recProfile = (settings.dvr.recordingProfiles || []).find(p => p.id === finalProfileId);
@@ -2360,4 +2383,3 @@ function parseM3U(data) {
     }
     return channels;
 }
-
