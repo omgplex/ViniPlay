@@ -559,6 +559,8 @@ export function setupSettingsEventListeners() {
         // DEBUG LOG: Log what the user selected in the dropdown.
         console.log(`%c[DEBUG] User changed hardware acceleration dropdown to: '${selectedValue}'. Saving setting.`, 'color: #facc15');
         saveUserSetting('hardwareAcceleration', selectedValue);
+        // *** FIX: Update the local state immediately to prevent the UI from reverting. ***
+        guideState.settings.hardwareAcceleration = selectedValue;
         
         // UX Improvement: Show/hide profile selectors based on choice
         const showProfiles = selectedValue === 'cpu';
