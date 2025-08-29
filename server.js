@@ -836,11 +836,15 @@ app.delete('/api/users/:id', requireAdmin, (req, res) => {
 });
 // --- Protected IPTV API Endpoints ---
 app.get('/api/config', requireAuth, (req, res) => {
-    console.log('[API] Fetching /api/config for user:', req.session.username);
+    // DEBUG LOG: Announce the start of the config fetching process
+    console.log(`%c[DEBUG] /api/config called for user: ${req.session.username}. Fetching settings.`, 'color: #a78bfa');
     try {
         let config = { m3uContent: null, epgContent: null, settings: {} };
         let globalSettings = getSettings();
         config.settings = globalSettings;
+        // DEBUG LOG: Log the global hardware acceleration setting loaded from settings.json
+        console.log(`%c[DEBUG] /api/config: Global hardwareAcceleration from settings.json is '${globalSettings.hardwareAcceleration}'`, 'color: #a78bfa');
+
 
         if (fs.existsSync(MERGED_M3U_PATH)) {
             config.m3uContent = fs.readFileSync(MERGED_M3U_PATH, 'utf-8');
@@ -875,8 +879,19 @@ app.get('/api/config', requireAuth, (req, res) => {
                         console.warn(`[API] User setting key "${row.key}" could not be parsed as JSON. Storing as raw string.`);
                     }
                 });
+                
+                // DEBUG LOG: Log the user-specific hardware setting before merging.
+                if (userSettings.hardwareAcceleration) {
+                     console.log(`%c[DEBUG] /api/config: User-specific hardwareAcceleration from DB is '${userSettings.hardwareAcceleration}'`, 'color: #a78bfa');
+                } else {
+                     console.log(`%c[DEBUG] /api/config: No user-specific hardwareAcceleration setting found in DB.`, 'color: #a78bfa');
+                }
+
+
                 config.settings = { ...config.settings, ...userSettings };
                 console.log(`[API] Merged user settings for user ID: ${req.session.userId}`);
+                 // DEBUG LOG: Log the final hardware setting being sent to the client.
+                console.log(`%c[DEBUG] /api/config: Final merged hardwareAcceleration being sent to client is '${config.settings.hardwareAcceleration}'`, 'color: #a78bfa');
             }
             res.status(200).json(config);
         });
@@ -1133,6 +1148,9 @@ app.post('/api/user/settings', requireAuth, (req, res) => {
         return res.status(400).json({ error: 'A setting key is required.' });
     }
     
+    // DEBUG LOG: Log the exact key and value being saved for the user.
+    console.log(`%c[DEBUG] /api/user/settings: Saving key='${key}' with value='${JSON.stringify(value)}' for user ID ${req.session.userId}`, 'color: #facc15');
+
     const valueJson = JSON.stringify(value);
     const userId = req.session.userId;
 
@@ -1422,7 +1440,10 @@ app.get('/stream', requireAuth, async (req, res) => {
         return;
     }
 
-    console.log(`[STREAM] New stream request. URL: ${streamUrl}, Profile from client: ${profileIdFromRequest}, User Agent ID: ${userAgentId}`);
+    // DEBUG LOG: Start of the stream request process
+    console.log(`%c[DEBUG] /stream: ------ START STREAM REQUEST ------`, 'color: #16a34a');
+    console.log(`%c[DEBUG] /stream: Received request. URL=${streamUrl}, Profile from Client=${profileIdFromRequest}, UserAgentID=${userAgentId}`, 'color: #16a34a');
+
     if (!streamUrl) return res.status(400).send('Error: `url` query parameter is required.');
 
     let settings = getSettings();
@@ -1437,27 +1458,28 @@ app.get('/stream', requireAuth, async (req, res) => {
     const accelSetting = userSettings.hardwareAcceleration || settings.hardwareAcceleration || 'auto';
     let finalProfileId;
 
-    console.log(`[STREAM] User HW Accel preference is: '${accelSetting}'`);
+    // DEBUG LOG: Log the retrieved user preference
+    console.log(`%c[DEBUG] /stream: User HW Accel preference from DB/settings is: '${accelSetting}'`, 'color: #16a34a');
 
     if (accelSetting === 'cpu') {
         finalProfileId = profileIdFromRequest;
-        console.log(`[STREAM] Preference is CPU. Using profile from request: '${finalProfileId}'`);
+        console.log(`%c[DEBUG] /stream: Logic chose CPU path. Using profile from client request: '${finalProfileId}'`, 'color: #16a34a');
     } else if (accelSetting === 'nvidia') {
         finalProfileId = detectedHardware.nvidia ? 'ffmpeg-nvidia' : 'ffmpeg-default';
-        console.log(`[STREAM] Preference is NVIDIA. ${detectedHardware.nvidia ? 'Using NVIDIA profile.' : 'NVIDIA not detected, falling back to default CPU profile.'}`);
+        console.log(`%c[DEBUG] /stream: Logic chose NVIDIA path. Detected=${!!detectedHardware.nvidia}. Final Profile='${finalProfileId}'`, 'color: #16a34a');
     } else if (accelSetting === 'intel') {
         finalProfileId = detectedHardware.intel ? 'ffmpeg-intel' : 'ffmpeg-default';
-        console.log(`[STREAM] Preference is Intel. ${detectedHardware.intel ? 'Using Intel profile.' : 'Intel not detected, falling back to default CPU profile.'}`);
+        console.log(`%c[DEBUG] /stream: Logic chose Intel path. Detected=${!!detectedHardware.intel}. Final Profile='${finalProfileId}'`, 'color: #16a34a');
     } else { // 'auto' and any other fallback
         if (detectedHardware.nvidia) {
             finalProfileId = 'ffmpeg-nvidia';
-            console.log('[STREAM] Auto-selected NVIDIA profile.');
+            console.log('%c[DEBUG] /stream: Logic chose AUTO path. Auto-selected NVIDIA profile.', 'color: #16a34a');
         } else if (detectedHardware.intel) {
             finalProfileId = 'ffmpeg-intel';
-            console.log('[STREAM] Auto-selected Intel profile.');
+            console.log('%c[DEBUG] /stream: Logic chose AUTO path. Auto-selected Intel profile.', 'color: #16a34a');
         } else {
             finalProfileId = profileIdFromRequest || 'ffmpeg-default';
-            console.log(`[STREAM] Auto-selected CPU. Using profile from request: '${finalProfileId}'`);
+            console.log(`%c[DEBUG] /stream: Logic chose AUTO path. No GPU detected. Using profile from client request: '${finalProfileId}'`, 'color: #16a34a');
         }
     }
 
@@ -1479,9 +1501,10 @@ app.get('/stream', requireAuth, async (req, res) => {
         return res.status(404).send(`Error: User agent with ID "${userAgentId}" not found.`);
     }
     
-    console.log(`[STREAM] Proxying stream: ${streamUrl}`);
-    console.log(`[STREAM] Using Profile: "${profile.name}" (ID: ${profile.id})`);
-    console.log(`[STREAM] Using User Agent: "${userAgent.name}"`);
+    // DEBUG LOG: Log the final decision before spawning ffmpeg
+    console.log(`%c[DEBUG] /stream: FINAL DECISION: Using Profile='${profile.name}' (ID=${profile.id}), UserAgent='${userAgent.name}'`, 'color: #16a34a');
+    console.log(`%c[DEBUG] /stream: ------ END STREAM REQUEST ------`, 'color: #16a34a');
+
 
     const commandTemplate = profile.command
         .replace(/{streamUrl}/g, streamUrl)
