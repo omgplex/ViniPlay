@@ -12,30 +12,116 @@ import { navigate } from './ui.js';
 import { ICONS } from './icons.js';
 
 let currentSourceTypeForEditor = 'url';
+let hardwareChecked = false; // Flag to prevent re-checking hardware on every UI update
 
 // --- NEW: Hardware Acceleration ---
 
 /**
+ * Adds default GPU-based profiles to settings if they don't already exist.
+ * @param {object} hardware - The hardware detection object from the backend.
+ */
+async function addDefaultGpuProfiles(hardware) {
+    const settings = guideState.settings;
+    let changesMade = false;
+    let settingsToSave = {};
+
+    const streamProfiles = settings.streamProfiles || [];
+    const dvrProfiles = settings.dvr?.recordingProfiles || [];
+
+    // NVIDIA Profiles
+    if (hardware.nvidia) {
+        if (!streamProfiles.some(p => p.id === 'ffmpeg-nvidia')) {
+            streamProfiles.push({ id: 'ffmpeg-nvidia', name: 'ffmpeg (NVIDIA NVENC)', command: '-user_agent "{userAgent}" -re -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a copy -f mpegts pipe:1', isDefault: true });
+            changesMade = true;
+        }
+        if (!dvrProfiles.some(p => p.id === 'dvr-mp4-nvidia')) {
+            dvrProfiles.push({ id: 'dvr-mp4-nvidia', name: 'NVIDIA NVENC MP4 (H.264/AAC)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: true });
+            changesMade = true;
+        }
+    }
+
+    // Intel Profiles
+    if (hardware.intel) {
+        if (!streamProfiles.some(p => p.id === 'ffmpeg-intel')) {
+            streamProfiles.push({ id: 'ffmpeg-intel', name: 'ffmpeg (Intel QSV)', command: '-hwaccel qsv -c:v h264_qsv -i "{streamUrl}" -c:v h264_qsv -preset medium -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false });
+            changesMade = true;
+        }
+        if (!dvrProfiles.some(p => p.id === 'dvr-mp4-intel')) {
+            dvrProfiles.push({ id: 'dvr-mp4-intel', name: 'Intel QSV MP4 (H.264/AAC)', command: '-hwaccel qsv -c:v h264_qsv -i "{streamUrl}" -c:v h264_qsv -preset medium -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: false });
+            changesMade = true;
+        }
+    }
+
+    if (changesMade) {
+        console.log('[SETTINGS] New GPU profiles detected. Saving to settings...');
+        settingsToSave.streamProfiles = streamProfiles;
+        settingsToSave.dvr = { ...settings.dvr, recordingProfiles: dvrProfiles };
+        
+        const updatedSettings = await saveGlobalSetting(settingsToSave);
+        if (updatedSettings) {
+            guideState.settings = updatedSettings;
+            showNotification('Detected GPU profiles have been added!', false, 4000);
+            // We don't need to call updateUIFromSettings here because the function that called this one will do it.
+        }
+    }
+}
+
+
+/**
+ * Populates the hardware info modal with details and example commands.
+ * @param {object} hardware - The hardware detection object from the backend.
+ */
+function populateHardwareInfoModal(hardware) {
+    let contentHTML = `<p class="text-sm">This system has detected hardware that can be used for transcoding, which can improve performance and reduce CPU usage. To use it, select one of the pre-configured GPU profiles in the "Active Stream Profile" or "Active Recording Profile" dropdowns, or create your own profile using the example commands below.</p>`;
+
+    if (hardware.nvidia) {
+        contentHTML += `
+            <div class="mt-4 pt-4 border-t border-gray-700">
+                <h4 class="text-lg font-semibold text-white">NVIDIA (NVENC)</h4>
+                <p class="text-xs text-gray-400 mb-2">GPU: ${hardware.nvidia}</p>
+                <p class="text-sm mb-2">Uses the NVIDIA hardware encoder. This is generally the most performant option if available.</p>
+                <p class="text-sm font-semibold mb-1">Example Stream Command:</p>
+                <pre class="bg-gray-900 p-2 rounded-md text-xs text-gray-300 font-mono"><code>-user_agent "{userAgent}" -re -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a copy -f mpegts pipe:1</code></pre>
+                <p class="text-sm font-semibold mb-1 mt-2">Example Recording Command:</p>
+                <pre class="bg-gray-900 p-2 rounded-md text-xs text-gray-300 font-mono"><code>-user_agent "{userAgent}" -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"</code></pre>
+            </div>
+        `;
+    }
+
+    if (hardware.intel) {
+        contentHTML += `
+            <div class="mt-4 pt-4 border-t border-gray-700">
+                <h4 class="text-lg font-semibold text-white">Intel (Quick Sync Video)</h4>
+                <p class="text-sm mb-2">Uses the integrated GPU on Intel processors. A great low-power option for transcoding.</p>
+                <p class="text-sm font-semibold mb-1">Example Stream Command:</p>
+                <pre class="bg-gray-900 p-2 rounded-md text-xs text-gray-300 font-mono"><code>-hwaccel qsv -c:v h264_qsv -i "{streamUrl}" -c:v h264_qsv -preset medium -c:a aac -b:a 128k -f mpegts pipe:1</code></pre>
+                 <p class="text-sm font-semibold mb-1 mt-2">Example Recording Command:</p>
+                <pre class="bg-gray-900 p-2 rounded-md text-xs text-gray-300 font-mono"><code>-hwaccel qsv -c:v h264_qsv -i "{streamUrl}" -c:v h264_qsv -preset medium -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"</code></pre>
+            </div>
+        `;
+    }
+
+    UIElements.hardwareInfoModalContent.innerHTML = contentHTML;
+}
+
+
+/**
  * Fetches detected hardware from the backend and updates the UI.
  */
-async function loadHardwareInfo() {
+async function handleHardwareDetection() {
+    if (hardwareChecked) return;
     console.log('[SETTINGS] Fetching hardware acceleration info...');
     const res = await apiFetch('/api/hardware');
     if (res && res.ok) {
+        hardwareChecked = true; // Mark as checked to prevent re-running
         const hardware = await res.json();
-        const nvidiaOption = UIElements.hardwareAccelerationSelect.querySelector('option[value="nvidia"]');
-        const intelOption = UIElements.hardwareAccelerationSelect.querySelector('option[value="intel"]');
         let infoText = 'None';
 
         if (hardware.nvidia) {
-            nvidiaOption.disabled = false;
-            nvidiaOption.textContent = `NVIDIA (NVENC) - ${hardware.nvidia}`;
             infoText = hardware.nvidia;
             console.log(`[SETTINGS] NVIDIA GPU found: ${hardware.nvidia}`);
         }
         if (hardware.intel) {
-            intelOption.disabled = false;
-            intelOption.textContent = `Intel (QSV)`;
              if (infoText !== 'None') {
                 infoText += ` & ${hardware.intel}`;
              } else {
@@ -43,7 +129,15 @@ async function loadHardwareInfo() {
              }
             console.log(`[SETTINGS] Intel QSV found.`);
         }
+        
         UIElements.hardwareInfoText.textContent = infoText;
+
+        if (hardware.nvidia || hardware.intel) {
+            UIElements.hardwareInfoBtn.classList.remove('hidden');
+            populateHardwareInfoModal(hardware);
+            // This will check for missing profiles, save them, and trigger a UI refresh if needed.
+            await addDefaultGpuProfiles(hardware);
+        }
     } else {
         UIElements.hardwareInfoText.textContent = 'Could not detect hardware.';
         console.error('[SETTINGS] Failed to load hardware info from backend.');
@@ -114,13 +208,13 @@ const renderSourceTable = (sourceType) => {
 /**
  * Updates all settings UI elements based on the current state.
  */
-export const updateUIFromSettings = () => {
+export const updateUIFromSettings = async () => {
     const settings = guideState.settings;
-    // DEBUG LOG: Announce that the UI is being updated from the central state.
-    console.log(`%c[DEBUG] updateUIFromSettings called. hardwareAcceleration in guideState is: '${settings.hardwareAcceleration}'`, 'color: #22d3ee');
 
+    // Run hardware detection which may add new profiles to the state
+    await handleHardwareDetection();
 
-    // FIX: One-time timezone auto-detection and setting.
+    // One-time timezone auto-detection and setting.
     const timezoneSetFlag = localStorage.getItem('vini_timezone_auto_set');
     if (!timezoneSetFlag) {
         const browserOffset = Math.round(-(new Date().getTimezoneOffset() / 60));
@@ -158,19 +252,6 @@ export const updateUIFromSettings = () => {
     UIElements.searchScopeSelect.value = settings.searchScope;
     UIElements.notificationLeadTimeInput.value = settings.notificationLeadTime;
     
-    // NEW: Update hardware acceleration UI
-    loadHardwareInfo();
-    const hardwareAccelerationValue = settings.hardwareAcceleration || 'auto';
-    // DEBUG LOG: Log the value we are about to set the dropdown to.
-    console.log(`%c[DEBUG] Setting hardware-acceleration-select dropdown value to: '${hardwareAccelerationValue}'`, 'color: #22d3ee');
-    UIElements.hardwareAccelerationSelect.value = hardwareAccelerationValue;
-
-    // UX Improvement: Show/hide profile selectors based on hardware choice
-    const showProfiles = hardwareAccelerationValue === 'cpu';
-    UIElements.streamProfileContainer.classList.toggle('hidden', !showProfiles);
-    UIElements.dvrProfileContainer.classList.toggle('hidden', !showProfiles);
-
-
     // Update DVR inputs and section visibility
     const hasDvrAccess = appState.currentUser?.isAdmin || appState.currentUser?.canUseDvr;
     const dvrSettingsSection = document.getElementById('dvr-settings-section');
@@ -553,27 +634,9 @@ export function setupSettingsEventListeners() {
         await saveSettingAndNotify(saveGlobalSetting, { notificationLeadTime: value });
     });
     
-    // FINAL FIX: This is the updated, robust event listener.
-    UIElements.hardwareAccelerationSelect.addEventListener('change', async (e) => {
-        const selectedValue = e.target.value;
-        console.log(`%c[DEBUG] User changed hardware acceleration dropdown to: '${selectedValue}'. Saving setting.`, 'color: #facc15');
-
-        const updatedSettings = await saveUserSetting('hardwareAcceleration', selectedValue);
-        
-        if (updatedSettings) {
-            // Replace the entire local settings object with the fresh one from the server
-            guideState.settings = updatedSettings;
-            console.log('%c[DEBUG] Successfully replaced local state with fresh settings from server.', 'color: #86efac; font-weight: bold;');
-            
-            // Re-render the UI with the guaranteed-fresh state
-            updateUIFromSettings();
-            showNotification('Hardware acceleration preference saved.');
-        } else {
-            // If the save fails, revert the dropdown to the (old) current state
-            console.error('[SETTINGS] Failed to save hardware acceleration setting. Reverting UI.');
-            UIElements.hardwareAccelerationSelect.value = guideState.settings.hardwareAcceleration || 'auto';
-        }
-    });
+    // --- MODIFIED: Event listeners for hardware info modal ---
+    UIElements.hardwareInfoBtn.addEventListener('click', () => openModal(UIElements.hardwareInfoModal));
+    UIElements.hardwareInfoModalCloseBtn.addEventListener('click', () => closeModal(UIElements.hardwareInfoModal));
 
     // --- DVR Settings ---
     const handleDvrSettingChange = (key, value) => {
@@ -799,4 +862,3 @@ export function setupSettingsEventListeners() {
         e.target.value = '';
     });
 }
-
