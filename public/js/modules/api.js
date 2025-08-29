@@ -76,7 +76,7 @@ export async function fetchConfig() {
  * Saves a user-specific setting to the backend.
  * @param {string} key - The setting key.
  * @param {*} value - The setting value.
- * @returns {Promise<boolean>} - True on success, false on failure.
+ * @returns {Promise<object|null>} - The complete, updated settings object from the server, or null on failure.
  */
 export async function saveUserSetting(key, value) {
     console.log(`[API] Saving user setting: ${key} =`, value);
@@ -85,14 +85,29 @@ export async function saveUserSetting(key, value) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key, value })
     });
+
     if (!res || !res.ok) {
         console.error(`[API] Failed to save user setting: ${key}`);
-        // showNotification(`Could not save setting: ${key}`, true); // apiFetch already shows this
-        return false;
+        return null; // apiFetch already showed notification
     }
-    console.log(`[API] User setting "${key}" saved successfully.`);
-    return true;
+
+    try {
+        const data = await res.json();
+        if (data.success && data.settings) {
+            console.log(`[API] User setting "${key}" saved. Returning updated settings object.`);
+            return data.settings; // Return the full settings object
+        } else {
+            console.error(`[API] Server responded success but did not return settings for key: ${key}`);
+            showNotification(`Setting for "${key}" was saved, but the server response was incomplete.`, true);
+            return null; 
+        }
+    } catch (e) {
+        console.error('[API] Error parsing response from saveUserSetting:', e);
+        showNotification('Could not parse server response after saving setting.', true);
+        return null;
+    }
 }
+
 
 /**
  * Saves a global (app-wide) setting to the backend.
