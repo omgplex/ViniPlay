@@ -5,11 +5,11 @@
  */
 
 import { appState, guideState, UIElements } from './state.js';
-import { apiFetch, saveGlobalSetting, saveUserSetting } from './api.js'; // Added saveUserSetting
+import { apiFetch, saveGlobalSetting, saveUserSetting } from './api.js';
 import { showNotification, openModal, closeModal, showConfirm, setButtonLoadingState } from './ui.js';
 import { handleGuideLoad } from './guide.js';
 import { navigate } from './ui.js';
-import { ICONS } from './icons.js'; // MODIFIED: Import the new icon library
+import { ICONS } from './icons.js';
 
 let currentSourceTypeForEditor = 'url';
 
@@ -553,21 +553,26 @@ export function setupSettingsEventListeners() {
         await saveSettingAndNotify(saveGlobalSetting, { notificationLeadTime: value });
     });
     
-    // NEW: Hardware acceleration listener
-    UIElements.hardwareAccelerationSelect.addEventListener('change', (e) => {
+    // FINAL FIX: This is the updated, robust event listener.
+    UIElements.hardwareAccelerationSelect.addEventListener('change', async (e) => {
         const selectedValue = e.target.value;
-        // DEBUG LOG: Log what the user selected in the dropdown.
         console.log(`%c[DEBUG] User changed hardware acceleration dropdown to: '${selectedValue}'. Saving setting.`, 'color: #facc15');
-        saveUserSetting('hardwareAcceleration', selectedValue);
-        // *** FIX: Update the local state immediately to prevent the UI from reverting. ***
-        guideState.settings.hardwareAcceleration = selectedValue;
+
+        const updatedSettings = await saveUserSetting('hardwareAcceleration', selectedValue);
         
-        // UX Improvement: Show/hide profile selectors based on choice
-        const showProfiles = selectedValue === 'cpu';
-        UIElements.streamProfileContainer.classList.toggle('hidden', !showProfiles);
-        UIElements.dvrProfileContainer.classList.toggle('hidden', !showProfiles);
-        
-        showNotification('Hardware acceleration preference saved.');
+        if (updatedSettings) {
+            // Replace the entire local settings object with the fresh one from the server
+            guideState.settings = updatedSettings;
+            console.log('%c[DEBUG] Successfully replaced local state with fresh settings from server.', 'color: #86efac; font-weight: bold;');
+            
+            // Re-render the UI with the guaranteed-fresh state
+            updateUIFromSettings();
+            showNotification('Hardware acceleration preference saved.');
+        } else {
+            // If the save fails, revert the dropdown to the (old) current state
+            console.error('[SETTINGS] Failed to save hardware acceleration setting. Reverting UI.');
+            UIElements.hardwareAccelerationSelect.value = guideState.settings.hardwareAcceleration || 'auto';
+        }
     });
 
     // --- DVR Settings ---
@@ -794,3 +799,4 @@ export function setupSettingsEventListeners() {
         e.target.value = '';
     });
 }
+
