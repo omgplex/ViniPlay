@@ -216,9 +216,8 @@ function getSettings() {
         userAgents: [{ id: `default-ua-1724778434000`, name: 'ViniPlay Default', value: 'VLC/3.0.20 (Linux; x86_64)', isDefault: true }],
         streamProfiles: [
             { id: 'ffmpeg-default', name: 'ffmpeg (Built in)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: true },
-            // MODIFIED: This is a more compatible NVIDIA profile for live streams, as it copies the audio stream, which is less likely to be blocked by providers.
-            { id: 'ffmpeg-nvidia', name: 'ffmpeg (NVIDIA NVENC)', command: '-user_agent "{userAgent}" -re -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a copy -f mpegts pipe:1', isDefault: false },
-            // MODIFIED: This legacy profile re-encodes the audio. It's kept for compatibility.
+            // FINAL FIX: This is the modern, more compatible command for NVIDIA streaming.
+            { id: 'ffmpeg-nvidia', name: 'ffmpeg (NVIDIA NVENC)', command: '-user_agent "{userAgent}" -re -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a copy -f mpegts pipe:1', isDefault: true },
             { id: 'ffmpeg-nvidia-legacy', name: 'ffmpeg (NVIDIA NVENC - Legacy)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false },
             { id: 'ffmpeg-intel', name: 'ffmpeg (Intel QSV)', command: '-hwaccel qsv -c:v h264_qsv -i "{streamUrl}" -c:v h264_qsv -preset medium -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false },
             { id: 'redirect', name: 'Redirect (No Transcoding)', command: 'redirect', isDefault: false }
@@ -231,8 +230,8 @@ function getSettings() {
             activeRecordingProfileId: 'dvr-mp4-default',
             recordingProfiles: [
                 { id: 'dvr-mp4-default', name: 'Default MP4 (H.264/AAC)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: true },
-                // MODIFIED: Updated DVR profile to a more compatible command, avoiding -hwaccel cuda which can cause issues.
-                { id: 'dvr-mp4-nvidia', name: 'NVIDIA NVENC MP4 (H.264/AAC)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: false },
+                // FINAL FIX: Modern, more compatible command for NVIDIA DVR.
+                { id: 'dvr-mp4-nvidia', name: 'NVIDIA NVENC MP4 (H.264/AAC)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: true },
                 { id: 'dvr-mp4-intel', name: 'Intel QSV MP4 (H.264/AAC)', command: '-hwaccel qsv -c:v h264_qsv -i "{streamUrl}" -c:v h264_qsv -preset medium -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: false }
             ]
         },
@@ -255,32 +254,44 @@ function getSettings() {
         // --- SETTINGS MIGRATION LOGIC ---
         let needsSave = false;
         
-        // Check for and add missing stream profiles
         defaultSettings.streamProfiles.forEach(defaultProfile => {
-            if (!settings.streamProfiles.some(p => p.id === defaultProfile.id)) {
+            const existingProfile = settings.streamProfiles.find(p => p.id === defaultProfile.id);
+            if (!existingProfile) {
                 console.log(`[SETTINGS_MIGRATE] Adding missing stream profile: ${defaultProfile.name}`);
                 settings.streamProfiles.push(defaultProfile);
                 needsSave = true;
+            } else if (existingProfile.isDefault) {
+                 // FINAL FIX: Forcibly update the command of default profiles to ensure users get the latest fixes.
+                 if (existingProfile.command !== defaultProfile.command) {
+                    console.log(`[SETTINGS_MIGRATE] Updating outdated default stream profile command for: ${defaultProfile.name}`);
+                    existingProfile.command = defaultProfile.command;
+                    needsSave = true;
+                }
             }
         });
         
-        // Initialize DVR settings if they don't exist
         if (!settings.dvr) {
             console.log(`[SETTINGS_MIGRATE] Initializing DVR settings block.`);
             settings.dvr = defaultSettings.dvr;
             needsSave = true;
         } else {
-            // Check for and add missing DVR recording profiles
             defaultSettings.dvr.recordingProfiles.forEach(defaultProfile => {
-                if (!settings.dvr.recordingProfiles.some(p => p.id === defaultProfile.id)) {
+                const existingProfile = settings.dvr.recordingProfiles.find(p => p.id === defaultProfile.id);
+                if (!existingProfile) {
                     console.log(`[SETTINGS_MIGRATE] Adding missing DVR recording profile: ${defaultProfile.name}`);
                     settings.dvr.recordingProfiles.push(defaultProfile);
                     needsSave = true;
+                } else if (existingProfile.isDefault) {
+                    // FINAL FIX: Forcibly update the command of default DVR profiles.
+                    if (existingProfile.command !== defaultProfile.command) {
+                        console.log(`[SETTINGS_MIGRATE] Updating outdated default DVR profile command for: ${defaultProfile.name}`);
+                        existingProfile.command = defaultProfile.command;
+                        needsSave = true;
+                    }
                 }
             });
         }
         
-        // If changes were made, write them back to the file
         if (needsSave) {
             console.log('[SETTINGS_MIGRATE] Saving updated settings file after migration.');
             fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
@@ -1384,22 +1395,20 @@ app.delete('/api/data', requireAuth, requireAdmin, (req, res) => {
 });
 
 
-// --- FIX: This entire endpoint has been rewritten for clarity and correctness. ---
+// ... existing /stream and /api/stream/stop endpoints ...
 app.get('/stream', requireAuth, async (req, res) => {
     const streamUrl = req.query.url;
     const profileIdFromRequest = req.query.profileId;
     const userAgentId = req.query.userAgentId;
     const userId = req.session.userId;
-
-    console.log(`[STREAM] New stream request. URL: ${streamUrl}, Profile from client: ${profileIdFromRequest}, User Agent ID: ${userAgentId}`);
-    if (!streamUrl) return res.status(400).send('Error: `url` query parameter is required.');
-
-    // Check if the stream is already active for this exact URL (avoids re-spawning ffmpeg)
+    
+    // Check if the stream is already active
     const activeStreamInfo = activeStreamProcesses.get(streamUrl);
+    
     if (activeStreamInfo) {
         activeStreamInfo.references++;
         activeStreamInfo.lastAccess = Date.now();
-        console.log(`[STREAM] Re-attaching to existing stream process. URL: ${streamUrl}. New ref count: ${activeStreamInfo.references}.`);
+        console.log(`[STREAM] Existing stream requested. URL: ${streamUrl}. New ref count: ${activeStreamInfo.references}.`);
         activeStreamInfo.process.stdout.pipe(res);
         
         req.on('close', () => {
@@ -1407,23 +1416,24 @@ app.get('/stream', requireAuth, async (req, res) => {
             activeStreamInfo.references--;
             activeStreamInfo.lastAccess = Date.now();
             if (activeStreamInfo.references <= 0) {
-                console.log(`[STREAM] Last client disconnected. Process for PID: ${activeStreamInfo.process.pid} will be cleaned up by the janitor.`);
+                console.log(`[STREAM] Last client disconnected. Ref count is 0. Process for PID: ${activeStreamInfo.process.pid} will be cleaned up by the janitor.`);
             }
         });
         return;
     }
 
-    // Fetch global and user-specific settings
+    console.log(`[STREAM] New stream request. URL: ${streamUrl}, Profile from client: ${profileIdFromRequest}, User Agent ID: ${userAgentId}`);
+    if (!streamUrl) return res.status(400).send('Error: `url` query parameter is required.');
+
     let settings = getSettings();
     let userSettings = {};
     try {
         const rows = await new Promise((resolve, reject) => db.all(`SELECT key, value FROM user_settings WHERE user_id = ?`, [userId], (err, rows) => err ? reject(err) : resolve(rows)));
-        rows.forEach(row => {
-            try { userSettings[row.key] = JSON.parse(row.value); } catch (e) { userSettings[row.key] = row.value; }
+        rows.forEach(row => { 
+            try { userSettings[row.key] = JSON.parse(row.value); } catch(e) { userSettings[row.key] = row.value; }
         });
     } catch (e) { console.error('[STREAM] Could not fetch user settings for hardware acceleration.'); }
 
-    // --- Profile Selection Logic ---
     const accelSetting = userSettings.hardwareAcceleration || settings.hardwareAcceleration || 'auto';
     let finalProfileId;
 
@@ -1452,6 +1462,7 @@ app.get('/stream', requireAuth, async (req, res) => {
     }
 
     const profile = (settings.streamProfiles || []).find(p => p.id === finalProfileId);
+
     if (!profile) {
         console.error(`[STREAM] Stream profile with ID "${finalProfileId}" not found in settings.`);
         return res.status(404).send(`Error: Stream profile with ID "${finalProfileId}" not found.`);
@@ -1514,7 +1525,6 @@ app.get('/stream', requireAuth, async (req, res) => {
         }
     });
 });
-
 app.post('/api/stream/stop', requireAuth, (req, res) => {
     const { url: streamUrl } = req.body;
     if (!streamUrl) {
@@ -2383,3 +2393,4 @@ function parseM3U(data) {
     }
     return channels;
 }
+
