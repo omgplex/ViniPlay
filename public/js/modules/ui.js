@@ -19,6 +19,8 @@ let confirmCallback = null;
 let currentPage = '/';
 let activeModalCloseListener = null;
 let isResizing = false;
+// FINAL FIX: Flag to temporarily block config reloads after a setting is saved.
+let blockConfigReload = false;
 
 
 /**
@@ -254,6 +256,20 @@ export const closeMobileMenu = () => {
     document.body.classList.remove('overflow-hidden');
 };
 
+// FINAL FIX: This function will be called whenever a setting is saved.
+/**
+ * Temporarily blocks the automatic config reload that happens on navigation.
+ * This prevents the UI from overwriting a user's new setting with old data from the server.
+ */
+export const tempBlockConfigReload = () => {
+    blockConfigReload = true;
+    console.log(`%c[DEBUG] RACE_CONDITION_FIX: Config reload temporarily BLOCKED.`, 'color: #fca5a5; font-weight: bold;');
+    setTimeout(() => {
+        blockConfigReload = false;
+        console.log(`%c[DEBUG] RACE_CONDITION_FIX: Config reload UNBLOCKED.`, 'color: #86efac; font-weight: bold;');
+    }, 1000); // Block for 1 second, plenty of time for the save to complete.
+};
+
 
 /**
  * Handles client-side routing by showing/hiding pages.
@@ -354,6 +370,13 @@ async function proceedWithRouteChange(path) {
     if (isGuide) {
         if (appContainer) appContainer.classList.remove('header-collapsed');
         if (UIElements.guideContainer) UIElements.guideContainer.scrollTop = 0;
+        
+        // FINAL FIX: Check if the config reload is blocked before proceeding.
+        if (blockConfigReload) {
+            console.log(`%c[DEBUG] RACE_CONDITION_FIX: Navigation to Guide tab occurred while config reload was blocked. Skipping reload.`, 'color: #fca5a5; font-weight: bold;');
+            return;
+        }
+
         if (!appState.isNavigating) {
             console.log('[UI] Refreshing TV Guide data on tab switch.');
             const config = await fetchConfig();
@@ -367,10 +390,15 @@ async function proceedWithRouteChange(path) {
 
     } else {
         if (appContainer) appContainer.classList.remove('header-collapsed');
-
+        
+        // FINAL FIX: Also check the block for settings tab since it also refreshes.
         if (isSettings) {
-            updateUIFromSettings();
-            if (appState.currentUser?.isAdmin) refreshUserList();
+             if (blockConfigReload) {
+                console.log(`%c[DEBUG] RACE_CONDITION_FIX: Navigation to Settings tab occurred while config reload was blocked. Skipping reload.`, 'color: #fca5a5; font-weight: bold;');
+             } else {
+                updateUIFromSettings();
+                if (appState.currentUser?.isAdmin) refreshUserList();
+             }
         } else if (isNotifications) {
             console.log('[UI] Refreshing Notifications data...');
             await loadAndScheduleNotifications();
