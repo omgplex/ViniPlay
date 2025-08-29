@@ -116,6 +116,9 @@ const renderSourceTable = (sourceType) => {
  */
 export const updateUIFromSettings = () => {
     const settings = guideState.settings;
+    // DEBUG LOG: Announce that the UI is being updated from the central state.
+    console.log(`%c[DEBUG] updateUIFromSettings called. hardwareAcceleration in guideState is: '${settings.hardwareAcceleration}'`, 'color: #22d3ee');
+
 
     // FIX: One-time timezone auto-detection and setting.
     const timezoneSetFlag = localStorage.getItem('vini_timezone_auto_set');
@@ -158,6 +161,8 @@ export const updateUIFromSettings = () => {
     // NEW: Update hardware acceleration UI
     loadHardwareInfo();
     const hardwareAccelerationValue = settings.hardwareAcceleration || 'auto';
+    // DEBUG LOG: Log the value we are about to set the dropdown to.
+    console.log(`%c[DEBUG] Setting hardware-acceleration-select dropdown value to: '${hardwareAccelerationValue}'`, 'color: #22d3ee');
     UIElements.hardwareAccelerationSelect.value = hardwareAccelerationValue;
 
     // UX Improvement: Show/hide profile selectors based on hardware choice
@@ -551,6 +556,8 @@ export function setupSettingsEventListeners() {
     // NEW: Hardware acceleration listener
     UIElements.hardwareAccelerationSelect.addEventListener('change', (e) => {
         const selectedValue = e.target.value;
+        // DEBUG LOG: Log what the user selected in the dropdown.
+        console.log(`%c[DEBUG] User changed hardware acceleration dropdown to: '${selectedValue}'. Saving setting.`, 'color: #facc15');
         saveUserSetting('hardwareAcceleration', selectedValue);
         
         // UX Improvement: Show/hide profile selectors based on choice
@@ -785,4 +792,3 @@ export function setupSettingsEventListeners() {
         e.target.value = '';
     });
 }
-
