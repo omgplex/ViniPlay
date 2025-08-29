@@ -1141,46 +1141,45 @@ app.post('/api/save/settings', requireAuth, async (req, res) => {
 });
 // ... existing endpoint ...
 app.post('/api/user/settings', requireAuth, (req, res) => {
-    console.log(`[API] Received request to /api/user/settings for user ${req.session.userId}.`);
     const { key, value } = req.body;
+    const userId = req.session.userId;
+    console.log(`[API] Saving user setting for user ${userId}: ${key}`);
+
     if (!key) {
-        console.warn('[API] User setting save failed: Key is missing.');
         return res.status(400).json({ error: 'A setting key is required.' });
     }
     
-    // DEBUG LOG: Log the exact key and value being saved for the user.
-    console.log(`%c[DEBUG] /api/user/settings: Saving key='${key}' with value='${JSON.stringify(value)}' for user ID ${req.session.userId}`, 'color: #facc15');
-
     const valueJson = JSON.stringify(value);
-    const userId = req.session.userId;
+
+    const saveAndRespond = () => {
+        let globalSettings = getSettings();
+        db.all(`SELECT key, value FROM user_settings WHERE user_id = ?`, [userId], (err, rows) => {
+            if (err) {
+                console.error("[API] Error re-fetching user settings after save:", err);
+                return res.status(500).json({ error: 'Could not retrieve updated settings.' });
+            }
+            const userSettings = {};
+            rows.forEach(row => {
+                try { userSettings[row.key] = JSON.parse(row.value); } 
+                catch (e) { userSettings[row.key] = row.value; }
+            });
+
+            const finalSettings = { ...globalSettings, ...userSettings };
+            res.json({ success: true, settings: finalSettings });
+        });
+    };
 
     db.run(
-        `UPDATE user_settings SET value = ? WHERE user_id = ? AND key = ?`,
-        [valueJson, userId, key],
+        `INSERT INTO user_settings (user_id, key, value) VALUES (?, ?, ?)
+         ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value`,
+        [userId, key, valueJson],
         function (err) {
             if (err) {
-                console.error(`[API] Error updating user setting for user ${userId}, key ${key}:`, err);
+                console.error(`[API] Error saving user setting for user ${userId}, key ${key}:`, err);
                 return res.status(500).json({ error: 'Could not save user setting.' });
             }
-            
-            if (this.changes === 0) {
-                console.log(`[API] User setting for user ${userId}, key ${key} not found for update. Attempting insert.`);
-                db.run(
-                    `INSERT INTO user_settings (user_id, key, value) VALUES (?, ?, ?)`,
-                    [userId, key, valueJson],
-                    (insertErr) => {
-                        if (insertErr) {
-                            console.error(`[API] Error inserting user setting for user ${userId}, key ${key}:`, insertErr);
-                            return res.status(500).json({ error: 'Could not save user setting.' });
-                        }
-                        console.log(`[API] User setting for user ${userId}, key ${key} inserted successfully.`);
-                        res.json({ success: true });
-                    }
-                );
-            } else {
-                console.log(`[API] User setting for user ${userId}, key ${key} updated successfully.`);
-                res.json({ success: true });
-            }
+            console.log(`[API] User setting for user ${userId}, key ${key} saved successfully.`);
+            saveAndRespond();
         }
     );
 });
