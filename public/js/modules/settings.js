@@ -371,8 +371,8 @@ const openEditorModal = (type, item = null) => {
 const saveSettingAndNotify = async (saveFunction, ...args) => {
     const updatedSettings = await saveFunction(...args);
     if (updatedSettings) {
-        // Merge returned settings into local state
-        Object.assign(guideState.settings, updatedSettings);
+        // FINAL FIX: Replace the local state completely, don't merge it.
+        guideState.settings = updatedSettings;
         showNotification('Setting saved.');
     }
     return !!updatedSettings;
@@ -608,7 +608,7 @@ export function setupSettingsEventListeners() {
             const newActiveId = (guideState.settings.activeUserAgentId === selectedId) ? (updatedList[0]?.id || null) : guideState.settings.activeUserAgentId;
             const settings = await saveGlobalSetting({ userAgents: updatedList, activeUserAgentId: newActiveId });
             if (settings) {
-                Object.assign(guideState.settings, settings);
+                guideState.settings = settings;
                 updateUIFromSettings();
                 showNotification('User Agent deleted.');
             }
@@ -626,7 +626,7 @@ export function setupSettingsEventListeners() {
             const newActiveId = (guideState.settings.activeStreamProfileId === selectedId) ? (updatedList[0]?.id || null) : guideState.settings.activeStreamProfileId;
             const settings = await saveGlobalSetting({ streamProfiles: updatedList, activeStreamProfileId: newActiveId });
             if (settings) {
-                Object.assign(guideState.settings, settings);
+                guideState.settings = settings;
                 updateUIFromSettings();
                 showNotification('Stream Profile saved.');
             }
@@ -655,7 +655,7 @@ export function setupSettingsEventListeners() {
             };
             const settings = await saveGlobalSetting(settingsToSave);
             if (settings) {
-                Object.assign(guideState.settings, settings);
+                guideState.settings = settings;
                 updateUIFromSettings();
                 showNotification('Recording Profile deleted.');
             }
@@ -699,7 +699,7 @@ export function setupSettingsEventListeners() {
 
         const settings = await saveGlobalSetting(settingsToSave);
         if (settings) {
-            Object.assign(guideState.settings, settings);
+            guideState.settings = settings;
             updateUIFromSettings();
             closeModal(UIElements.editorModal);
             showNotification(`${type.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())} saved.`);
