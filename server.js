@@ -235,7 +235,6 @@ function getSettings() {
                 { id: 'dvr-mp4-intel', name: 'Intel QSV MP4 (H.264/AAC)', command: '-hwaccel qsv -c:v h264_qsv -i "{streamUrl}" -c:v h264_qsv -preset medium -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: false }
             ]
         },
-        hardwareAcceleration: 'auto',
         activeUserAgentId: `default-ua-1724778434000`,
         activeStreamProfileId: 'ffmpeg-default',
         searchScope: 'channels_only',
@@ -836,15 +835,10 @@ app.delete('/api/users/:id', requireAdmin, (req, res) => {
 });
 // --- Protected IPTV API Endpoints ---
 app.get('/api/config', requireAuth, (req, res) => {
-    // DEBUG LOG: Announce the start of the config fetching process
-    console.log(`%c[DEBUG] /api/config called for user: ${req.session.username}. Fetching settings.`, 'color: #a78bfa');
     try {
         let config = { m3uContent: null, epgContent: null, settings: {} };
         let globalSettings = getSettings();
         config.settings = globalSettings;
-        // DEBUG LOG: Log the global hardware acceleration setting loaded from settings.json
-        console.log(`%c[DEBUG] /api/config: Global hardwareAcceleration from settings.json is '${globalSettings.hardwareAcceleration}'`, 'color: #a78bfa');
-
 
         if (fs.existsSync(MERGED_M3U_PATH)) {
             config.m3uContent = fs.readFileSync(MERGED_M3U_PATH, 'utf-8');
@@ -880,18 +874,8 @@ app.get('/api/config', requireAuth, (req, res) => {
                     }
                 });
                 
-                // DEBUG LOG: Log the user-specific hardware setting before merging.
-                if (userSettings.hardwareAcceleration) {
-                     console.log(`%c[DEBUG] /api/config: User-specific hardwareAcceleration from DB is '${userSettings.hardwareAcceleration}'`, 'color: #a78bfa');
-                } else {
-                     console.log(`%c[DEBUG] /api/config: No user-specific hardwareAcceleration setting found in DB.`, 'color: #a78bfa');
-                }
-
-
                 config.settings = { ...config.settings, ...userSettings };
                 console.log(`[API] Merged user settings for user ID: ${req.session.userId}`);
-                 // DEBUG LOG: Log the final hardware setting being sent to the client.
-                console.log(`%c[DEBUG] /api/config: Final merged hardwareAcceleration being sent to client is '${config.settings.hardwareAcceleration}'`, 'color: #a78bfa');
             }
             res.status(200).json(config);
         });
@@ -1415,7 +1399,7 @@ app.delete('/api/data', requireAuth, requireAdmin, (req, res) => {
 // ... existing /stream and /api/stream/stop endpoints ...
 app.get('/stream', requireAuth, async (req, res) => {
     const streamUrl = req.query.url;
-    const profileIdFromRequest = req.query.profileId;
+    const profileId = req.query.profileId; // MODIFIED: Simplified to just use the profileId from request.
     const userAgentId = req.query.userAgentId;
     const userId = req.session.userId;
     
@@ -1439,54 +1423,17 @@ app.get('/stream', requireAuth, async (req, res) => {
         return;
     }
 
-    // DEBUG LOG: Start of the stream request process
-    console.log(`%c[DEBUG] /stream: ------ START STREAM REQUEST ------`, 'color: #16a34a');
-    console.log(`%c[DEBUG] /stream: Received request. URL=${streamUrl}, Profile from Client=${profileIdFromRequest}, UserAgentID=${userAgentId}`, 'color: #16a34a');
-
+    console.log(`[STREAM] New request: URL=${streamUrl}, ProfileID=${profileId}, UserAgentID=${userAgentId}`);
     if (!streamUrl) return res.status(400).send('Error: `url` query parameter is required.');
 
+    // MODIFIED: Simplified logic. The backend no longer tries to be smart.
+    // It directly uses the profile ID provided by the client.
     let settings = getSettings();
-    let userSettings = {};
-    try {
-        const rows = await new Promise((resolve, reject) => db.all(`SELECT key, value FROM user_settings WHERE user_id = ?`, [userId], (err, rows) => err ? reject(err) : resolve(rows)));
-        rows.forEach(row => { 
-            try { userSettings[row.key] = JSON.parse(row.value); } catch(e) { userSettings[row.key] = row.value; }
-        });
-    } catch (e) { console.error('[STREAM] Could not fetch user settings for hardware acceleration.'); }
-
-    const accelSetting = userSettings.hardwareAcceleration || settings.hardwareAcceleration || 'auto';
-    let finalProfileId;
-
-    // DEBUG LOG: Log the retrieved user preference
-    console.log(`%c[DEBUG] /stream: User HW Accel preference from DB/settings is: '${accelSetting}'`, 'color: #16a34a');
-
-    if (accelSetting === 'cpu') {
-        finalProfileId = profileIdFromRequest;
-        console.log(`%c[DEBUG] /stream: Logic chose CPU path. Using profile from client request: '${finalProfileId}'`, 'color: #16a34a');
-    } else if (accelSetting === 'nvidia') {
-        finalProfileId = detectedHardware.nvidia ? 'ffmpeg-nvidia' : 'ffmpeg-default';
-        console.log(`%c[DEBUG] /stream: Logic chose NVIDIA path. Detected=${!!detectedHardware.nvidia}. Final Profile='${finalProfileId}'`, 'color: #16a34a');
-    } else if (accelSetting === 'intel') {
-        finalProfileId = detectedHardware.intel ? 'ffmpeg-intel' : 'ffmpeg-default';
-        console.log(`%c[DEBUG] /stream: Logic chose Intel path. Detected=${!!detectedHardware.intel}. Final Profile='${finalProfileId}'`, 'color: #16a34a');
-    } else { // 'auto' and any other fallback
-        if (detectedHardware.nvidia) {
-            finalProfileId = 'ffmpeg-nvidia';
-            console.log('%c[DEBUG] /stream: Logic chose AUTO path. Auto-selected NVIDIA profile.', 'color: #16a34a');
-        } else if (detectedHardware.intel) {
-            finalProfileId = 'ffmpeg-intel';
-            console.log('%c[DEBUG] /stream: Logic chose AUTO path. Auto-selected Intel profile.', 'color: #16a34a');
-        } else {
-            finalProfileId = profileIdFromRequest || 'ffmpeg-default';
-            console.log(`%c[DEBUG] /stream: Logic chose AUTO path. No GPU detected. Using profile from client request: '${finalProfileId}'`, 'color: #16a34a');
-        }
-    }
-
-    const profile = (settings.streamProfiles || []).find(p => p.id === finalProfileId);
+    const profile = (settings.streamProfiles || []).find(p => p.id === profileId);
 
     if (!profile) {
-        console.error(`[STREAM] Stream profile with ID "${finalProfileId}" not found in settings.`);
-        return res.status(404).send(`Error: Stream profile with ID "${finalProfileId}" not found.`);
+        console.error(`[STREAM] Stream profile with ID "${profileId}" not found in settings.`);
+        return res.status(404).send(`Error: Stream profile with ID "${profileId}" not found.`);
     }
 
     if (profile.command === 'redirect') {
@@ -1500,10 +1447,7 @@ app.get('/stream', requireAuth, async (req, res) => {
         return res.status(404).send(`Error: User agent with ID "${userAgentId}" not found.`);
     }
     
-    // DEBUG LOG: Log the final decision before spawning ffmpeg
-    console.log(`%c[DEBUG] /stream: FINAL DECISION: Using Profile='${profile.name}' (ID=${profile.id}), UserAgent='${userAgent.name}'`, 'color: #16a34a');
-    console.log(`%c[DEBUG] /stream: ------ END STREAM REQUEST ------`, 'color: #16a34a');
-
+    console.log(`[STREAM] Using Profile='${profile.name}' (ID=${profile.id}), UserAgent='${userAgent.name}'`);
 
     const commandTemplate = profile.command
         .replace(/{streamUrl}/g, streamUrl)
@@ -1758,45 +1702,10 @@ async function startRecording(job) {
         return;
     }
     
-    let userSettings = {};
-    try {
-        const rows = await new Promise((resolve, reject) => db.all(`SELECT key, value FROM user_settings WHERE user_id = ?`, [job.user_id], (err, rows) => err ? reject(err) : resolve(rows)));
-        rows.forEach(row => { 
-            try { userSettings[row.key] = JSON.parse(row.value); } catch(e) { userSettings[row.key] = row.value; }
-        });
-    } catch (e) { console.error('[DVR] Could not fetch user settings for hardware acceleration.'); }
-
-    // --- FIX: This logic mirrors the updated /stream endpoint logic for consistency ---
-    const accelSetting = userSettings.hardwareAcceleration || settings.hardwareAcceleration || 'auto';
-    let finalProfileId;
-
-    console.log(`[DVR] User HW Accel preference for recording is: '${accelSetting}'`);
-
-    if (accelSetting === 'cpu') {
-        finalProfileId = job.profileId; // Use the profile selected in DVR settings
-        console.log(`[DVR] Preference is CPU. Using profile from job: '${finalProfileId}'`);
-    } else if (accelSetting === 'nvidia') {
-        finalProfileId = detectedHardware.nvidia ? 'dvr-mp4-nvidia' : 'dvr-mp4-default';
-        console.log(`[DVR] Preference is NVIDIA. ${detectedHardware.nvidia ? 'Using NVIDIA profile.' : 'NVIDIA not detected, falling back to default CPU profile.'}`);
-    } else if (accelSetting === 'intel') {
-        finalProfileId = detectedHardware.intel ? 'dvr-mp4-intel' : 'dvr-mp4-default';
-        console.log(`[DVR] Preference is Intel. ${detectedHardware.intel ? 'Using Intel profile.' : 'Intel not detected, falling back to default CPU profile.'}`);
-    } else { // 'auto' and any other fallback
-        if (detectedHardware.nvidia) {
-            finalProfileId = 'dvr-mp4-nvidia';
-            console.log('[DVR] Auto-selected NVIDIA profile.');
-        } else if (detectedHardware.intel) {
-            finalProfileId = 'dvr-mp4-intel';
-            console.log('[DVR] Auto-selected Intel profile.');
-        } else {
-            finalProfileId = job.profileId || 'dvr-mp4-default';
-            console.log(`[DVR] Auto-selected CPU. Using profile from job: '${finalProfileId}'`);
-        }
-    }
-
-    const recProfile = (settings.dvr.recordingProfiles || []).find(p => p.id === finalProfileId);
+    // MODIFIED: Simplified logic. Directly use the profile ID from the job.
+    const recProfile = (settings.dvr.recordingProfiles || []).find(p => p.id === job.profileId);
     if (!recProfile) {
-        const errorMsg = `Recording profile ID "${finalProfileId}" not found.`;
+        const errorMsg = `Recording profile ID "${job.profileId}" not found.`;
         console.error(`[DVR] Cannot start recording job ${job.id}: ${errorMsg}`);
         db.run("UPDATE dvr_jobs SET status = 'error', ffmpeg_pid = NULL, errorMessage = ? WHERE id = ?", [errorMsg, job.id]);
         return;
@@ -1809,6 +1718,8 @@ async function startRecording(job) {
         db.run("UPDATE dvr_jobs SET status = 'error', ffmpeg_pid = NULL, errorMessage = ? WHERE id = ?", [errorMsg, job.id]);
         return;
     }
+
+    console.log(`[DVR] Using recording profile: "${recProfile.name}"`);
 
     const streamUrlToRecord = channel.url;
     const safeFilename = `${job.id}_${job.programTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.mp4`;
@@ -2415,4 +2326,3 @@ function parseM3U(data) {
     }
     return channels;
 }
-
