@@ -22,7 +22,9 @@ WORKDIR /usr/src/app
 COPY package*.json ./
 
 # Install only production dependencies to keep the node_modules folder smaller
-RUN npm ci --only=production
+# FIX: Switched from 'npm ci' to 'npm install' for better compatibility in build environments
+# that may not have a package-lock.json file.
+RUN npm install --only=production
 
 # Copy the rest of the application source code
 COPY . .
@@ -68,3 +70,4 @@ VOLUME /dvr
 
 # Define the command to run your application
 CMD [ "npm", "start" ]
+
