@@ -123,6 +123,20 @@ const initializeUIElements = () => {
     UIElements.streamProfileContainer = document.getElementById('stream-profile-container');
     UIElements.dvrProfileContainer = document.getElementById('dvr-profile-container');
 
+    // NEW: Admin Activity Page Elements
+    UIElements.pageActivity = document.getElementById('page-activity');
+    UIElements.tabActivity = document.getElementById('tab-activity');
+    UIElements.mobileNavActivity = document.getElementById('mobile-nav-activity');
+    UIElements.liveActivityTbody = document.getElementById('live-activity-tbody');
+    UIElements.watchHistoryTbody = document.getElementById('watch-history-tbody');
+    UIElements.noLiveActivityMessage = document.getElementById('no-live-activity-message');
+    UIElements.noWatchHistoryMessage = document.getElementById('no-watch-history-message');
+    UIElements.liveActivityTableContainer = document.getElementById('live-activity-table-container');
+    UIElements.watchHistoryTableContainer = document.getElementById('watch-history-table-container');
+    UIElements.refreshActivityBtn = document.getElementById('refresh-activity-btn');
+    UIElements.historySearchInput = document.getElementById('history-search-input');
+
+
     // Settings Buttons
     UIElements.addM3uBtn = document.getElementById('add-m3u-btn');
     UIElements.addEpgBtn = document.getElementById('add-epg-btn');
@@ -201,14 +215,19 @@ const showApp = (user) => {
     UIElements.userDisplay.textContent = user.username;
     UIElements.userDisplay.classList.remove('hidden');
     UIElements.userManagementSection.classList.toggle('hidden', !user.isAdmin);
-    // NEW: Also toggle the Danger Zone section based on admin status. This is also
-    // done in updateUIFromSettings, but doing it here ensures it's set immediately on login.
+    // NEW: Also toggle the Danger Zone and Activity Tab based on admin status.
     if (UIElements.dangerZoneSection) {
         UIElements.dangerZoneSection.classList.toggle('hidden', !user.isAdmin);
     }
+    if (UIElements.tabActivity) {
+        UIElements.tabActivity.classList.toggle('hidden', !user.isAdmin);
+    }
+    if (UIElements.mobileNavActivity) {
+        UIElements.mobileNavActivity.classList.toggle('hidden', !user.isAdmin);
+    }
     
     // The entire DVR settings section visibility is handled in settings.js, so we don't need a specific element here.
-    console.log(`[AUTH_UI] User display set to: ${user.username}. Admin section visibility: ${!user.isAdmin ? 'hidden' : 'visible'}.`);
+    console.log(`[AUTH_UI] User display set to: ${user.username}. Admin sections visibility: ${!user.isAdmin ? 'hidden' : 'visible'}.`);
 
     if (!appState.appInitialized) {
         console.log('[AUTH_UI] Main app not initialized yet, calling initMainApp().');
@@ -361,4 +380,3 @@ export function setupAuthEventListeners() {
         }
     });
 }
-
