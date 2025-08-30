@@ -13,6 +13,7 @@ import { stopAndCleanupPlayer } from './player.js';
 import { initDirectPlayer, isDirectPlayerActive, cleanupDirectPlayer } from './player_direct.js';
 import { finalizeGuideLoad } from './guide.js';
 import { fetchConfig } from './api.js';
+import { initActivityPage } from './admin.js';
 
 
 let confirmCallback = null;
@@ -325,12 +326,14 @@ async function proceedWithRouteChange(path) {
     const isMultiView = path.startsWith('/multiview');
     const isPlayer = path.startsWith('/player');
     const isDvr = path.startsWith('/dvr');
+    const isActivity = path.startsWith('/activity'); // NEW: Admin activity page
     const isNotifications = path.startsWith('/notifications');
     const isSettings = path.startsWith('/settings');
 
     closeMobileMenu();
 
     const hasDvrAccess = appState.currentUser?.isAdmin || appState.currentUser?.canUseDvr;
+    const isAdmin = appState.currentUser?.isAdmin;
 
     UIElements.tabGuide?.classList.toggle('active', isGuide);
     UIElements.tabMultiview?.classList.toggle('active', isMultiView);
@@ -338,6 +341,10 @@ async function proceedWithRouteChange(path) {
     if (UIElements.tabDvr) {
         UIElements.tabDvr.classList.toggle('active', isDvr && hasDvrAccess);
         UIElements.tabDvr.classList.toggle('hidden', !hasDvrAccess);
+    }
+    if (UIElements.tabActivity) { // NEW
+        UIElements.tabActivity.classList.toggle('active', isActivity && isAdmin);
+        UIElements.tabActivity.classList.toggle('hidden', !isAdmin);
     }
     UIElements.tabNotifications?.classList.toggle('active', isNotifications);
     UIElements.tabSettings?.classList.toggle('active', isSettings);
@@ -348,6 +355,10 @@ async function proceedWithRouteChange(path) {
     if (UIElements.mobileNavDvr) {
         UIElements.mobileNavDvr.classList.toggle('active', isDvr && hasDvrAccess);
         UIElements.mobileNavDvr.classList.toggle('hidden', !hasDvrAccess);
+    }
+    if (UIElements.mobileNavActivity) { // NEW
+        UIElements.mobileNavActivity.classList.toggle('active', isActivity && isAdmin);
+        UIElements.mobileNavActivity.classList.toggle('hidden', !isAdmin);
     }
     UIElements.mobileNavNotifications?.classList.toggle('active', isNotifications);
     UIElements.mobileNavSettings?.classList.toggle('active', isSettings);
@@ -360,6 +371,8 @@ async function proceedWithRouteChange(path) {
     UIElements.pagePlayer.classList.toggle('flex', isPlayer);
     UIElements.pageDvr.classList.toggle('hidden', !isDvr || !hasDvrAccess); 
     UIElements.pageDvr.classList.toggle('flex', isDvr && hasDvrAccess);
+    UIElements.pageActivity.classList.toggle('hidden', !isActivity || !isAdmin); // NEW
+    UIElements.pageActivity.classList.toggle('flex', isActivity && isAdmin); // NEW
     UIElements.pageNotifications.classList.toggle('hidden', !isNotifications);
     UIElements.pageNotifications.classList.toggle('flex', isNotifications);
     UIElements.pageSettings.classList.toggle('hidden', !isSettings);
@@ -371,7 +384,6 @@ async function proceedWithRouteChange(path) {
         if (appContainer) appContainer.classList.remove('header-collapsed');
         if (UIElements.guideContainer) UIElements.guideContainer.scrollTop = 0;
         
-        // FINAL FIX: Check if the config reload is blocked before proceeding.
         if (blockConfigReload) {
             console.log(`%c[DEBUG] RACE_CONDITION_FIX: Navigation to Guide tab occurred while config reload was blocked. Skipping reload.`, 'color: #fca5a5; font-weight: bold;');
             return;
@@ -391,7 +403,6 @@ async function proceedWithRouteChange(path) {
     } else {
         if (appContainer) appContainer.classList.remove('header-collapsed');
         
-        // FINAL FIX: Also check the block for settings tab since it also refreshes.
         if (isSettings) {
              if (blockConfigReload) {
                 console.log(`%c[DEBUG] RACE_CONDITION_FIX: Navigation to Settings tab occurred while config reload was blocked. Skipping reload.`, 'color: #fca5a5; font-weight: bold;');
@@ -400,15 +411,15 @@ async function proceedWithRouteChange(path) {
                 if (appState.currentUser?.isAdmin) refreshUserList();
              }
         } else if (isNotifications) {
-            console.log('[UI] Refreshing Notifications data...');
             await loadAndScheduleNotifications();
         } else if (isMultiView) {
             initMultiView();
         } else if (isPlayer) {
             initDirectPlayer();
         } else if (isDvr && hasDvrAccess) {
-            console.log('[UI] Refreshing DVR data...');
             await initDvrPage();
+        } else if (isActivity && isAdmin) { // NEW
+            await initActivityPage();
         }
     }
     currentPage = path;
@@ -436,6 +447,7 @@ export const switchTab = (activeTab) => {
     else if (activeTab === 'multiview') newPath = '/multiview';
     else if (activeTab === 'player') newPath = '/player';
     else if (activeTab === 'dvr') newPath = '/dvr';
+    else if (activeTab === 'activity') newPath = '/activity'; // NEW
     else if (activeTab === 'notifications') newPath = '/notifications';
     else newPath = '/settings';
     navigate(newPath);
