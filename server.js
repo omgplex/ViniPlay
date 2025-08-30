@@ -37,6 +37,7 @@ const activeDvrJobs = new Map(); // Stores active node-schedule jobs
 const runningFFmpegProcesses = new Map(); // Stores PIDs of running ffmpeg recordings
 
 // --- MODIFIED: Active Stream Management ---
+// Now maps a unique stream key (URL + UserID) to its process info
 const activeStreamProcesses = new Map();
 const STREAM_INACTIVITY_TIMEOUT = 30000; // 30 seconds to kill an inactive stream process
 
@@ -107,6 +108,8 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
             db.run(`CREATE TABLE IF NOT EXISTS notification_deliveries (id INTEGER PRIMARY KEY AUTOINCREMENT, notification_id INTEGER NOT NULL, subscription_id INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending', updatedAt TEXT NOT NULL, FOREIGN KEY (notification_id) REFERENCES notifications(id) ON DELETE CASCADE, FOREIGN KEY (subscription_id) REFERENCES push_subscriptions(id) ON DELETE CASCADE)`);
             db.run(`CREATE TABLE IF NOT EXISTS dvr_jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, channelId TEXT NOT NULL, channelName TEXT NOT NULL, programTitle TEXT NOT NULL, startTime TEXT NOT NULL, endTime TEXT NOT NULL, status TEXT NOT NULL, ffmpeg_pid INTEGER, filePath TEXT, profileId TEXT, userAgentId TEXT, preBufferMinutes INTEGER, postBufferMinutes INTEGER, errorMessage TEXT, isConflicting INTEGER DEFAULT 0, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)`);
             db.run(`CREATE TABLE IF NOT EXISTS dvr_recordings (id INTEGER PRIMARY KEY AUTOINCREMENT, job_id INTEGER, user_id INTEGER NOT NULL, channelName TEXT NOT NULL, programTitle TEXT NOT NULL, startTime TEXT NOT NULL, durationSeconds INTEGER, fileSizeBytes INTEGER, filePath TEXT UNIQUE NOT NULL, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE, FOREIGN KEY (job_id) REFERENCES dvr_jobs(id) ON DELETE SET NULL)`);
+            // NEW: Stream history table for admin monitoring
+            db.run(`CREATE TABLE IF NOT EXISTS stream_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, username TEXT NOT NULL, channel_id TEXT, channel_name TEXT, start_time TEXT NOT NULL, end_time TEXT, duration_seconds INTEGER, status TEXT NOT NULL, client_ip TEXT, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)`);
         });
     }
 });
@@ -132,18 +135,39 @@ app.use(
 );
 
 app.use((req, res, next) => {
+    // Add client IP to the request object for logging
+    req.clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
     if (req.path === '/api/events') {
         return next();
     }
     const user_info = req.session.userId ? `User ID: ${req.session.userId}, Admin: ${req.session.isAdmin}, DVR: ${req.session.canUseDvr}` : 'No session';
-    console.log(`[HTTP_TRACE] ${req.method} ${req.originalUrl} - Session: [${user_info}]`);
+    console.log(`[HTTP_TRACE] ${req.method} ${req.originalUrl} - IP: ${req.clientIp} - Session: [${user_info}]`);
     next();
 });
 
+// MODIFIED: requireAuth now checks if the user still exists in the database on every request.
 const requireAuth = (req, res, next) => {
-    if (req.session && req.session.userId) return next();
-    return res.status(401).json({ error: 'Authentication required.' });
+    if (!req.session || !req.session.userId) {
+        return res.status(401).json({ error: 'Authentication required.' });
+    }
+    
+    db.get("SELECT id FROM users WHERE id = ?", [req.session.userId], (err, user) => {
+        if (err) {
+            console.error('[AUTH_MIDDLEWARE] DB error checking user existence:', err);
+            return res.status(500).json({ error: 'Server error during authentication.' });
+        }
+        if (!user) {
+            console.warn(`[AUTH_MIDDLEWARE] User ID ${req.session.userId} from session not found in DB. Destroying session.`);
+            req.session.destroy();
+            res.clearCookie('connect.sid');
+            return res.status(401).json({ error: 'User account no longer exists. Please log in again.' });
+        }
+        // User exists, proceed.
+        next();
+    });
 };
+
 const requireAdmin = (req, res, next) => {
     if (req.session && req.session.isAdmin) return next();
     return res.status(403).json({ error: 'Administrator privileges required.' });
@@ -182,19 +206,28 @@ async function detectHardwareAcceleration() {
     }
 }
 
+// MODIFIED: This function is now mostly for multi-view scenarios.
+// Single-user streams are handled more directly.
 function cleanupInactiveStreams() {
     const now = Date.now();
     console.log(`[JANITOR] Running cleanup for inactive streams. Current active processes: ${activeStreamProcesses.size}`);
     
-    activeStreamProcesses.forEach((streamInfo, url) => {
+    activeStreamProcesses.forEach((streamInfo, streamKey) => {
         if (streamInfo.references <= 0 && (now - streamInfo.lastAccess > STREAM_INACTIVITY_TIMEOUT)) {
-            console.log(`[JANITOR] Found stale stream process for URL: ${url}. Terminating PID: ${streamInfo.process.pid}.`);
+            console.log(`[JANITOR] Found stale stream process for key: ${streamKey}. Terminating PID: ${streamInfo.process.pid}.`);
             try {
+                // Also update the history entry if it exists
+                if (streamInfo.historyId) {
+                    const endTime = new Date().toISOString();
+                    const duration = Math.round((new Date(endTime).getTime() - new Date(streamInfo.startTime).getTime()) / 1000);
+                    db.run("UPDATE stream_history SET end_time = ?, duration_seconds = ?, status = 'stopped' WHERE id = ? AND status = 'playing'",
+                        [endTime, duration, streamInfo.historyId]);
+                }
                 streamInfo.process.kill('SIGKILL'); 
-                activeStreamProcesses.delete(url);
+                activeStreamProcesses.delete(streamKey);
             } catch (e) {
-                console.warn(`[JANITOR] Error killing stale process for ${url}: ${e.message}`);
-                activeStreamProcesses.delete(url);
+                console.warn(`[JANITOR] Error killing stale process for ${streamKey}: ${e.message}`);
+                activeStreamProcesses.delete(streamKey);
             }
         }
     });
@@ -812,24 +845,46 @@ app.put('/api/users/:id', requireAdmin, (req, res) => {
     }
 });
 
+// MODIFIED: User deletion now terminates active streams and forces logout.
 app.delete('/api/users/:id', requireAdmin, (req, res) => {
-    const { id } = req.params;
-    console.log(`[USER_API] Deleting user ID: ${id}`);
-    if (req.session.userId == id) {
-        console.warn(`[USER_API] Attempted to delete own account for user ${id}.`);
+    const idToDelete = parseInt(req.params.id, 10);
+    console.log(`[USER_API] Deleting user ID: ${idToDelete}`);
+    if (req.session.userId == idToDelete) {
+        console.warn(`[USER_API] Attempted to delete own account for user ${idToDelete}.`);
         return res.status(403).json({ error: "You cannot delete your own account." });
     }
+
+    // --- NEW: Terminate active streams for the deleted user ---
+    let streamsKilled = 0;
+    for (const [streamKey, streamInfo] of activeStreamProcesses.entries()) {
+        if (streamInfo.userId === idToDelete) {
+            console.log(`[USER_DELETION] Found active stream for deleted user ${idToDelete}. Terminating PID: ${streamInfo.process.pid}.`);
+            try {
+                streamInfo.process.kill('SIGKILL');
+                activeStreamProcesses.delete(streamKey);
+                streamsKilled++;
+            } catch (e) {
+                console.warn(`[USER_DELETION] Error killing stream process for user ${idToDelete}: ${e.message}`);
+            }
+        }
+    }
+    if (streamsKilled > 0) {
+        console.log(`[USER_DELETION] Terminated ${streamsKilled} active stream(s) for deleted user ${idToDelete}.`);
+    }
+
+    // --- NEW: Force logout via SSE ---
+    sendSseEvent(idToDelete, 'force-logout', { reason: 'Your account has been deleted by an administrator.' });
     
-    db.run("DELETE FROM users WHERE id = ?", id, function(err) {
+    db.run("DELETE FROM users WHERE id = ?", idToDelete, function(err) {
         if (err) {
-            console.error(`[USER_API] Error deleting user ${id}:`, err.message);
+            console.error(`[USER_API] Error deleting user ${idToDelete}:`, err.message);
             return res.status(500).json({ error: err.message });
         }
         if (this.changes === 0) {
-            console.warn(`[USER_API] User ${id} not found for deletion.`);
+            console.warn(`[USER_API] User ${idToDelete} not found for deletion.`);
             return res.status(404).json({ error: 'User not found.' });
         }
-        console.log(`[USER_API] User ${id} deleted successfully.`);
+        console.log(`[USER_API] User ${idToDelete} deleted successfully from database.`);
         res.json({ success: true });
     });
 });
@@ -1377,7 +1432,7 @@ app.delete('/api/data', requireAuth, requireAdmin, (req, res) => {
         });
         
         console.log('[API_RESET] Wiping all database tables...');
-        const tables = ['dvr_recordings', 'dvr_jobs', 'notification_deliveries', 'notifications', 'push_subscriptions', 'multiview_layouts', 'user_settings', 'users', 'sessions'];
+        const tables = ['stream_history', 'dvr_recordings', 'dvr_jobs', 'notification_deliveries', 'notifications', 'push_subscriptions', 'multiview_layouts', 'user_settings', 'users', 'sessions'];
         db.serialize(() => {
             tables.forEach(table => {
                 db.run(`DELETE FROM ${table}`, (err) => {
@@ -1396,24 +1451,28 @@ app.delete('/api/data', requireAuth, requireAdmin, (req, res) => {
 });
 
 
-// ... existing /stream and /api/stream/stop endpoints ...
+// MODIFIED: Stream endpoint now logs to history and has enhanced tracking.
 app.get('/stream', requireAuth, async (req, res) => {
     const streamUrl = req.query.url;
-    const profileId = req.query.profileId; // MODIFIED: Simplified to just use the profileId from request.
+    const profileId = req.query.profileId;
     const userAgentId = req.query.userAgentId;
     const userId = req.session.userId;
+    const username = req.session.username;
+    const clientIp = req.clientIp;
     
-    // Check if the stream is already active
-    const activeStreamInfo = activeStreamProcesses.get(streamUrl);
+    // A unique key for this user and this stream URL
+    const streamKey = `${userId}::${streamUrl}`;
+
+    const activeStreamInfo = activeStreamProcesses.get(streamKey);
     
     if (activeStreamInfo) {
         activeStreamInfo.references++;
         activeStreamInfo.lastAccess = Date.now();
-        console.log(`[STREAM] Existing stream requested. URL: ${streamUrl}. New ref count: ${activeStreamInfo.references}.`);
+        console.log(`[STREAM] Existing stream requested. Key: ${streamKey}. New ref count: ${activeStreamInfo.references}.`);
         activeStreamInfo.process.stdout.pipe(res);
         
         req.on('close', () => {
-            console.log(`[STREAM] Client closed connection for existing stream ${streamUrl}. Decrementing ref count.`);
+            console.log(`[STREAM] Client closed connection for existing stream ${streamKey}. Decrementing ref count.`);
             activeStreamInfo.references--;
             activeStreamInfo.lastAccess = Date.now();
             if (activeStreamInfo.references <= 0) {
@@ -1426,8 +1485,6 @@ app.get('/stream', requireAuth, async (req, res) => {
     console.log(`[STREAM] New request: URL=${streamUrl}, ProfileID=${profileId}, UserAgentID=${userAgentId}`);
     if (!streamUrl) return res.status(400).send('Error: `url` query parameter is required.');
 
-    // MODIFIED: Simplified logic. The backend no longer tries to be smart.
-    // It directly uses the profile ID provided by the client.
     let settings = getSettings();
     const profile = (settings.streamProfiles || []).find(p => p.id === profileId);
 
@@ -1446,6 +1503,12 @@ app.get('/stream', requireAuth, async (req, res) => {
         console.error(`[STREAM] User agent with ID "${userAgentId}" not found in settings.`);
         return res.status(404).send(`Error: User agent with ID "${userAgentId}" not found.`);
     }
+
+    // Find channel name for logging
+    const allChannels = parseM3U(fs.existsSync(MERGED_M3U_PATH) ? fs.readFileSync(MERGED_M3U_PATH, 'utf-8') : '');
+    const channel = allChannels.find(c => c.url === streamUrl);
+    const channelName = channel ? channel.displayName || channel.name : 'Direct Stream';
+    const channelId = channel ? channel.id : null;
     
     console.log(`[STREAM] Using Profile='${profile.name}' (ID=${profile.id}), UserAgent='${userAgent.name}'`);
 
@@ -1458,62 +1521,163 @@ app.get('/stream', requireAuth, async (req, res) => {
     console.log(`[STREAM] FFmpeg command args: ffmpeg ${args.join(' ')}`);
     const ffmpeg = spawn('ffmpeg', args);
 
-    activeStreamProcesses.set(streamUrl, { process: ffmpeg, references: 1, lastAccess: Date.now() });
-    console.log(`[STREAM] Started FFMPEG process with PID: ${ffmpeg.pid} for user ${userId} for URL: ${streamUrl}.`);
+    // --- NEW: Log stream start to history ---
+    const startTime = new Date().toISOString();
+    db.run(
+        `INSERT INTO stream_history (user_id, username, channel_id, channel_name, start_time, status, client_ip) VALUES (?, ?, ?, ?, ?, 'playing', ?)`,
+        [userId, username, channelId, channelName, startTime, clientIp],
+        function(err) {
+            if (err) {
+                console.error('[STREAM_HISTORY] Error logging stream start:', err.message);
+            } else {
+                const historyId = this.lastID;
+                console.log(`[STREAM_HISTORY] Logged stream start with history ID: ${historyId}`);
+                
+                // Now that we have the history ID, store it with the process
+                const newStreamInfo = {
+                    process: ffmpeg,
+                    references: 1,
+                    lastAccess: Date.now(),
+                    userId,
+                    username,
+                    channelId,
+                    channelName,
+                    startTime,
+                    historyId, // Store the history ID
+                    clientIp,
+                    streamKey,
+                };
+                activeStreamProcesses.set(streamKey, newStreamInfo);
+                console.log(`[STREAM] Started FFMPEG process with PID: ${ffmpeg.pid} for user ${userId} for stream key: ${streamKey}.`);
+            }
+        }
+    );
     
     res.setHeader('Content-Type', 'video/mp2t');
     ffmpeg.stdout.pipe(res);
     
-    ffmpeg.stderr.on('data', (data) => console.error(`[FFMPEG_ERROR] Stream: ${streamUrl} - ${data.toString().trim()}`));
+    ffmpeg.stderr.on('data', (data) => console.error(`[FFMPEG_ERROR] Stream: ${streamKey} - ${data.toString().trim()}`));
+    
+    const cleanupOnExit = () => {
+        const info = activeStreamProcesses.get(streamKey);
+        if (info && info.historyId) {
+            const endTime = new Date().toISOString();
+            const duration = Math.round((new Date(endTime).getTime() - new Date(info.startTime).getTime()) / 1000);
+            db.run("UPDATE stream_history SET end_time = ?, duration_seconds = ?, status = 'stopped' WHERE id = ? AND status = 'playing'",
+                [endTime, duration, info.historyId]);
+        }
+        activeStreamProcesses.delete(streamKey);
+    };
+
     ffmpeg.on('close', (code) => {
-        console.log(`[STREAM] ffmpeg process for ${streamUrl} exited with code ${code}`);
-        activeStreamProcesses.delete(streamUrl);
+        console.log(`[STREAM] ffmpeg process for ${streamKey} exited with code ${code}`);
+        cleanupOnExit();
         if (!res.headersSent) res.status(500).send('FFmpeg stream ended unexpectedly or failed to start.');
         else res.end();
     });
     ffmpeg.on('error', (err) => {
-        console.error(`[STREAM] Failed to start ffmpeg process for ${streamUrl}: ${err.message}`);
-        activeStreamProcesses.delete(streamUrl);
+        console.error(`[STREAM] Failed to start ffmpeg process for ${streamKey}: ${err.message}`);
+        cleanupOnExit();
         if (!res.headersSent) res.status(500).send('Failed to start streaming service. Check server logs.');
     });
     
     req.on('close', () => {
-        const info = activeStreamProcesses.get(streamUrl);
+        const info = activeStreamProcesses.get(streamKey);
         if (info) {
-             console.log(`[STREAM] Client closed connection for new stream ${streamUrl}. Decrementing ref count.`);
+             console.log(`[STREAM] Client closed connection for new stream ${streamKey}. Decrementing ref count.`);
              info.references--;
              info.lastAccess = Date.now();
              if (info.references <= 0) {
                 console.log(`[STREAM] Last client disconnected. Ref count is 0. Process for PID: ${info.process.pid} will be cleaned up by the janitor.`);
             }
         } else {
-            console.log(`[STREAM] Client closed connection for ${streamUrl}, but no process was found in the map.`);
+            console.log(`[STREAM] Client closed connection for ${streamKey}, but no process was found in the map.`);
         }
     });
 });
+
 app.post('/api/stream/stop', requireAuth, (req, res) => {
     const { url: streamUrl } = req.body;
+    const streamKey = `${req.session.userId}::${streamUrl}`;
+
     if (!streamUrl) {
         return res.status(400).json({ error: "Stream URL is required to stop the stream." });
     }
 
-    const activeStreamInfo = activeStreamProcesses.get(streamUrl);
+    const activeStreamInfo = activeStreamProcesses.get(streamKey);
 
     if (activeStreamInfo) {
-        console.log(`[STREAM_STOP_API] Received request to stop stream for user ${req.session.userId}. Terminating URL: ${streamUrl}`);
+        console.log(`[STREAM_STOP_API] Received request to stop stream for user ${req.session.userId}. Terminating key: ${streamKey}`);
         try {
+            if (activeStreamInfo.historyId) {
+                const endTime = new Date().toISOString();
+                const duration = Math.round((new Date(endTime).getTime() - new Date(activeStreamInfo.startTime).getTime()) / 1000);
+                db.run("UPDATE stream_history SET end_time = ?, duration_seconds = ?, status = 'stopped' WHERE id = ? AND status = 'playing'",
+                    [endTime, duration, activeStreamInfo.historyId]);
+            }
             activeStreamInfo.process.kill('SIGKILL');
-            activeStreamProcesses.delete(streamUrl);
-            console.log(`[STREAM_STOP_API] Successfully terminated process for URL: ${streamUrl}`);
+            activeStreamProcesses.delete(streamKey);
+            console.log(`[STREAM_STOP_API] Successfully terminated process for key: ${streamKey}`);
         } catch (e) {
-            console.warn(`[STREAM_STOP_API] Could not kill process for URL: ${streamUrl}. It might have already exited. Error: ${e.message}`);
+            console.warn(`[STREAM_STOP_API] Could not kill process for key: ${streamKey}. It might have already exited. Error: ${e.message}`);
         }
-        res.json({ success: true, message: `Stream process for ${streamUrl} terminated.` });
+        res.json({ success: true, message: `Stream process for ${streamKey} terminated.` });
     } else {
-        console.log(`[STREAM_STOP_API] Received stop request for user ${req.session.userId}, but no active stream was found for URL: ${streamUrl}`);
+        console.log(`[STREAM_STOP_API] Received stop request for user ${req.session.userId}, but no active stream was found for key: ${streamKey}`);
         res.json({ success: true, message: 'No active stream to stop.' });
     }
 });
+
+// --- NEW: Admin Monitoring Endpoints ---
+app.get('/api/admin/activity', requireAuth, requireAdmin, (req, res) => {
+    // 1. Get Live Activity from the in-memory map
+    const liveActivity = Array.from(activeStreamProcesses.values()).map(info => ({
+        streamKey: info.streamKey,
+        userId: info.userId,
+        username: info.username,
+        channelName: info.channelName,
+        startTime: info.startTime,
+        clientIp: info.clientIp,
+    }));
+
+    // 2. Get Historical Activity from the database
+    db.all("SELECT * FROM stream_history ORDER BY start_time DESC LIMIT 50", [], (err, history) => {
+        if (err) {
+            console.error('[ADMIN_API] Error fetching stream history:', err.message);
+            return res.status(500).json({ error: "Could not retrieve stream history." });
+        }
+        res.json({ live: liveActivity, history: history });
+    });
+});
+
+app.post('/api/admin/stop-stream', requireAuth, requireAdmin, (req, res) => {
+    const { streamKey } = req.body;
+    if (!streamKey) {
+        return res.status(400).json({ error: "A streamKey is required to stop the stream." });
+    }
+
+    const streamInfo = activeStreamProcesses.get(streamKey);
+    if (streamInfo) {
+        console.log(`[ADMIN_API] Admin ${req.session.username} is terminating stream ${streamKey} for user ${streamInfo.username}.`);
+        try {
+            if (streamInfo.historyId) {
+                const endTime = new Date().toISOString();
+                const duration = Math.round((new Date(endTime).getTime() - new Date(streamInfo.startTime).getTime()) / 1000);
+                db.run("UPDATE stream_history SET end_time = ?, duration_seconds = ?, status = 'stopped' WHERE id = ? AND status = 'playing'",
+                    [endTime, duration, streamInfo.historyId]);
+            }
+            streamInfo.process.kill('SIGKILL');
+            activeStreamProcesses.delete(streamKey);
+            res.json({ success: true, message: `Stream terminated for user ${streamInfo.username}.` });
+        } catch (e) {
+            console.error(`[ADMIN_API] Error terminating stream ${streamKey}: ${e.message}`);
+            res.status(500).json({ error: "Failed to terminate stream process." });
+        }
+    } else {
+        res.status(404).json({ error: "Active stream not found." });
+    }
+});
+
 // ... existing Multi-View Layout API Endpoints ...
 app.get('/api/multiview/layouts', requireAuth, (req, res) => {
     console.log(`[LAYOUT_API] Fetching layouts for user ${req.session.userId}.`);
