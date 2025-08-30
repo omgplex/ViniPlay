@@ -12,6 +12,7 @@ import { saveUserSetting, stopStream } from './api.js';
 
 const MAX_RECENT_LINKS = 10;
 let currentStreamUrl = null; // NEW: Track the URL of the current stream
+let statisticsInterval = null; // NEW: Interval for logging stream statistics.
 
 // --- Helper Functions ---
 
@@ -117,6 +118,12 @@ export function initDirectPlayer() {
  */
 async function stopAndCleanupDirectPlayer() {
     console.log('[DEBUG] stopAndCleanupDirectPlayer: Function called.');
+
+    // NEW: Clear the statistics logging interval.
+    if (statisticsInterval) {
+        clearInterval(statisticsInterval);
+        statisticsInterval = null;
+    }
 
     // If a stream is active, explicitly tell the server to stop it
     if (currentStreamUrl) {
@@ -235,11 +242,24 @@ function playDirectStream(url) {
     if (mpegts.isSupported()) {
         try {
             console.log(`[DEBUG] playDirectStream: Creating new mpegts.js player for URL: ${streamUrlToPlay}`);
+
+            // NEW: Configuration for mpegts.js to increase buffer sizes
+            const mpegtsConfig = {
+                // Keep the stash buffer enabled (default is true)
+                enableStashBuffer: true,
+                // Increase initial buffer size to 4MB to better handle network fluctuations
+                stashInitialSize: 4096,
+                // For live streams, try to seek to the live edge after 2 seconds of media is buffered
+                liveBufferLatency: 2.0,
+            };
+            logToPlayerConsole(`Player config: stashInitialSize=${mpegtsConfig.stashInitialSize}KB, liveBufferLatency=${mpegtsConfig.liveBufferLatency}s`);
+
             const newPlayer = mpegts.createPlayer({
                 type: 'mse',
                 isLive: true,
                 url: streamUrlToPlay
-            });
+            }, mpegtsConfig); // Pass the new config here
+            
             appState.player = newPlayer; // Assign to global state immediately
             console.log('[DEBUG] playDirectStream: New player instance created and assigned to appState.player.');
 
@@ -255,6 +275,22 @@ function playDirectStream(url) {
                 logToPlayerConsole(`Error: ${errorType} - ${errorDetail}`, true);
                 stopAndCleanupDirectPlayer();
             });
+            
+            // NEW: Set up periodic logging of stream statistics.
+            if (statisticsInterval) {
+                clearInterval(statisticsInterval);
+            }
+            statisticsInterval = setInterval(() => {
+                if (appState.player && appState.player.statisticsInfo) {
+                    const stats = appState.player.statisticsInfo;
+                    const video = UIElements.directVideoElement;
+                    const bufferEnd = video.buffered.length > 0 ? video.buffered.end(0) : 0;
+                    const buffer = bufferEnd - video.currentTime;
+
+                    const logMsg = `Speed: ${(stats.speed / 1024).toFixed(1)} KB/s --- Buffer: ${buffer.toFixed(2)}s --- Decoded Frames: ${stats.decodedFrames}`;
+                    logToPlayerConsole(logMsg);
+                }
+            }, 2000); // Log stats every 2 seconds.
 
             console.log('[DEBUG] playDirectStream: Calling player.load().');
             appState.player.load();
