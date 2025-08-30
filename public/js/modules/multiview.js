@@ -524,11 +524,18 @@ function playChannelInWidget(widgetId, channel, gridstackItemContentEl) {
     // --- END FIX ---
 
     if (mpegts.isSupported()) {
+        // NEW: Configuration for mpegts.js to increase buffer sizes
+        const mpegtsConfig = {
+            enableStashBuffer: true,
+            stashInitialSize: 4096, // 4MB initial buffer
+            liveBufferLatency: 2.0, // Seek to live edge after 2s of buffer
+        };
+        
         const player = mpegts.createPlayer({
             type: 'mse',
             isLive: true,
             url: streamUrlToPlay
-        });
+        }, mpegtsConfig); // Pass the new config here
 
         // Add robust error handling
         player.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
