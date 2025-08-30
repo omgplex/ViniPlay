@@ -64,11 +64,11 @@
             letter-spacing: 0.05em;
             border-bottom: 1px solid #4b5563; /* gray-600 */
         }
-        .sources-table th, .dvr-table th { @apply px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider; }
-        .sources-table td, .dvr-table td { @apply px-4 py-3 whitespace-nowrap text-sm text-gray-300; }
-        .sources-table tbody tr, .dvr-table tbody tr { @apply border-b border-gray-700/50; }
-        .sources-table tbody tr:last-child, .dvr-table tbody tr:last-child { @apply border-none; }
-        .sources-table .action-btn, .dvr-table .action-btn { @apply text-gray-400 hover:text-white transition-colors; }
+        .sources-table th, .dvr-table th, .admin-table th { @apply px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider; }
+        .sources-table td, .dvr-table td, .admin-table td { @apply px-4 py-3 whitespace-nowrap text-sm text-gray-300; }
+        .sources-table tbody tr, .dvr-table tbody tr, .admin-table tbody tr { @apply border-b border-gray-700/50; }
+        .sources-table tbody tr:last-child, .dvr-table tbody tr:last-child, .admin-table tbody tr:last-child { @apply border-none; }
+        .sources-table .action-btn, .dvr-table .action-btn, .admin-table .action-btn { @apply text-gray-400 hover:text-white transition-colors; }
 
         /* Custom Switch */
         .switch { position: relative; display: inline-block; width: 38px; height: 22px; }
@@ -532,6 +532,8 @@
                     <button id="tab-multiview" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Multi-View</button>
                     <button id="tab-player" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Player</button>
                     <button id="tab-dvr" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">DVR</button>
+                    <!-- NEW: Admin Activity Tab -->
+                    <button id="tab-activity" class="tab-button hidden text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Activity</button>
                     <button id="tab-notifications" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Notifications</button>
                     <button id="tab-settings" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Settings</button>
                 </div>
@@ -771,6 +773,63 @@
                                     </tr>
                                 </thead>
                                 <tbody id="dvr-recordings-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- NEW: Admin Activity Page -->
+            <div id="page-activity" class="hidden flex-grow flex-col items-center p-4 overflow-y-auto custom-scrollbar">
+                <div class="w-full max-w-6xl mx-auto space-y-8 pb-16">
+                    <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
+                        <div class="flex justify-between items-center mb-4 border-b border-gray-700 pb-2">
+                            <h2 class="text-xl font-bold text-white">Live Activity</h2>
+                            <button id="refresh-activity-btn" class="bg-gray-600 hover:bg-gray-500 text-white text-sm font-bold py-1 px-3 rounded-md flex items-center gap-2">
+                                <span data-icon="process"></span> Refresh
+                            </button>
+                        </div>
+                        <div id="no-live-activity-message" class="hidden text-center text-gray-500 p-4">
+                            <p class="mt-1 text-sm">No users are currently streaming.</p>
+                        </div>
+                        <div id="live-activity-table-container" class="overflow-x-auto">
+                            <table class="min-w-full admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>User</th>
+                                        <th>Client IP</th>
+                                        <th>Channel</th>
+                                        <th>Started</th>
+                                        <th>Duration</th>
+                                        <th class="text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="live-activity-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
+                        <div class="flex justify-between items-center mb-4 border-b border-gray-700 pb-2">
+                            <h2 class="text-xl font-bold text-white">Watch History</h2>
+                            <input type="search" id="history-search-input" placeholder="Search history..." class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 sm:w-48">
+                        </div>
+                        <div id="no-watch-history-message" class="hidden text-center text-gray-500 p-4">
+                            <p class="mt-1 text-sm">No watch history has been recorded yet.</p>
+                        </div>
+                        <div id="watch-history-table-container" class="overflow-x-auto">
+                            <table class="min-w-full admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>User</th>
+                                        <th>Client IP</th>
+                                        <th>Channel</th>
+                                        <th>Started</th>
+                                        <th>Stopped</th>
+                                        <th>Duration</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="watch-history-tbody"></tbody>
                             </table>
                         </div>
                     </div>
@@ -1019,6 +1078,10 @@
             </button>
             <button id="mobile-nav-dvr" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors">
                 <span class="flex items-center gap-2"><span data-icon="dvr"></span> DVR</span>
+            </button>
+            <!-- NEW: Admin Activity Tab (Mobile) -->
+            <button id="mobile-nav-activity" class="hidden text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors">
+                <span class="flex items-center gap-2"><span data-icon="info"></span> Activity</span>
             </button>
             <button id="mobile-nav-notifications" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors">
                 <span class="flex items-center gap-2"><span data-icon="notifications"></span> Notifications</span>
