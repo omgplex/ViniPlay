@@ -132,11 +132,18 @@ export const playChannel = (url, name, channelId) => {
     }
 
     if (mpegts.isSupported()) {
+        // NEW: Configuration for mpegts.js to increase buffer sizes
+        const mpegtsConfig = {
+            enableStashBuffer: true,
+            stashInitialSize: 4096, // 4MB initial buffer
+            liveBufferLatency: 2.0, // Seek to live edge after 2s of buffer
+        };
+
         appState.player = mpegts.createPlayer({
             type: 'mse',
             isLive: true,
             url: streamUrlToPlay
-        });
+        }, mpegtsConfig);
         
         openModal(UIElements.videoModal);
         UIElements.videoTitle.textContent = name;
