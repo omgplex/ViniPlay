@@ -301,7 +301,11 @@ export const updateUIFromSettings = async () => {
     UIElements.editDvrProfileBtn.disabled = !selectedRecordingProfile;
     UIElements.deleteDvrProfileBtn.disabled = !selectedRecordingProfile || selectedRecordingProfile?.isDefault;
 
-
+    // MODIFIED: Add the missing visibility toggle for the user management section.
+    if (UIElements.userManagementSection) {
+        UIElements.userManagementSection.classList.toggle('hidden', !appState.currentUser?.isAdmin);
+    }
+    
     // Ensure user list is always populated for admins when this page is viewed.
     if (appState.currentUser?.isAdmin) {
         refreshUserList();
@@ -862,3 +866,4 @@ export function setupSettingsEventListeners() {
         e.target.value = '';
     });
 }
+
