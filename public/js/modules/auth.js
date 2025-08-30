@@ -212,22 +212,14 @@ const showApp = (user) => {
 
     console.log(`[AUTH_UI] Displaying main app for user: ${user.username} (Admin: ${user.isAdmin}, DVR: ${user.canUseDvr})`);
 
+    // MODIFIED: Removed redundant visibility toggling from this function.
+    // This will now be handled exclusively by proceedWithRouteChange in ui.js,
+    // which acts as the single source of truth for UI state based on routes and permissions.
+    // This prevents race conditions during app initialization.
     UIElements.userDisplay.textContent = user.username;
     UIElements.userDisplay.classList.remove('hidden');
-    UIElements.userManagementSection.classList.toggle('hidden', !user.isAdmin);
-    // NEW: Also toggle the Danger Zone and Activity Tab based on admin status.
-    if (UIElements.dangerZoneSection) {
-        UIElements.dangerZoneSection.classList.toggle('hidden', !user.isAdmin);
-    }
-    if (UIElements.tabActivity) {
-        UIElements.tabActivity.classList.toggle('hidden', !user.isAdmin);
-    }
-    if (UIElements.mobileNavActivity) {
-        UIElements.mobileNavActivity.classList.toggle('hidden', !user.isAdmin);
-    }
     
-    // The entire DVR settings section visibility is handled in settings.js, so we don't need a specific element here.
-    console.log(`[AUTH_UI] User display set to: ${user.username}. Admin sections visibility: ${!user.isAdmin ? 'hidden' : 'visible'}.`);
+    console.log(`[AUTH_UI] User display set to: ${user.username}.`);
 
     if (!appState.appInitialized) {
         console.log('[AUTH_UI] Main app not initialized yet, calling initMainApp().');
@@ -380,3 +372,4 @@ export function setupAuthEventListeners() {
         }
     });
 }
+
