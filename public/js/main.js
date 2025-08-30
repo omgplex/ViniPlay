@@ -18,6 +18,7 @@ import { setupDvrEventListeners, handleDvrChannelClick, initDvrPage } from './mo
 import { handleMultiViewChannelClick, populateChannelSelector, initMultiView } from './modules/multiview.js';
 import { setupDirectPlayerEventListeners, initDirectPlayer } from './modules/player_direct.js';
 import { ICONS } from './modules/icons.js'; // MODIFIED: Import the new icon library
+import { initActivityPage, setupAdminEventListeners } from './modules/admin.js'; // NEW: Import admin module
 
 // The initializeCastApi function is no longer called directly from here,
 // but the cast.js module will handle its own initialization via the window callback.
@@ -83,6 +84,19 @@ function initializeSse() {
         // first unsubscribe the bad subscription from the browser before creating a new one.
         subscribeUserToPush(true); 
     });
+
+    // NEW: Listen for the 'force-logout' event
+    eventSource.addEventListener('force-logout', (event) => {
+        console.warn('[SSE] Received "force-logout" event from server.');
+        const data = JSON.parse(event.data);
+        showNotification(`Forced logout: ${data.reason}`, true, 5000);
+        
+        // Wait a moment for the user to see the notification, then reload the page.
+        // This will trigger the auth check, which will fail, showing the login screen.
+        setTimeout(() => {
+            window.location.reload();
+        }, 3000);
+    });
 }
 
 
@@ -106,8 +120,9 @@ export async function initMainApp() {
     setupGuideEventListeners();
     setupPlayerEventListeners();
     setupSettingsEventListeners();
-    setupDvrEventListeners(); // NEW: Setup DVR event listeners
-    setupDirectPlayerEventListeners(); // NEW: Setup Direct Player event listeners
+    setupDvrEventListeners();
+    setupDirectPlayerEventListeners();
+    setupAdminEventListeners(); // NEW: Setup admin event listeners
     // REMOVED: The direct call to initializeCastApi() is no longer needed here.
     // The cast.js module will now be initialized automatically by the Google Cast SDK callback.
     console.log('[MAIN] All event listeners set up.');
@@ -353,6 +368,7 @@ function setupCoreEventListeners() {
     setupTabListener(UIElements.tabMultiview, 'multiview', initMultiView);
     setupTabListener(UIElements.tabPlayer, 'player', initDirectPlayer);
     setupTabListener(UIElements.tabDvr, 'dvr', initDvrPage);
+    setupTabListener(UIElements.tabActivity, 'activity', initActivityPage); // NEW
     setupTabListener(UIElements.tabNotifications, 'notifications', loadAndScheduleNotifications);
     setupTabListener(UIElements.tabSettings, 'settings');
     
@@ -365,6 +381,7 @@ function setupCoreEventListeners() {
     UIElements.mobileNavMultiview?.addEventListener('click', () => switchTab('multiview'));
     UIElements.mobileNavPlayer?.addEventListener('click', () => switchTab('player'));
     UIElements.mobileNavDvr?.addEventListener('click', () => switchTab('dvr'));
+    UIElements.mobileNavActivity?.addEventListener('click', () => switchTab('activity')); // NEW
     UIElements.mobileNavNotifications?.addEventListener('click', () => switchTab('notifications'));
     UIElements.mobileNavSettings?.addEventListener('click', () => switchTab('settings'));
 
@@ -386,6 +403,8 @@ function setupCoreEventListeners() {
                 initDvrPage();
             } else if (currentPage.startsWith('/notifications')) {
                 loadAndScheduleNotifications();
+            } else if (currentPage.startsWith('/activity')) { // NEW
+                initActivityPage();
             }
         }
     });
