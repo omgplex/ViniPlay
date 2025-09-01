@@ -12,7 +12,8 @@ import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './
 //-- ENHANCEMENT: Import playChannel to handle the remote channel change event.
 import { setupPlayerEventListeners, playChannel, stopAndCleanupPlayer } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
-import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu, showNotification } from './modules/ui.js';
+// MODIFIED: Imported showBroadcastMessage
+import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu, showNotification, showBroadcastMessage } from './modules/ui.js';
 // MODIFIED: Import navigateToProgramInGuide to handle deep links from notifications.
 import { loadAndScheduleNotifications, subscribeUserToPush, navigateToProgramInGuide } from './modules/notification.js';
 import { setupDvrEventListeners, handleDvrChannelClick, initDvrPage } from './modules/dvr.js';
@@ -125,6 +126,13 @@ function initializeSse() {
         }
         // Note: For now, this doesn't affect Multi-View or the Direct Player page.
         // This could be extended in the future if needed.
+    });
+
+    // NEW: Listen for admin broadcast messages
+    eventSource.addEventListener('broadcast-message', (event) => {
+        console.log('[SSE] Received broadcast message from admin.');
+        const data = JSON.parse(event.data);
+        showBroadcastMessage(data.message);
     });
 }
 
