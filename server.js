@@ -1734,13 +1734,16 @@ app.post('/api/admin/stop-stream', requireAuth, requireAdmin, (req, res) => {
 
 //-- ENHANCEMENT: New endpoint for admins to change a user's live stream.
 app.post('/api/admin/change-stream', requireAuth, requireAdmin, (req, res) => {
-    const { userId, streamKey, channel } = req.body;
+    // FIX: Parse userId from the request body as an integer to prevent type mismatch.
+    const { userId: userIdString, streamKey, channel } = req.body;
+    const userId = parseInt(userIdString, 10);
 
     if (!userId || !streamKey || !channel) {
         return res.status(400).json({ error: "User ID, stream key, and channel data are required." });
     }
 
     const streamInfo = activeStreamProcesses.get(streamKey);
+    // The comparison below will now work correctly because userId is a number.
     if (!streamInfo || streamInfo.userId !== userId) {
         return res.status(404).json({ error: "The specified stream is not active for this user." });
     }
@@ -1748,6 +1751,7 @@ app.post('/api/admin/change-stream', requireAuth, requireAdmin, (req, res) => {
     console.log(`[ADMIN_API] Admin ${req.session.username} is changing channel for user ${streamInfo.username} to "${channel.name}".`);
 
     // Send the change-channel event to the target user's client(s)
+    // Use the parsed numeric userId to find the correct SSE client
     sendSseEvent(userId, 'change-channel', { channel });
 
     res.json({ success: true, message: `Change channel command sent to user ${streamInfo.username}.` });
