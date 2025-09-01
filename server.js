@@ -29,7 +29,8 @@ let notificationCheckInterval = null;
 const sourceRefreshTimers = new Map();
 let detectedHardware = { nvidia: null, intel: null }; // NEW: To store detected GPU info
 
-// --- NEW: For Server-Sent Events (SSE) ---
+// --- ENHANCEMENT: For Server-Sent Events (SSE) ---
+// This map will store active client connections for real-time updates.
 const sseClients = new Map();
 
 // --- NEW: DVR State ---
@@ -108,8 +109,15 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
             db.run(`CREATE TABLE IF NOT EXISTS notification_deliveries (id INTEGER PRIMARY KEY AUTOINCREMENT, notification_id INTEGER NOT NULL, subscription_id INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending', updatedAt TEXT NOT NULL, FOREIGN KEY (notification_id) REFERENCES notifications(id) ON DELETE CASCADE, FOREIGN KEY (subscription_id) REFERENCES push_subscriptions(id) ON DELETE CASCADE)`);
             db.run(`CREATE TABLE IF NOT EXISTS dvr_jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, channelId TEXT NOT NULL, channelName TEXT NOT NULL, programTitle TEXT NOT NULL, startTime TEXT NOT NULL, endTime TEXT NOT NULL, status TEXT NOT NULL, ffmpeg_pid INTEGER, filePath TEXT, profileId TEXT, userAgentId TEXT, preBufferMinutes INTEGER, postBufferMinutes INTEGER, errorMessage TEXT, isConflicting INTEGER DEFAULT 0, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)`);
             db.run(`CREATE TABLE IF NOT EXISTS dvr_recordings (id INTEGER PRIMARY KEY AUTOINCREMENT, job_id INTEGER, user_id INTEGER NOT NULL, channelName TEXT NOT NULL, programTitle TEXT NOT NULL, startTime TEXT NOT NULL, durationSeconds INTEGER, fileSizeBytes INTEGER, filePath TEXT UNIQUE NOT NULL, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE, FOREIGN KEY (job_id) REFERENCES dvr_jobs(id) ON DELETE SET NULL)`);
-            // NEW: Stream history table for admin monitoring
-            db.run(`CREATE TABLE IF NOT EXISTS stream_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, username TEXT NOT NULL, channel_id TEXT, channel_name TEXT, start_time TEXT NOT NULL, end_time TEXT, duration_seconds INTEGER, status TEXT NOT NULL, client_ip TEXT, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)`);
+            
+            //-- ENHANCEMENT: Modify stream history table to include more data for the admin panel.
+            db.run(`CREATE TABLE IF NOT EXISTS stream_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, username TEXT NOT NULL, channel_id TEXT, channel_name TEXT, start_time TEXT NOT NULL, end_time TEXT, duration_seconds INTEGER, status TEXT NOT NULL, client_ip TEXT, channel_logo TEXT, stream_profile_name TEXT)`, (err) => {
+                if (!err) {
+                    // Add new columns non-destructively if the table already exists
+                    db.run("ALTER TABLE stream_history ADD COLUMN channel_logo TEXT", () => {});
+                    db.run("ALTER TABLE stream_history ADD COLUMN stream_profile_name TEXT", () => {});
+                }
+            });
         });
     }
 });
@@ -225,9 +233,13 @@ function cleanupInactiveStreams() {
                 }
                 streamInfo.process.kill('SIGKILL'); 
                 activeStreamProcesses.delete(streamKey);
+                //-- ENHANCEMENT: Notify admins that a stream has ended.
+                broadcastAdminUpdate();
             } catch (e) {
                 console.warn(`[JANITOR] Error killing stale process for ${streamKey}: ${e.message}`);
                 activeStreamProcesses.delete(streamKey);
+                //-- ENHANCEMENT: Notify admins even if the process kill fails, to keep UI in sync.
+                broadcastAdminUpdate();
             }
         }
     });
@@ -241,6 +253,34 @@ function sendSseEvent(userId, eventName, data) {
         clients.forEach(client => client.res.write(message));
     }
 }
+
+//-- ENHANCEMENT: New function to broadcast activity updates to all connected admins.
+function broadcastAdminUpdate() {
+    // Construct the current live activity list
+    const liveActivity = Array.from(activeStreamProcesses.values()).map(info => ({
+        streamKey: info.streamKey,
+        userId: info.userId,
+        username: info.username,
+        channelName: info.channelName,
+        channelLogo: info.channelLogo, // Include logo
+        streamProfileName: info.streamProfileName, // Include profile name
+        startTime: info.startTime,
+        clientIp: info.clientIp,
+    }));
+
+    // Iterate through all connected SSE clients
+    for (const clients of sseClients.values()) {
+        clients.forEach(client => {
+            // Only send the update if the client is an admin
+            if (client.isAdmin) {
+                const message = `event: activity-update\ndata: ${JSON.stringify({ live: liveActivity })}\n\n`;
+                client.res.write(message);
+            }
+        });
+    }
+    console.log(`[SSE_ADMIN] Broadcasted activity update to all connected admins.`);
+}
+
 
 function getSettings() {
     const defaultSettings = {
@@ -1504,11 +1544,13 @@ app.get('/stream', requireAuth, async (req, res) => {
         return res.status(404).send(`Error: User agent with ID "${userAgentId}" not found.`);
     }
 
-    // Find channel name for logging
+    //-- ENHANCEMENT: Find channel name and logo for logging.
     const allChannels = parseM3U(fs.existsSync(MERGED_M3U_PATH) ? fs.readFileSync(MERGED_M3U_PATH, 'utf-8') : '');
     const channel = allChannels.find(c => c.url === streamUrl);
     const channelName = channel ? channel.displayName || channel.name : 'Direct Stream';
     const channelId = channel ? channel.id : null;
+    const channelLogo = channel ? channel.logo : null;
+    const streamProfileName = profile ? profile.name : 'Unknown Profile';
     
     console.log(`[STREAM] Using Profile='${profile.name}' (ID=${profile.id}), UserAgent='${userAgent.name}'`);
 
@@ -1521,11 +1563,11 @@ app.get('/stream', requireAuth, async (req, res) => {
     console.log(`[STREAM] FFmpeg command args: ffmpeg ${args.join(' ')}`);
     const ffmpeg = spawn('ffmpeg', args);
 
-    // --- NEW: Log stream start to history ---
+    //-- ENHANCEMENT: Log richer stream start data to history.
     const startTime = new Date().toISOString();
     db.run(
-        `INSERT INTO stream_history (user_id, username, channel_id, channel_name, start_time, status, client_ip) VALUES (?, ?, ?, ?, ?, 'playing', ?)`,
-        [userId, username, channelId, channelName, startTime, clientIp],
+        `INSERT INTO stream_history (user_id, username, channel_id, channel_name, start_time, status, client_ip, channel_logo, stream_profile_name) VALUES (?, ?, ?, ?, ?, 'playing', ?, ?, ?)`,
+        [userId, username, channelId, channelName, startTime, clientIp, channelLogo, streamProfileName],
         function(err) {
             if (err) {
                 console.error('[STREAM_HISTORY] Error logging stream start:', err.message);
@@ -1542,13 +1584,17 @@ app.get('/stream', requireAuth, async (req, res) => {
                     username,
                     channelId,
                     channelName,
+                    channelLogo, // Store logo
+                    streamProfileName, // Store profile name
                     startTime,
-                    historyId, // Store the history ID
+                    historyId,
                     clientIp,
                     streamKey,
                 };
                 activeStreamProcesses.set(streamKey, newStreamInfo);
                 console.log(`[STREAM] Started FFMPEG process with PID: ${ffmpeg.pid} for user ${userId} for stream key: ${streamKey}.`);
+                //-- ENHANCEMENT: Notify admins that a new stream has started.
+                broadcastAdminUpdate();
             }
         }
     );
@@ -1567,6 +1613,8 @@ app.get('/stream', requireAuth, async (req, res) => {
                 [endTime, duration, info.historyId]);
         }
         activeStreamProcesses.delete(streamKey);
+        //-- ENHANCEMENT: Notify admins that a stream has ended.
+        broadcastAdminUpdate();
     };
 
     ffmpeg.on('close', (code) => {
@@ -1617,6 +1665,8 @@ app.post('/api/stream/stop', requireAuth, (req, res) => {
             }
             activeStreamInfo.process.kill('SIGKILL');
             activeStreamProcesses.delete(streamKey);
+            //-- ENHANCEMENT: Notify admins that a stream has ended.
+            broadcastAdminUpdate();
             console.log(`[STREAM_STOP_API] Successfully terminated process for key: ${streamKey}`);
         } catch (e) {
             console.warn(`[STREAM_STOP_API] Could not kill process for key: ${streamKey}. It might have already exited. Error: ${e.message}`);
@@ -1630,18 +1680,20 @@ app.post('/api/stream/stop', requireAuth, (req, res) => {
 
 // --- NEW: Admin Monitoring Endpoints ---
 app.get('/api/admin/activity', requireAuth, requireAdmin, (req, res) => {
-    // 1. Get Live Activity from the in-memory map
+    // 1. Get Live Activity from the in-memory map, now with more details
     const liveActivity = Array.from(activeStreamProcesses.values()).map(info => ({
         streamKey: info.streamKey,
         userId: info.userId,
         username: info.username,
         channelName: info.channelName,
+        channelLogo: info.channelLogo,
+        streamProfileName: info.streamProfileName,
         startTime: info.startTime,
         clientIp: info.clientIp,
     }));
 
     // 2. Get Historical Activity from the database
-    db.all("SELECT * FROM stream_history ORDER BY start_time DESC LIMIT 50", [], (err, history) => {
+    db.all("SELECT * FROM stream_history ORDER BY start_time DESC LIMIT 100", [], (err, history) => {
         if (err) {
             console.error('[ADMIN_API] Error fetching stream history:', err.message);
             return res.status(500).json({ error: "Could not retrieve stream history." });
@@ -1668,6 +1720,8 @@ app.post('/api/admin/stop-stream', requireAuth, requireAdmin, (req, res) => {
             }
             streamInfo.process.kill('SIGKILL');
             activeStreamProcesses.delete(streamKey);
+            //-- ENHANCEMENT: Notify admins that a stream has ended.
+            broadcastAdminUpdate();
             res.json({ success: true, message: `Stream terminated for user ${streamInfo.username}.` });
         } catch (e) {
             console.error(`[ADMIN_API] Error terminating stream ${streamKey}: ${e.message}`);
@@ -1677,6 +1731,28 @@ app.post('/api/admin/stop-stream', requireAuth, requireAdmin, (req, res) => {
         res.status(404).json({ error: "Active stream not found." });
     }
 });
+
+//-- ENHANCEMENT: New endpoint for admins to change a user's live stream.
+app.post('/api/admin/change-stream', requireAuth, requireAdmin, (req, res) => {
+    const { userId, streamKey, channel } = req.body;
+
+    if (!userId || !streamKey || !channel) {
+        return res.status(400).json({ error: "User ID, stream key, and channel data are required." });
+    }
+
+    const streamInfo = activeStreamProcesses.get(streamKey);
+    if (!streamInfo || streamInfo.userId !== userId) {
+        return res.status(404).json({ error: "The specified stream is not active for this user." });
+    }
+
+    console.log(`[ADMIN_API] Admin ${req.session.username} is changing channel for user ${streamInfo.username} to "${channel.name}".`);
+
+    // Send the change-channel event to the target user's client(s)
+    sendSseEvent(userId, 'change-channel', { channel });
+
+    res.json({ success: true, message: `Change channel command sent to user ${streamInfo.username}.` });
+});
+
 
 // ... existing Multi-View Layout API Endpoints ...
 app.get('/api/multiview/layouts', requireAuth, (req, res) => {
@@ -2338,7 +2414,8 @@ app.get('/api/events', requireAuth, (req, res) => {
     }
     
     const clients = sseClients.get(userId);
-    clients.push({ id: clientId, res });
+    //-- ENHANCEMENT: Store isAdmin status with the client for easy broadcasting.
+    clients.push({ id: clientId, res, isAdmin: req.session.isAdmin });
     console.log(`[SSE] Client ${clientId} connected for user ID ${userId}. Total clients for user: ${clients.length}.`);
 
     res.write(`event: connected\ndata: ${JSON.stringify({ message: "Connection established" })}\n\n`);
@@ -2465,6 +2542,7 @@ function parseM3U(data) {
         const line = lines[i].trim();
         if (line.startsWith('#EXTINF:')) {
             const nextLine = lines[i + 1]?.trim();
+            // Ensure the next line is a valid URL
             if (nextLine && (nextLine.startsWith('http') || nextLine.startsWith('rtp'))) {
                 const idMatch = line.match(/tvg-id="([^"]*)"/);
                 const logoMatch = line.match(/tvg-logo="([^"]*)"/);
@@ -2474,6 +2552,7 @@ function parseM3U(data) {
                 const sourceMatch = line.match(/vini-source="([^"]*)"/);
                 const commaIndex = line.lastIndexOf(',');
                 const displayName = (commaIndex !== -1) ? line.substring(commaIndex + 1).trim() : 'Unknown';
+
                 channels.push({
                     id: idMatch ? idMatch[1] : `unknown-${Math.random()}`,
                     logo: logoMatch ? logoMatch[1] : '',
@@ -2484,7 +2563,7 @@ function parseM3U(data) {
                     displayName: displayName,
                     url: nextLine
                 });
-                i++;
+                i++; // Skip the URL line in the next iteration
             }
         }
     }
