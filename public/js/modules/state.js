@@ -26,8 +26,9 @@ export const guideState = {
     settings: {
         // Add a default for channelColumnWidth
         channelColumnWidth: window.innerWidth < 768 ? 64 : 180, // Default based on screen size
-        notificationLeadTime: 10, // NEW: Default notification lead time in minutes
-        multiviewLayouts: [], // ADDED: To store saved layouts for the user
+        notificationLeadTime: 10, // Default notification lead time in minutes
+        multiviewLayouts: [], // To store saved layouts for the user
+        adminPageSize: 25, // NEW: Default page size for the admin history table
     }, // This will hold both GLOBAL and USER settings, merged.
     guideDurationHours: 48,
     hourWidthPixels: window.innerWidth < 768 ? 200 : 300,
@@ -35,14 +36,29 @@ export const guideState = {
     channelGroups: new Set(),
     channelSources: new Set(), // For the source filter
     visibleChannels: [],
-    scrollHandler: null, // NEW: Holds the reference to the throttled scroll handler for virtualization
-    userNotifications: [], // NEW: Stores active program notifications for the current user
+    scrollHandler: null, // Holds the reference to the throttled scroll handler for virtualization
+    userNotifications: [], // Stores active program notifications for the current user
 };
 
-// NEW: State specific to the DVR
+// State specific to the DVR
 export const dvrState = {
     scheduledJobs: [],
     completedRecordings: [],
+};
+
+// NEW: State specific to the Admin Activity page
+export const adminState = {
+    live: [],
+    history: [],
+    liveDurationInterval: null,
+    channelSelectorCallback: null,
+    pagination: {
+        currentPage: 1,
+        pageSize: 25,
+        totalPages: 1,
+        totalItems: 0,
+    },
+    healthCheckInterval: null
 };
 
 
