@@ -9,7 +9,8 @@ import { appState, guideState, UIElements } from './modules/state.js';
 import { apiFetch, fetchConfig } from './modules/api.js'; // IMPORTED fetchConfig
 import { checkAuthStatus, setupAuthEventListeners } from './modules/auth.js';
 import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './modules/guide.js';
-import { setupPlayerEventListeners } from './modules/player.js';
+//-- ENHANCEMENT: Import playChannel to handle the remote channel change event.
+import { setupPlayerEventListeners, playChannel, stopAndCleanupPlayer } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
 import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu, showNotification } from './modules/ui.js';
 // MODIFIED: Import navigateToProgramInGuide to handle deep links from notifications.
@@ -18,7 +19,8 @@ import { setupDvrEventListeners, handleDvrChannelClick, initDvrPage } from './mo
 import { handleMultiViewChannelClick, populateChannelSelector, initMultiView } from './modules/multiview.js';
 import { setupDirectPlayerEventListeners, initDirectPlayer } from './modules/player_direct.js';
 import { ICONS } from './modules/icons.js'; // MODIFIED: Import the new icon library
-import { initActivityPage, setupAdminEventListeners } from './modules/admin.js'; // NEW: Import admin module
+//-- ENHANCEMENT: Import the new handler for channel selector clicks from the admin page.
+import { initActivityPage, setupAdminEventListeners, handleActivityUpdate, handleAdminChannelClick } from './modules/admin.js';
 
 // The initializeCastApi function is no longer called directly from here,
 // but the cast.js module will handle its own initialization via the window callback.
@@ -96,6 +98,33 @@ function initializeSse() {
         setTimeout(() => {
             window.location.reload();
         }, 3000);
+    });
+
+    //-- ENHANCEMENT: Listen for real-time activity updates for the admin dashboard.
+    eventSource.addEventListener('activity-update', (event) => {
+        const data = JSON.parse(event.data);
+        // This will only do something if the admin page is currently active.
+        if (window.location.pathname.startsWith('/activity')) {
+            handleActivityUpdate(data.live);
+        }
+    });
+
+    //-- ENHANCEMENT: Listen for the remote channel change command.
+    eventSource.addEventListener('change-channel', (event) => {
+        console.log('[SSE] Received "change-channel" command from admin.');
+        const { channel } = JSON.parse(event.data);
+        
+        // Check which player is active and change its channel
+        const currentPage = window.location.pathname;
+        if (currentPage.startsWith('/tvguide') || currentPage === '/') {
+            // Stop the main player if it's open, then play the new channel.
+            stopAndCleanupPlayer().then(() => {
+                showNotification(`An administrator has changed your channel to: ${channel.name}`, false, 4000);
+                playChannel(channel.url, channel.name, channel.id);
+            });
+        }
+        // Note: For now, this doesn't affect Multi-View or the Direct Player page.
+        // This could be extended in the future if needed.
     });
 }
 
@@ -414,7 +443,7 @@ function setupCoreEventListeners() {
     UIElements.confirmOkBtn?.addEventListener('click', handleConfirm);
     UIElements.detailsCloseBtn?.addEventListener('click', () => closeModal(UIElements.programDetailsModal));
     
-    // --- Centralized Channel Selector Modal Listeners ---
+    //-- ENHANCEMENT: Centralized Channel Selector Modal Listeners with Context Switching
     UIElements.multiviewChannelFilter?.addEventListener('change', () => populateChannelSelector());
     UIElements.channelSelectorSearch?.addEventListener('input', () => {
         clearTimeout(appState.searchDebounceTimer);
@@ -424,12 +453,22 @@ function setupCoreEventListeners() {
     UIElements.channelSelectorList?.addEventListener('click', (e) => {
         const channelItem = e.target.closest('.channel-item');
         if (!channelItem) return;
-        if (document.body.dataset.channelSelectorContext === 'dvr') {
+
+        // Use a data attribute on the body to determine which function to call
+        const context = document.body.dataset.channelSelectorContext;
+        console.log(`[CHANNEL_SELECTOR] Click handled with context: ${context}`);
+        
+        if (context === 'dvr') {
             handleDvrChannelClick(channelItem);
-        } else {
+        } else if (context === 'admin') {
+            handleAdminChannelClick(channelItem);
+        } else { // Default to multiview
             handleMultiViewChannelClick(channelItem);
         }
+        
+        // Clean up the context after use
         delete document.body.dataset.channelSelectorContext;
+        closeModal(UIElements.multiviewChannelSelectorModal);
     });
     
     UIElements.channelSelectorCancelBtn?.addEventListener('click', () => {
