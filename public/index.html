@@ -779,9 +779,10 @@
                 </div>
             </div>
 
-            <!-- NEW: Admin Activity Page -->
+            <!-- Admin Activity Page -->
             <div id="page-activity" class="hidden flex-grow flex-col items-center p-4 overflow-y-auto custom-scrollbar">
-                <div class="w-full max-w-6xl mx-auto space-y-8 pb-16">
+                <!-- ENHANCEMENT: Increased max-width from 6xl to 7xl for more space -->
+                <div class="w-full max-w-7xl mx-auto space-y-8 pb-16">
                     <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
                         <div class="flex justify-between items-center mb-4 border-b border-gray-700 pb-2">
                             <h2 class="text-xl font-bold text-white">Live Activity</h2>
@@ -795,10 +796,12 @@
                         <div id="live-activity-table-container" class="overflow-x-auto">
                             <table class="min-w-full admin-table">
                                 <thead>
+                                    <!-- ENHANCEMENT: Added Stream Profile column and updated Channel column -->
                                     <tr>
                                         <th>User</th>
                                         <th>Client IP</th>
                                         <th>Channel</th>
+                                        <th>Stream Profile</th>
                                         <th>Started</th>
                                         <th>Duration</th>
                                         <th class="text-right">Actions</th>
@@ -810,9 +813,23 @@
                     </div>
 
                     <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
-                        <div class="flex justify-between items-center mb-4 border-b border-gray-700 pb-2">
-                            <h2 class="text-xl font-bold text-white">Watch History</h2>
-                            <input type="search" id="history-search-input" placeholder="Search history..." class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 sm:w-48">
+                        <!-- ENHANCEMENT: Restructured header to include a filter container -->
+                        <div class="flex flex-col sm:flex-row justify-between items-center mb-4 border-b border-gray-700 pb-3 gap-4">
+                            <h2 class="text-xl font-bold text-white flex-shrink-0">Watch History</h2>
+                            <div id="history-filters" class="flex flex-wrap items-center justify-end gap-2 w-full">
+                                <input type="search" id="history-search-input" placeholder="Filter by user or channel..." class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 sm:w-48">
+                                <select id="history-date-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="all">All Time</option>
+                                    <option value="24h">Last 24 Hours</option>
+                                    <option value="7d">Last 7 Days</option>
+                                    <option value="custom">Custom Range</option>
+                                </select>
+                                <div id="history-custom-date-container" class="hidden flex items-center gap-2">
+                                    <input type="date" id="history-date-start" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white">
+                                    <span class="text-gray-400 text-sm">to</span>
+                                    <input type="date" id="history-date-end" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white">
+                                </div>
+                            </div>
                         </div>
                         <div id="no-watch-history-message" class="hidden text-center text-gray-500 p-4">
                             <p class="mt-1 text-sm">No watch history has been recorded yet.</p>
@@ -820,10 +837,12 @@
                         <div id="watch-history-table-container" class="overflow-x-auto">
                             <table class="min-w-full admin-table">
                                 <thead>
+                                    <!-- ENHANCEMENT: Added Stream Profile column and updated Channel column -->
                                     <tr>
                                         <th>User</th>
                                         <th>Client IP</th>
                                         <th>Channel</th>
+                                        <th>Stream Profile</th>
                                         <th>Started</th>
                                         <th>Stopped</th>
                                         <th>Duration</th>
