@@ -205,6 +205,9 @@ export function setupAdminEventListeners() {
                 }
             };
             
+            //-- FIX: Set the context on the body so the main event listener knows how to handle the click.
+            document.body.dataset.channelSelectorContext = 'admin';
+            
             // Reuse the existing channel selector modal
             populateChannelSelector();
             openModal(UIElements.multiviewChannelSelectorModal);
@@ -323,3 +326,4 @@ export function handleAdminChannelClick(channelItem) {
         adminState.channelSelectorCallback(channel);
     }
 }
+
