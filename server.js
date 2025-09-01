@@ -20,6 +20,7 @@ const xmlJS = require('xml-js');
 const webpush = require('web-push');
 const schedule = require('node-schedule');
 const disk = require('diskusage');
+const si = require('systeminformation'); // NEW: For system health monitoring
 
 const app = express();
 const port = 8998;
@@ -266,6 +267,7 @@ function broadcastAdminUpdate() {
         streamProfileName: info.streamProfileName, // Include profile name
         startTime: info.startTime,
         clientIp: info.clientIp,
+        isTranscoded: info.isTranscoded, // NEW: Include transcoding status
     }));
 
     // Iterate through all connected SSE clients
@@ -281,6 +283,18 @@ function broadcastAdminUpdate() {
     console.log(`[SSE_ADMIN] Broadcasted activity update to all connected admins.`);
 }
 
+// NEW: Broadcasts an event to ALL connected clients, regardless of user.
+function broadcastSseToAll(eventName, data) {
+    const message = `event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`;
+    let clientCount = 0;
+    for (const clients of sseClients.values()) {
+        clients.forEach(client => {
+            client.res.write(message);
+            clientCount++;
+        });
+    }
+    console.log(`[SSE_BROADCAST] Broadcasted event '${eventName}' to ${clientCount} total clients.`);
+}
 
 function getSettings() {
     const defaultSettings = {
@@ -1532,8 +1546,11 @@ app.get('/stream', requireAuth, async (req, res) => {
         console.error(`[STREAM] Stream profile with ID "${profileId}" not found in settings.`);
         return res.status(404).send(`Error: Stream profile with ID "${profileId}" not found.`);
     }
+    
+    // NEW: Determine if this is a transcoding or direct stream
+    const isTranscoded = profile.command !== 'redirect';
 
-    if (profile.command === 'redirect') {
+    if (!isTranscoded) {
         console.log(`[STREAM] Redirecting to stream URL: ${streamUrl}`);
         return res.redirect(302, streamUrl);
     }
@@ -1590,6 +1607,7 @@ app.get('/stream', requireAuth, async (req, res) => {
                     historyId,
                     clientIp,
                     streamKey,
+                    isTranscoded, // NEW: Store transcoding status
                 };
                 activeStreamProcesses.set(streamKey, newStreamInfo);
                 console.log(`[STREAM] Started FFMPEG process with PID: ${ffmpeg.pid} for user ${userId} for stream key: ${streamKey}.`);
@@ -1678,9 +1696,9 @@ app.post('/api/stream/stop', requireAuth, (req, res) => {
     }
 });
 
-// --- NEW: Admin Monitoring Endpoints ---
-app.get('/api/admin/activity', requireAuth, requireAdmin, (req, res) => {
-    // 1. Get Live Activity from the in-memory map, now with more details
+// --- NEW/MODIFIED: Admin Monitoring Endpoints ---
+app.get('/api/admin/activity', requireAuth, requireAdmin, async (req, res) => {
+    // 1. Get Live Activity (already up-to-date in memory)
     const liveActivity = Array.from(activeStreamProcesses.values()).map(info => ({
         streamKey: info.streamKey,
         userId: info.userId,
@@ -1690,17 +1708,77 @@ app.get('/api/admin/activity', requireAuth, requireAdmin, (req, res) => {
         streamProfileName: info.streamProfileName,
         startTime: info.startTime,
         clientIp: info.clientIp,
+        isTranscoded: info.isTranscoded,
     }));
 
-    // 2. Get Historical Activity from the database
-    db.all("SELECT * FROM stream_history ORDER BY start_time DESC LIMIT 100", [], (err, history) => {
-        if (err) {
-            console.error('[ADMIN_API] Error fetching stream history:', err.message);
-            return res.status(500).json({ error: "Could not retrieve stream history." });
+    // 2. Get Paginated and Filtered History
+    try {
+        const page = parseInt(req.query.page, 10) || 1;
+        const pageSize = parseInt(req.query.pageSize, 10) || 25;
+        const search = req.query.search || '';
+        const dateFilter = req.query.dateFilter || 'all';
+        const customStart = req.query.startDate;
+        const customEnd = req.query.endDate;
+
+        const offset = (page - 1) * pageSize;
+
+        let whereClauses = [];
+        let queryParams = [];
+
+        if (search) {
+            whereClauses.push(`(username LIKE ? OR channel_name LIKE ? OR client_ip LIKE ? OR stream_profile_name LIKE ?)`);
+            const searchTerm = `%${search}%`;
+            queryParams.push(searchTerm, searchTerm, searchTerm, searchTerm);
         }
-        res.json({ live: liveActivity, history: history });
-    });
+
+        const now = new Date();
+        if (dateFilter === '24h') {
+            whereClauses.push(`start_time >= ?`);
+            queryParams.push(new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString());
+        } else if (dateFilter === '7d') {
+            whereClauses.push(`start_time >= ?`);
+            queryParams.push(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString());
+        } else if (dateFilter === 'custom' && customStart && customEnd) {
+            whereClauses.push(`start_time BETWEEN ? AND ?`);
+            queryParams.push(new Date(customStart).toISOString(), new Date(customEnd).toISOString());
+        }
+
+        const whereString = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+        // Count total items with filters
+        const countResult = await new Promise((resolve, reject) => {
+            db.get(`SELECT COUNT(*) as total FROM stream_history ${whereString}`, queryParams, (err, row) => {
+                if (err) reject(err);
+                else resolve(row);
+            });
+        });
+        const totalItems = countResult.total;
+
+        // Get paginated items with filters
+        const historyItems = await new Promise((resolve, reject) => {
+            const query = `SELECT * FROM stream_history ${whereString} ORDER BY start_time DESC LIMIT ? OFFSET ?`;
+            db.all(query, [...queryParams, pageSize, offset], (err, rows) => {
+                if (err) reject(err);
+                else resolve(rows);
+            });
+        });
+        
+        const history = {
+            items: historyItems,
+            totalItems: totalItems,
+            totalPages: Math.ceil(totalItems / pageSize),
+            currentPage: page,
+            pageSize: pageSize,
+        };
+
+        res.json({ live: liveActivity, history });
+
+    } catch (err) {
+        console.error('[ADMIN_API] Error fetching paginated stream history:', err.message);
+        return res.status(500).json({ error: "Could not retrieve stream history." });
+    }
 });
+
 
 app.post('/api/admin/stop-stream', requireAuth, requireAdmin, (req, res) => {
     const { streamKey } = req.body;
@@ -1757,6 +1835,95 @@ app.post('/api/admin/change-stream', requireAuth, requireAdmin, (req, res) => {
     res.json({ success: true, message: `Change channel command sent to user ${streamInfo.username}.` });
 });
 
+// NEW: Endpoint for system health metrics
+app.get('/api/admin/system-health', requireAuth, requireAdmin, async (req, res) => {
+    try {
+        const [cpu, mem, fs] = await Promise.all([
+            si.currentLoad(),
+            si.mem(),
+            si.fsSize()
+        ]);
+
+        const dataDisk = fs.find(d => d.mount === DATA_DIR) || {};
+        const dvrDisk = fs.find(d => d.mount === DVR_DIR) || {};
+
+        res.json({
+            cpu: {
+                load: cpu.currentLoad.toFixed(2)
+            },
+            memory: {
+                total: mem.total,
+                used: mem.used,
+                percent: ((mem.used / mem.total) * 100).toFixed(2)
+            },
+            disks: {
+                data: {
+                    total: dataDisk.size || 0,
+                    used: dataDisk.used || 0,
+                    percent: dataDisk.use || 0
+                },
+                dvr: {
+                    total: dvrDisk.size || 0,
+                    used: dvrDisk.used || 0,
+                    percent: dvrDisk.use || 0
+                }
+            }
+        });
+    } catch (e) {
+        console.error('[ADMIN_API] Error fetching system health:', e);
+        res.status(500).json({ error: 'Could not retrieve system health information.' });
+    }
+});
+
+// NEW: Endpoint for analytics widgets
+app.get('/api/admin/analytics', requireAuth, requireAdmin, async (req, res) => {
+    try {
+        const topChannelsQuery = `
+            SELECT channel_name, SUM(duration_seconds) as total_duration
+            FROM stream_history
+            WHERE channel_name IS NOT NULL AND duration_seconds IS NOT NULL
+            GROUP BY channel_name
+            ORDER BY total_duration DESC
+            LIMIT 5`;
+        
+        const topUsersQuery = `
+            SELECT username, SUM(duration_seconds) as total_duration
+            FROM stream_history
+            WHERE duration_seconds IS NOT NULL
+            GROUP BY username
+            ORDER BY total_duration DESC
+            LIMIT 5`;
+            
+        const topChannels = await new Promise((resolve, reject) => {
+            db.all(topChannelsQuery, [], (err, rows) => err ? reject(err) : resolve(rows));
+        });
+        
+        const topUsers = await new Promise((resolve, reject) => {
+            db.all(topUsersQuery, [], (err, rows) => err ? reject(err) : resolve(rows));
+        });
+
+        res.json({ topChannels, topUsers });
+
+    } catch (e) {
+        console.error('[ADMIN_API] Error fetching analytics data:', e);
+        res.status(500).json({ error: 'Could not retrieve analytics data.' });
+    }
+});
+
+// NEW: Endpoint for broadcasting messages
+app.post('/api/admin/broadcast', requireAuth, requireAdmin, (req, res) => {
+    const { message } = req.body;
+    if (!message || message.trim().length === 0) {
+        return res.status(400).json({ error: 'Message cannot be empty.' });
+    }
+
+    broadcastSseToAll('broadcast-message', {
+        message: message.trim(),
+        sender: req.session.username,
+    });
+
+    res.json({ success: true, message: 'Broadcast sent successfully.' });
+});
 
 // ... existing Multi-View Layout API Endpoints ...
 app.get('/api/multiview/layouts', requireAuth, (req, res) => {
