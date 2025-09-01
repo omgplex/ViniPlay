@@ -110,6 +110,37 @@ export const showConfirm = (title, message, callback) => {
     openModal(UIElements.confirmModal);
 };
 
+/**
+ * NEW: Displays a site-wide broadcast message banner at the top of the page.
+ * @param {string} message - The message to display.
+ */
+export const showBroadcastMessage = (message) => {
+    const container = UIElements.broadcastBannerContainer;
+    if (!container) return;
+
+    const banner = document.createElement('div');
+    banner.className = 'broadcast-banner';
+    banner.textContent = message;
+
+    container.appendChild(banner);
+
+    // Use a short timeout to allow the element to be in the DOM before adding the class to trigger the transition
+    setTimeout(() => {
+        banner.classList.add('visible');
+    }, 50);
+
+    // Hide the banner after 10 seconds
+    setTimeout(() => {
+        banner.classList.remove('visible');
+        // Remove the element from the DOM after the transition ends
+        banner.addEventListener('transitionend', () => {
+            if (banner.parentElement) {
+                banner.remove();
+            }
+        });
+    }, 10000);
+};
+
 export function handleConfirm() {
     if (confirmCallback) {
         confirmCallback();
