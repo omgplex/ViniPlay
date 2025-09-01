@@ -474,6 +474,54 @@
             height: 1.5rem; /* h-6 */
         }
 
+        /* NEW: Broadcast Banner Styles */
+        #broadcast-banner-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 200;
+            pointer-events: none;
+        }
+        .broadcast-banner {
+            background-color: #fb923c;
+            color: #431407;
+            padding: 0.75rem;
+            text-align: center;
+            font-weight: 500;
+            opacity: 0;
+            transform: translateY(-100%);
+            transition: opacity 0.5s, transform 0.5s;
+            pointer-events: all;
+        }
+        .broadcast-banner.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .clickable-username {
+            cursor: pointer;
+            text-decoration: underline;
+            text-decoration-color: #6b7280;
+            transition: color 0.2s;
+        }
+        .clickable-username:hover {
+            color: #60a5fa;
+        }
+        .pagination-btn {
+            @apply flex items-center justify-center px-3 h-8 leading-tight text-gray-400 bg-gray-800 border border-gray-700 hover:bg-gray-700 hover:text-white;
+        }
+        .pagination-btn.active {
+            @apply z-10 text-blue-500 border-blue-600 bg-gray-700;
+        }
+        .pagination-btn:first-child { @apply rounded-l-lg; }
+        .pagination-btn:last-child { @apply rounded-r-lg; }
+        .transcode-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
     </style>
 </head>
 <body class="h-screen">
@@ -517,6 +565,9 @@
 
     <!-- Main App Container -->
     <div id="app-container" class="hidden flex flex-col h-screen">
+        <!-- NEW: Broadcast Message Banner Container -->
+        <div id="broadcast-banner-container"></div>
+        
         <header id="main-header" class="bg-gray-800 text-white p-4 shadow-md flex-shrink-0 flex items-center justify-between">
             <div class="flex items-center gap-3">
                 <button id="mobile-menu-toggle" class="lg:hidden text-gray-300 hover:text-white p-2 rounded-md transition-colors">
@@ -532,7 +583,6 @@
                     <button id="tab-multiview" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Multi-View</button>
                     <button id="tab-player" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Player</button>
                     <button id="tab-dvr" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">DVR</button>
-                    <!-- NEW: Admin Activity Tab -->
                     <button id="tab-activity" class="tab-button hidden text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Activity</button>
                     <button id="tab-notifications" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Notifications</button>
                     <button id="tab-settings" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Settings</button>
@@ -780,15 +830,52 @@
             </div>
 
             <!-- Admin Activity Page -->
-            <div id="page-activity" class="hidden flex-grow flex-col items-center p-4 overflow-y-auto custom-scrollbar">
-                <!-- ENHANCEMENT: Increased max-width from 6xl to 7xl for more space -->
-                <div class="w-full max-w-7xl mx-auto space-y-8 pb-16">
+            <div id="page-activity" class="hidden flex-grow flex-col items-start p-4 overflow-y-auto custom-scrollbar">
+                <div class="w-full max-w-7xl mx-auto space-y-6 pb-16">
+                    <!-- NEW: Dashboard Widgets -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <!-- Stat Card: Current Viewers -->
+                        <div class="bg-gray-800 p-5 rounded-xl shadow-lg flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-gray-400">Current Viewers</p>
+                                <p id="stat-current-viewers" class="text-3xl font-bold text-white">0</p>
+                            </div>
+                            <div class="bg-blue-600/20 text-blue-400 p-3 rounded-full">
+                                <span data-icon="users" class="w-6 h-6"></span>
+                            </div>
+                        </div>
+                        <!-- Stat Card: Server Health -->
+                        <div class="bg-gray-800 p-5 rounded-xl shadow-lg col-span-1 md:col-span-2 lg:col-span-1">
+                            <p class="text-sm font-medium text-gray-400 mb-2">Server Health</p>
+                            <div class="space-y-2 text-xs">
+                                <div id="stat-cpu-health"><span class="text-gray-500">CPU:</span> <span class="font-mono ml-1">- %</span></div>
+                                <div id="stat-ram-health"><span class="text-gray-500">RAM:</span> <span class="font-mono ml-1">- %</span></div>
+                                <div id="stat-dvr-disk-health"><span class="text-gray-500">DVR Disk:</span><span class="font-mono ml-1">- %</span></div>
+                            </div>
+                        </div>
+                        <!-- Stat Card: Top Channels -->
+                        <div class="bg-gray-800 p-5 rounded-xl shadow-lg">
+                            <p class="text-sm font-medium text-gray-400 mb-2">Top Channels (7 Days)</p>
+                            <div id="stat-top-channels" class="space-y-1 text-sm"></div>
+                        </div>
+                        <!-- Stat Card: Top Users -->
+                        <div class="bg-gray-800 p-5 rounded-xl shadow-lg">
+                            <p class="text-sm font-medium text-gray-400 mb-2">Top Users (7 Days)</p>
+                            <div id="stat-top-users" class="space-y-1 text-sm"></div>
+                        </div>
+                    </div>
+                    
                     <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
                         <div class="flex justify-between items-center mb-4 border-b border-gray-700 pb-2">
                             <h2 class="text-xl font-bold text-white">Live Activity</h2>
-                            <button id="refresh-activity-btn" class="bg-gray-600 hover:bg-gray-500 text-white text-sm font-bold py-1 px-3 rounded-md flex items-center gap-2">
-                                <span data-icon="process"></span> Refresh
-                            </button>
+                             <div class="flex items-center gap-2">
+                                <button id="broadcast-message-btn" class="bg-orange-600 hover:bg-orange-500 text-white text-sm font-bold py-1 px-3 rounded-md flex items-center gap-2">
+                                    <span data-icon="broadcast"></span> Broadcast
+                                </button>
+                                <button id="refresh-activity-btn" class="bg-gray-600 hover:bg-gray-500 text-white text-sm font-bold py-1 px-3 rounded-md flex items-center gap-2">
+                                    <span data-icon="process"></span> Refresh
+                                </button>
+                            </div>
                         </div>
                         <div id="no-live-activity-message" class="hidden text-center text-gray-500 p-4">
                             <p class="mt-1 text-sm">No users are currently streaming.</p>
@@ -796,12 +883,12 @@
                         <div id="live-activity-table-container" class="overflow-x-auto">
                             <table class="min-w-full admin-table">
                                 <thead>
-                                    <!-- ENHANCEMENT: Added Stream Profile column and updated Channel column -->
                                     <tr>
                                         <th>User</th>
                                         <th>Client IP</th>
                                         <th>Channel</th>
                                         <th>Stream Profile</th>
+                                        <th>Transcoding</th>
                                         <th>Started</th>
                                         <th>Duration</th>
                                         <th class="text-right">Actions</th>
@@ -813,7 +900,6 @@
                     </div>
 
                     <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
-                        <!-- ENHANCEMENT: Restructured header to include a filter container -->
                         <div class="flex flex-col sm:flex-row justify-between items-center mb-4 border-b border-gray-700 pb-3 gap-4">
                             <h2 class="text-xl font-bold text-white flex-shrink-0">Watch History</h2>
                             <div id="history-filters" class="flex flex-wrap items-center justify-end gap-2 w-full">
@@ -837,7 +923,6 @@
                         <div id="watch-history-table-container" class="overflow-x-auto">
                             <table class="min-w-full admin-table">
                                 <thead>
-                                    <!-- ENHANCEMENT: Added Stream Profile column and updated Channel column -->
                                     <tr>
                                         <th>User</th>
                                         <th>Client IP</th>
@@ -851,6 +936,22 @@
                                 <tbody id="watch-history-tbody"></tbody>
                             </table>
                         </div>
+                        <!-- NEW: Pagination Controls -->
+                        <nav id="history-pagination-controls" class="hidden flex flex-col md:flex-row justify-between items-start md:items-center space-y-3 md:space-y-0 p-4" aria-label="Table navigation">
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm font-normal text-gray-400">Page Size:</span>
+                                <select id="history-page-size-select" class="bg-gray-700 border border-gray-600 rounded-md px-2 py-1 text-sm text-white focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="25">25</option>
+                                    <option value="50">50</option>
+                                    <option value="75">75</option>
+                                    <option value="100">100</option>
+                                </select>
+                                <span id="history-pagination-info" class="text-sm font-normal text-gray-400 ml-4"></span>
+                            </div>
+                            <ul id="history-pagination-pages" class="inline-flex items-center -space-x-px">
+                                <!-- Page buttons will be generated by JS -->
+                            </ul>
+                        </nav>
                     </div>
                 </div>
             </div>
@@ -1398,7 +1499,6 @@
         </div>
     </div>
     
-    <!-- MODIFIED: Added Hardware Info Modal -->
     <div id="hardware-info-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4">
         <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl flex flex-col" style="max-height: 80vh;">
             <div class="p-4 border-b border-gray-700 flex-shrink-0">
