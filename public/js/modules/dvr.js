@@ -16,17 +16,36 @@ import { stopAndCleanupPlayer } from './player.js'; // **NEW: Import main player
 
 /**
  * Initializes the DVR page by fetching all required data from the backend.
+ * MODIFIED: Now handles visibility of sections based on user permissions.
  */
 export async function initDvrPage() {
     console.log('[DVR] Initializing DVR page...');
-    await Promise.all([
-        loadScheduledJobs(),
+    const hasDvrPermission = appState.currentUser?.isAdmin || appState.currentUser?.canUseDvr;
+
+    // Toggle visibility of DVR sections based on user permissions
+    const manualRecSection = document.getElementById('manual-recording-section');
+    const scheduledSection = document.getElementById('scheduled-recordings-section');
+    
+    if (manualRecSection) manualRecSection.classList.toggle('hidden', !hasDvrPermission);
+    if (scheduledSection) scheduledSection.classList.toggle('hidden', !hasDvrPermission);
+
+    const promises = [
         loadCompletedRecordings(),
         loadStorageInfo()
-    ]);
-    // MODIFIED: Removed call to populateManualRecordingChannels()
+    ];
+
+    if (hasDvrPermission) {
+        promises.push(loadScheduledJobs());
+    } else {
+        // Explicitly hide these elements if user has no DVR permission
+        UIElements.noDvrJobsMessage.classList.add('hidden');
+        UIElements.dvrJobsTableContainer.classList.add('hidden');
+    }
+
+    await Promise.all(promises);
     console.log('[DVR] DVR page initialized.');
 }
+
 
 /**
  * Fetches scheduled recording jobs from the server and updates the state.
@@ -170,17 +189,23 @@ async function playCompletedTsFile(recording) {
 
 /**
  * Renders the table of scheduled and in-progress recording jobs.
+ * MODIFIED: Now includes a "User" column for admins.
  */
 function renderScheduledJobs() {
     const jobs = dvrState.scheduledJobs || [];
     const hasJobs = jobs.length > 0;
+    const isAdmin = appState.currentUser?.isAdmin;
 
-    // FIX: Toggle visibility of the entire table container vs the message
+    // Toggle visibility of the entire table container vs the message
     UIElements.noDvrJobsMessage.classList.toggle('hidden', hasJobs);
     UIElements.dvrJobsTableContainer.classList.toggle('hidden', !hasJobs);
     
-    // FIX: Show/hide the "Clear All" button
+    // Show/hide the "Clear All" button
     UIElements.clearScheduledDvrBtn.classList.toggle('hidden', !hasJobs);
+    
+    // MODIFIED: Show/hide the user column header
+    const userHeader = UIElements.dvrJobsTableContainer.querySelector('th.user-col');
+    if (userHeader) userHeader.classList.toggle('hidden', !isAdmin);
 
     const tbody = UIElements.dvrJobsTbody;
     tbody.innerHTML = '';
@@ -196,7 +221,6 @@ function renderScheduledJobs() {
         const conflictIcon = job.isConflicting ? 
             `<svg class="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20" title="This recording conflicts with another scheduled recording."><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1.75-5.25a.75.75 0 00-1.5 0v3.5a.75.75 0 001.5 0v-3.5z" clip-rule="evenodd" /></svg>` : '';
         
-        // **MODIFIED: Conditionally show the timeshift play button**
         const isTimeshiftable = job.filePath && job.filePath.endsWith('.ts');
         const playButtonHTML = (job.status === 'recording' && isTimeshiftable) ? `
             <button class="action-btn timeshift-play-btn text-blue-400 hover:text-blue-300" title="Play Recording (Timeshift)" data-job-id="${job.id}">
@@ -204,11 +228,15 @@ function renderScheduledJobs() {
             </button>
         ` : '';
 
+        // MODIFIED: Add user column conditionally for admins
+        const userColumn = isAdmin ? `<td>${job.username || 'N/A'}</td>` : '';
+
         const tr = document.createElement('tr');
         tr.dataset.jobId = job.id;
         tr.innerHTML = `
             <td class="max-w-xs truncate" title="${job.programTitle}">${job.programTitle}</td>
             <td class="max-w-xs truncate" title="${job.channelName}">${job.channelName}</td>
+            ${userColumn}
             <td>${startTime}</td>
             <td>${endTime}</td>
             <td>${statusHTML}</td>
@@ -240,30 +268,39 @@ function renderScheduledJobs() {
 }
 
 
+
 /**
  * Renders the table of completed recordings.
+ * MODIFIED: Now includes a "User" column visible to everyone.
  */
 function renderCompletedRecordings() {
     const recordings = dvrState.completedRecordings || [];
     const hasRecordings = recordings.length > 0;
+    const isAdmin = appState.currentUser?.isAdmin;
 
-    // FIX: Toggle visibility of the entire table container vs the message
+    // Toggle visibility of the entire table container vs the message
     UIElements.noDvrRecordingsMessage.classList.toggle('hidden', hasRecordings);
     UIElements.dvrRecordingsTableContainer.classList.toggle('hidden', !hasRecordings);
     
-    // FIX: Show/hide the "Clear All" button
-    UIElements.clearCompletedDvrBtn.classList.toggle('hidden', !hasRecordings);
+    // Show/hide the "Clear All" button only if user has DVR permission
+    const hasDvrPermission = appState.currentUser?.isAdmin || appState.currentUser?.canUseDvr;
+    UIElements.clearCompletedDvrBtn.classList.toggle('hidden', !hasRecordings || !hasDvrPermission);
     
     const tbody = UIElements.dvrRecordingsTbody;
     tbody.innerHTML = '';
 
     recordings.forEach(rec => {
         const recordedOn = new Date(rec.startTime).toLocaleString();
+        
+        // MODIFIED: Admins can see who made the recording
+        const userColumn = isAdmin ? `<td class="max-w-xs truncate" title="${rec.username}">${rec.username}</td>` : '';
+
         const tr = document.createElement('tr');
         tr.dataset.recordingId = rec.id;
         tr.innerHTML = `
             <td class="max-w-xs truncate" title="${rec.programTitle}">${rec.programTitle}</td>
             <td class="max-w-xs truncate" title="${rec.channelName}">${rec.channelName}</td>
+            ${userColumn}
             <td>${recordedOn}</td>
             <td>${formatDuration(rec.durationSeconds)}</td>
             <td>${formatBytes(rec.fileSizeBytes)}</td>
@@ -623,4 +660,3 @@ function formatDuration(totalSeconds) {
     if (minutes > 0) result += `${minutes}m`;
     return result.trim() || '0m';
 }
-
