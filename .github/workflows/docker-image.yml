@@ -52,9 +52,10 @@ jobs:
             ghcr.io/${{ github.repository }}
             ${{ secrets.DOCKERHUB_USERNAME }}/viniplay
           tags: |
-            # type=schedule
-            type=ref,event=branch
-            type=ref,event=pr
+            # Creates the 'latest' tag when a push is made to the default branch (main).
+            type=raw,value=latest,enable={{is_default_branch}}
+
+            # Creates version tags when a git tag is pushed (e.g., v1.2.3 -> 1.2.3 and 1.2).
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
 
@@ -65,3 +66,4 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }} # Don't push on pull requests
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
