@@ -186,8 +186,11 @@ const requireDvrAccess = (req, res, next) => {
     return res.status(403).json({ error: 'DVR access required.' });
 };
 
-
-app.use('/dvr', requireAuth, requireDvrAccess, express.static(DVR_DIR));
+// *** FIX: DVR Playback Access ***
+// Removed `requireDvrAccess` from this route. Now, any authenticated user can access
+// the /dvr directory to play back recorded files. The API endpoints for creating
+// and managing recordings remain protected by `requireDvrAccess`.
+app.use('/dvr', requireAuth, express.static(DVR_DIR));
 
 // --- Helper Functions ---
 /**
@@ -2833,4 +2836,3 @@ function parseM3U(data) {
     }
     return channels;
 }
-
