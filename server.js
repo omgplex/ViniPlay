@@ -314,9 +314,11 @@ function getSettings() {
             postBufferMinutes: 2,
             maxConcurrentRecordings: 1,
             autoDeleteDays: 0,
-            activeRecordingProfileId: 'dvr-mp4-default',
+            activeRecordingProfileId: 'dvr-ts-default', // **MODIFIED: Point to the new default profile**
             recordingProfiles: [
-                { id: 'dvr-mp4-default', name: 'Default MP4 (H.264/AAC)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: true },
+                // **MODIFIED: Changed the default profile to output a .ts file for timeshifting.**
+                { id: 'dvr-ts-default', name: 'Default TS (H.264/AAC, Timeshiftable)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c copy -f mpegts "{filePath}"', isDefault: true },
+                { id: 'dvr-mp4-default', name: 'Legacy MP4 (H.264/AAC)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: false },
                 // FINAL FIX: Modern, more compatible command for NVIDIA DVR.
                 { id: 'dvr-mp4-nvidia', name: 'NVIDIA NVENC MP4 (H.264/AAC)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: true },
                 { id: 'dvr-mp4-intel', name: 'Intel QSV MP4 (H.264/AAC)', command: '-hwaccel qsv -c:v h264_qsv -i "{streamUrl}" -c:v h264_qsv -preset medium -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: false }
@@ -2133,7 +2135,9 @@ async function startRecording(job) {
     console.log(`[DVR] Using recording profile: "${recProfile.name}"`);
 
     const streamUrlToRecord = channel.url;
-    const safeFilename = `${job.id}_${job.programTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.mp4`;
+    // **MODIFIED: Change file extension based on profile to support .ts files.**
+    const fileExtension = recProfile.command.includes('-f mp4') ? '.mp4' : '.ts';
+    const safeFilename = `${job.id}_${job.programTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase()}${fileExtension}`;
     const fullFilePath = path.join(DVR_DIR, safeFilename);
 
     const commandTemplate = recProfile.command
@@ -2321,6 +2325,41 @@ async function autoDeleteOldRecordings() {
 }
 // --- DVR API Endpoints (MODIFIED & NEW) ---
 // ... existing DVR API Endpoints ...
+
+// **NEW: Timeshift/Chase Play Endpoint**
+app.get('/api/dvr/timeshift/:jobId', requireAuth, requireDvrAccess, (req, res) => {
+    const { jobId } = req.params;
+    const userId = req.session.userId;
+    console.log(`[DVR_TIMESHIFT] Received request for job ${jobId} from user ${userId}.`);
+
+    db.get("SELECT filePath, status FROM dvr_jobs WHERE id = ? AND user_id = ?", [jobId, userId], (err, job) => {
+        if (err) {
+            console.error(`[DVR_TIMESHIFT] DB error fetching job ${jobId}:`, err);
+            return res.status(500).send('Server error.');
+        }
+        if (!job) {
+            return res.status(404).send('Recording job not found or not authorized.');
+        }
+        if (job.status !== 'recording') {
+            return res.status(400).send('Cannot timeshift a recording that is not in progress.');
+        }
+        if (!job.filePath || !fs.existsSync(job.filePath)) {
+            return res.status(404).send('Recording file not found on disk.');
+        }
+
+        console.log(`[DVR_TIMESHIFT] Streaming file: ${job.filePath}`);
+        res.setHeader('Content-Type', 'video/mp2t');
+        const stream = fs.createReadStream(job.filePath);
+        stream.pipe(res);
+
+        stream.on('error', (streamErr) => {
+            console.error(`[DVR_TIMESHIFT] Error streaming file ${job.filePath}:`, streamErr);
+            res.end();
+        });
+    });
+});
+
+
 app.post('/api/dvr/schedule', requireAuth, requireDvrAccess, async (req, res) => {
     const { channelId, channelName, programTitle, programStart, programStop } = req.body;
     const settings = getSettings();
@@ -2701,6 +2740,9 @@ detectHardwareAcceleration().then(() => {
 
         schedule.scheduleJob('0 2 * * *', autoDeleteOldRecordings);
         console.log('[DVR_STORAGE] Scheduled daily cleanup of old recordings.');
+        
+        // **NEW: Load and schedule DVR jobs on startup**
+        loadAndScheduleAllDvrJobs();
     });
 });
 
