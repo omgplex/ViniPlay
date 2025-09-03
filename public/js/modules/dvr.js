@@ -96,6 +96,13 @@ function renderScheduledJobs() {
         const conflictIcon = job.isConflicting ? 
             `<svg class="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20" title="This recording conflicts with another scheduled recording."><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1.75-5.25a.75.75 0 00-1.5 0v3.5a.75.75 0 001.5 0v-3.5z" clip-rule="evenodd" /></svg>` : '';
 
+        // **MODIFIED: Add a Play button for in-progress recordings**
+        const playButtonHTML = job.status === 'recording' ? `
+            <button class="action-btn timeshift-play-btn text-blue-400 hover:text-blue-300" title="Play Recording (Timeshift)" data-job-id="${job.id}">
+                ${ICONS.play}
+            </button>
+        ` : '';
+
         const tr = document.createElement('tr');
         tr.dataset.jobId = job.id;
         tr.innerHTML = `
@@ -107,6 +114,7 @@ function renderScheduledJobs() {
             <td class="text-center">${conflictIcon}</td>
             <td class="text-right">
                 <div class="flex items-center justify-end gap-3">
+                    ${playButtonHTML}
                     ${job.status === 'recording' ? `
                         <button class="action-btn stop-recording-btn text-red-500 hover:text-red-400" title="Stop Recording" data-job-id="${job.id}">
                             ${ICONS.stopRec}
@@ -217,7 +225,17 @@ export function setupDvrEventListeners() {
         const button = e.target.closest('button');
         if (!button) return;
 
-        if (button.classList.contains('go-to-guide-btn')) {
+        // **NEW: Handle clicks on the timeshift play button**
+        if (button.classList.contains('timeshift-play-btn')) {
+            const jobId = button.dataset.jobId;
+            const job = dvrState.scheduledJobs.find(j => j.id == jobId);
+            if (job) {
+                UIElements.recordingTitle.textContent = `${job.programTitle} (Recording...)`;
+                // Point the video player to our new timeshift endpoint
+                UIElements.recordingVideoElement.src = `/api/dvr/timeshift/${jobId}`;
+                openModal(UIElements.recordingPlayerModal);
+            }
+        } else if (button.classList.contains('go-to-guide-btn')) {
             const channelId = button.dataset.channelId;
             const bufferedStartIso = button.dataset.programStart;
 
