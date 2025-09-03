@@ -3,7 +3,7 @@
  * Manages all client-side functionality for the DVR page.
  */
 
-import { UIElements, dvrState, guideState } from './state.js';
+import { UIElements, dvrState, guideState, appState } from './state.js';
 import { apiFetch } from './api.js';
 import { showNotification, showConfirm, openModal, closeModal } from './ui.js';
 import { handleSearchAndFilter } from './guide.js';
@@ -12,6 +12,7 @@ import { navigateToProgramInGuide } from './notification.js';
 // MODIFIED: Import channel selector populator from multiview
 import { populateChannelSelector } from './multiview.js';
 import { ICONS } from './icons.js'; // MODIFIED: Import the new icon library
+import { stopAndCleanupPlayer } from './player.js'; // **NEW: Import main player cleanup function**
 
 /**
  * Initializes the DVR page by fetching all required data from the backend.
@@ -69,6 +70,102 @@ async function loadStorageInfo() {
 }
 
 /**
+ * Plays an in-progress recording using the main mpegts.js player.
+ * @param {object} job - The DVR job object that is currently recording.
+ */
+async function playTimeshiftStream(job) {
+    if (!job) return;
+
+    // Use the main player modal for timeshifting
+    const playerModal = UIElements.videoModal;
+    const videoElement = UIElements.videoElement;
+    const videoTitle = UIElements.videoTitle;
+
+    // 1. Stop any existing stream in the main player
+    await stopAndCleanupPlayer();
+
+    const streamUrl = `/api/dvr/timeshift/${job.id}`;
+    console.log(`[DVR_TIMESHIFT] Starting playback for URL: ${streamUrl}`);
+    videoTitle.textContent = `${job.programTitle} (Recording...)`;
+
+    if (mpegts.isSupported()) {
+        // 2. Create and configure the mpegts.js player
+        const mpegtsConfig = {
+            enableStashBuffer: true,
+            stashInitialSize: 4096,
+            isLive: true, // Treat it as a live stream
+        };
+
+        appState.player = mpegts.createPlayer({
+            type: 'mse',
+            isLive: true,
+            url: streamUrl
+        }, mpegtsConfig);
+
+        // 3. Attach and play
+        appState.player.attachMediaElement(videoElement);
+        appState.player.load();
+        appState.player.play().catch((err) => {
+            console.error("MPEGTS Player Error (Timeshift):", err);
+            showNotification("Could not play timeshift stream.", true);
+            stopAndCleanupPlayer();
+        });
+
+        // 4. Open the main player modal
+        openModal(playerModal);
+
+    } else {
+        showNotification('Your browser does not support MSE, which is required for timeshifting.', true);
+    }
+}
+
+/**
+ * **NEW: Plays a completed .ts recording file using the main mpegts.js player.**
+ * @param {object} recording - The completed recording object.
+ */
+async function playCompletedTsFile(recording) {
+    if (!recording) return;
+
+    // Use the main player modal for TS files for a consistent experience
+    const playerModal = UIElements.videoModal;
+    const videoElement = UIElements.videoElement;
+    const videoTitle = UIElements.videoTitle;
+
+    await stopAndCleanupPlayer(); // Clean up main player first
+
+    const streamUrl = `/dvr/${recording.filename}`;
+    console.log(`[DVR_PLAYBACK] Starting playback for completed TS file: ${streamUrl}`);
+    videoTitle.textContent = recording.programTitle;
+
+    if (mpegts.isSupported()) {
+        const mpegtsConfig = {
+            enableStashBuffer: true,
+            stashInitialSize: 4096,
+            isLive: false, // This is a completed file, not a live stream
+        };
+
+        appState.player = mpegts.createPlayer({
+            type: 'mse',
+            isLive: false,
+            url: streamUrl
+        }, mpegtsConfig);
+
+        appState.player.attachMediaElement(videoElement);
+        appState.player.load();
+        appState.player.play().catch((err) => {
+            console.error("MPEGTS Player Error (Completed TS):", err);
+            showNotification("Could not play the selected recording.", true);
+            stopAndCleanupPlayer();
+        });
+
+        openModal(playerModal);
+    } else {
+        showNotification('Your browser does not support the technology required to play this file type.', true);
+    }
+}
+
+
+/**
  * Renders the table of scheduled and in-progress recording jobs.
  */
 function renderScheduledJobs() {
@@ -95,9 +192,10 @@ function renderScheduledJobs() {
 
         const conflictIcon = job.isConflicting ? 
             `<svg class="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20" title="This recording conflicts with another scheduled recording."><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1.75-5.25a.75.75 0 00-1.5 0v3.5a.75.75 0 001.5 0v-3.5z" clip-rule="evenodd" /></svg>` : '';
-
-        // **MODIFIED: Add a Play button for in-progress recordings**
-        const playButtonHTML = job.status === 'recording' ? `
+        
+        // **MODIFIED: Conditionally show the timeshift play button**
+        const isTimeshiftable = job.filePath && job.filePath.endsWith('.ts');
+        const playButtonHTML = (job.status === 'recording' && isTimeshiftable) ? `
             <button class="action-btn timeshift-play-btn text-blue-400 hover:text-blue-300" title="Play Recording (Timeshift)" data-job-id="${job.id}">
                 ${ICONS.play}
             </button>
@@ -225,15 +323,11 @@ export function setupDvrEventListeners() {
         const button = e.target.closest('button');
         if (!button) return;
 
-        // **NEW: Handle clicks on the timeshift play button**
         if (button.classList.contains('timeshift-play-btn')) {
             const jobId = button.dataset.jobId;
             const job = dvrState.scheduledJobs.find(j => j.id == jobId);
             if (job) {
-                UIElements.recordingTitle.textContent = `${job.programTitle} (Recording...)`;
-                // Point the video player to our new timeshift endpoint
-                UIElements.recordingVideoElement.src = `/api/dvr/timeshift/${jobId}`;
-                openModal(UIElements.recordingPlayerModal);
+                playTimeshiftStream(job);
             }
         } else if (button.classList.contains('go-to-guide-btn')) {
             const channelId = button.dataset.channelId;
@@ -307,9 +401,15 @@ export function setupDvrEventListeners() {
         if (!recording) return;
 
         if (e.target.closest('.play-recording-btn')) {
-            UIElements.recordingTitle.textContent = recording.programTitle;
-            UIElements.recordingVideoElement.src = `/dvr/${recording.filename}`;
-            openModal(UIElements.recordingPlayerModal);
+            // **MODIFIED: Check file type and use the appropriate player**
+            if (recording.filename && recording.filename.endsWith('.ts')) {
+                playCompletedTsFile(recording);
+            } else {
+                // Use the original, simpler player for non-ts files like .mp4
+                UIElements.recordingTitle.textContent = recording.programTitle;
+                UIElements.recordingVideoElement.src = `/dvr/${recording.filename}`;
+                openModal(UIElements.recordingPlayerModal);
+            }
         } else if (e.target.closest('.delete-recording-btn')) {
             showConfirm('Delete Recording?', `This will permanently delete the file.`, async () => {
                 if (await apiFetch(`/api/dvr/recordings/${recordingId}`, { method: 'DELETE' })) {
@@ -520,3 +620,4 @@ function formatDuration(totalSeconds) {
     if (minutes > 0) result += `${minutes}m`;
     return result.trim() || '0m';
 }
+
