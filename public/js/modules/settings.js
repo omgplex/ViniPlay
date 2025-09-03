@@ -207,6 +207,7 @@ const renderSourceTable = (sourceType) => {
 
 /**
  * Updates all settings UI elements based on the current state.
+ * MODIFIED: Removed redundant admin checks as this page is now admin-only.
  */
 export const updateUIFromSettings = async () => {
     const settings = guideState.settings;
@@ -239,31 +240,22 @@ export const updateUIFromSettings = async () => {
     settings.searchScope = settings.searchScope || 'channels_only';
     settings.notificationLeadTime = settings.notificationLeadTime ?? 10;
     
-    // NEW: Set DVR defaults if they don't exist
     settings.dvr = settings.dvr || {};
     settings.dvr.preBufferMinutes = settings.dvr.preBufferMinutes ?? 1;
     settings.dvr.postBufferMinutes = settings.dvr.postBufferMinutes ?? 2;
     settings.dvr.maxConcurrentRecordings = settings.dvr.maxConcurrentRecordings ?? 1;
     settings.dvr.autoDeleteDays = settings.dvr.autoDeleteDays ?? 0;
 
-
     // Update dropdowns and inputs
     UIElements.timezoneOffsetSelect.value = settings.timezoneOffset;
     UIElements.searchScopeSelect.value = settings.searchScope;
     UIElements.notificationLeadTimeInput.value = settings.notificationLeadTime;
     
-    // Update DVR inputs and section visibility
-    const hasDvrAccess = appState.currentUser?.isAdmin || appState.currentUser?.canUseDvr;
-    const dvrSettingsSection = document.getElementById('dvr-settings-section');
-    if (dvrSettingsSection) {
-        dvrSettingsSection.classList.toggle('hidden', !hasDvrAccess);
-    }
-    
+    // Update DVR inputs
     if (UIElements.dvrPreBufferInput) UIElements.dvrPreBufferInput.value = settings.dvr.preBufferMinutes;
     if (UIElements.dvrPostBufferInput) UIElements.dvrPostBufferInput.value = settings.dvr.postBufferMinutes;
     if (UIElements.dvrMaxStreamsInput) UIElements.dvrMaxStreamsInput.value = settings.dvr.maxConcurrentRecordings;
     if (UIElements.dvrStorageDeleteDays) UIElements.dvrStorageDeleteDays.value = settings.dvr.autoDeleteDays;
-
 
     // Render tables
     renderSourceTable('m3u');
@@ -287,7 +279,6 @@ export const updateUIFromSettings = async () => {
     populateSelect('streamProfileSelect', settings.streamProfiles || [], settings.activeStreamProfileId);
     populateSelect('dvrRecordingProfileSelect', settings.dvr?.recordingProfiles || [], settings.dvr?.activeRecordingProfileId);
 
-
     // Update button states based on selection
     const selectedProfile = (settings.streamProfiles || []).find(p => p.id === UIElements.streamProfileSelect.value);
     UIElements.editStreamProfileBtn.disabled = !selectedProfile;
@@ -301,18 +292,13 @@ export const updateUIFromSettings = async () => {
     UIElements.editDvrProfileBtn.disabled = !selectedRecordingProfile;
     UIElements.deleteDvrProfileBtn.disabled = !selectedRecordingProfile || selectedRecordingProfile?.isDefault;
 
-    // MODIFIED: Add the missing visibility toggle for the user management section.
-    if (UIElements.userManagementSection) {
-        UIElements.userManagementSection.classList.toggle('hidden', !appState.currentUser?.isAdmin);
-    }
+    // Since this page is admin-only, these sections are always visible.
+    // The conditional logic is no longer needed here.
+    UIElements.userManagementSection.classList.remove('hidden');
+    UIElements.dangerZoneSection.classList.remove('hidden');
     
-    // Ensure user list is always populated for admins when this page is viewed.
-    if (appState.currentUser?.isAdmin) {
-        refreshUserList();
-    }
-    
-    // NEW: Show/hide the Danger Zone section based on admin status
-    UIElements.dangerZoneSection.classList.toggle('hidden', !appState.currentUser?.isAdmin);
+    // Always populate user list as the user must be an admin to see this page.
+    refreshUserList();
 };
 
 
@@ -322,7 +308,7 @@ export const updateUIFromSettings = async () => {
  * Fetches the user list from the server and renders it.
  */
 export const refreshUserList = async () => {
-    if (!appState.currentUser?.isAdmin) return;
+    // No admin check needed here as the whole page is admin-only.
     try {
         const res = await apiFetch('/api/users');
         if (!res) return;
@@ -866,4 +852,3 @@ export function setupSettingsEventListeners() {
         e.target.value = '';
     });
 }
-
