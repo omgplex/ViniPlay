@@ -989,7 +989,10 @@
             <!-- Settings Page -->
             <div id="page-settings" class="hidden flex-grow flex-col items-center p-4 overflow-y-auto custom-scrollbar">
                 <div class="w-full max-w-6xl mx-auto space-y-8 pb-16">
-                    <div id="user-management-section" class="hidden bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
+                    <!-- *** FIX: Admin Section Visibility *** -->
+                    <!-- Removed the 'hidden' class from this div. Its visibility is now controlled -->
+                    <!-- by the logic that shows/hides the entire '#page-settings' container. -->
+                    <div id="user-management-section" class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
                         <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">User Management</h2>
                         <div class="flex justify-end mb-4">
                             <button id="add-user-btn" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-md">Add New User</button>
