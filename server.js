@@ -2336,13 +2336,7 @@ app.get('/api/dvr/timeshift/:jobId', requireAuth, requireDvrAccess, (req, res) =
     const userId = req.session.userId;
     console.log(`[DVR_TIMESHIFT] Received request for job ${jobId} from user ${userId}.`);
 
-    const query = req.session.isAdmin
-        ? "SELECT filePath, status FROM dvr_jobs WHERE id = ?"
-        : "SELECT filePath, status FROM dvr_jobs WHERE id = ? AND user_id = ?";
-    
-    const params = req.session.isAdmin ? [jobId] : [jobId, userId];
-
-    db.get(query, params, (err, job) => {
+    db.get("SELECT filePath, status FROM dvr_jobs WHERE id = ? AND user_id = ?", [jobId, userId], (err, job) => {
         if (err) {
             console.error(`[DVR_TIMESHIFT] DB error fetching job ${jobId}:`, err);
             return res.status(500).send('Server error.');
@@ -2447,24 +2441,34 @@ app.post('/api/dvr/schedule/manual', requireAuth, requireDvrAccess, async (req, 
     );
 });
 
-// MODIFIED: Admins can see all scheduled jobs, others see only their own.
-app.get('/api/dvr/jobs', requireAuth, requireDvrAccess, (req, res) => {
-    const isAdmin = req.session.isAdmin;
-    const userId = req.session.userId;
-    const query = isAdmin 
-        ? `SELECT j.*, u.username FROM dvr_jobs j JOIN users u ON j.user_id = u.id ORDER BY j.startTime DESC`
-        : `SELECT j.*, u.username FROM dvr_jobs j JOIN users u ON j.user_id = u.id WHERE j.user_id = ? ORDER BY j.startTime DESC`;
-    const params = isAdmin ? [] : [userId];
-
-    db.all(query, params, (err, rows) => {
-        if (err) return res.status(500).json({ error: 'Failed to retrieve recording jobs.' });
-        res.json(rows);
-    });
+// MODIFIED: Endpoint logic to show all jobs to admin, or user's jobs to them.
+app.get('/api/dvr/jobs', requireAuth, (req, res) => {
+    if (req.session.isAdmin) {
+        // Admins see all jobs, with username
+        const query = "SELECT j.*, u.username FROM dvr_jobs j JOIN users u ON j.user_id = u.id ORDER BY j.startTime DESC";
+        db.all(query, [], (err, rows) => {
+            if (err) return res.status(500).json({ error: 'Failed to retrieve all recording jobs.' });
+            res.json(rows);
+        });
+    } else if (req.session.canUseDvr) {
+        // Users with DVR access see only their own jobs
+        const query = "SELECT * FROM dvr_jobs WHERE user_id = ? ORDER BY startTime DESC";
+        db.all(query, [req.session.userId], (err, rows) => {
+            if (err) return res.status(500).json({ error: 'Failed to retrieve your recording jobs.' });
+            // Add a username to be consistent with admin view
+            const jobsWithUser = rows.map(r => ({...r, username: req.session.username}));
+            res.json(jobsWithUser);
+        });
+    } else {
+        // Users without DVR access see an empty list of scheduled jobs
+        res.json([]);
+    }
 });
 
-// MODIFIED: All users (with DVR access) can see all completed recordings.
-app.get('/api/dvr/recordings', requireAuth, requireDvrAccess, (req, res) => {
-    const query = `SELECT r.*, u.username FROM dvr_recordings r JOIN users u ON r.user_id = u.id ORDER BY r.startTime DESC`;
+// MODIFIED: Endpoint to show all completed recordings to everyone.
+app.get('/api/dvr/recordings', requireAuth, (req, res) => {
+    // All authenticated users can see all completed recordings, with username
+    const query = "SELECT r.*, u.username FROM dvr_recordings r JOIN users u ON r.user_id = u.id ORDER BY r.startTime DESC";
     db.all(query, [], (err, rows) => {
         if (err) return res.status(500).json({ error: 'Failed to retrieve recordings.' });
         const recordingsWithFilename = rows.map(r => ({...r, filename: path.basename(r.filePath)}));
@@ -2473,7 +2477,12 @@ app.get('/api/dvr/recordings', requireAuth, requireDvrAccess, (req, res) => {
 });
 
 
-app.get('/api/dvr/storage', requireAuth, requireDvrAccess, (req, res) => {
+// MODIFIED: Loosened permission to requireAuth, as non-DVR users now see the DVR page.
+app.get('/api/dvr/storage', requireAuth, (req, res) => {
+    // Only return storage info if user has DVR access, otherwise return empty state.
+    if (!req.session.canUseDvr && !req.session.isAdmin) {
+        return res.json({ total: 0, used: 0, percentage: 0 });
+    }
     try {
         disk.check(DVR_DIR, (err, info) => {
             if (err) {
@@ -2545,7 +2554,6 @@ app.delete('/api/dvr/recordings/all', requireAuth, requireDvrAccess, (req, res) 
 });
 
 
-// MODIFIED: Admins can cancel any job.
 app.delete('/api/dvr/jobs/:id', requireAuth, requireDvrAccess, (req, res) => {
     const { id } = req.params;
     const jobId = parseInt(id, 10);
@@ -2553,10 +2561,8 @@ app.delete('/api/dvr/jobs/:id', requireAuth, requireDvrAccess, (req, res) => {
         activeDvrJobs.get(jobId)?.cancel();
         activeDvrJobs.delete(jobId);
     }
-
-    const query = req.session.isAdmin
-        ? "UPDATE dvr_jobs SET status = 'cancelled' WHERE id = ?"
-        : "UPDATE dvr_jobs SET status = 'cancelled' WHERE id = ? AND user_id = ?";
+    // MODIFIED: Admin can cancel any job, user can only cancel their own.
+    const query = req.session.isAdmin ? "UPDATE dvr_jobs SET status = 'cancelled' WHERE id = ?" : "UPDATE dvr_jobs SET status = 'cancelled' WHERE id = ? AND user_id = ?";
     const params = req.session.isAdmin ? [jobId] : [jobId, req.session.userId];
 
     db.run(query, params, function(err) {
@@ -2567,12 +2573,10 @@ app.delete('/api/dvr/jobs/:id', requireAuth, requireDvrAccess, (req, res) => {
     });
 });
 
-// MODIFIED: Admins can delete any recording.
 app.delete('/api/dvr/recordings/:id', requireAuth, requireDvrAccess, (req, res) => {
     const { id } = req.params;
-    const query = req.session.isAdmin
-        ? "SELECT filePath FROM dvr_recordings WHERE id = ?"
-        : "SELECT filePath FROM dvr_recordings WHERE id = ? AND user_id = ?";
+    // MODIFIED: Admin can delete any recording, user can only delete their own.
+    const query = req.session.isAdmin ? "SELECT filePath FROM dvr_recordings WHERE id = ?" : "SELECT filePath FROM dvr_recordings WHERE id = ? AND user_id = ?";
     const params = req.session.isAdmin ? [id] : [id, req.session.userId];
 
     db.get(query, params, (err, row) => {
@@ -2590,18 +2594,16 @@ app.delete('/api/dvr/recordings/:id', requireAuth, requireDvrAccess, (req, res) 
     });
 });
 
-// MODIFIED: Admins can stop any recording.
 app.post('/api/dvr/jobs/:id/stop', requireAuth, requireDvrAccess, (req, res) => {
     const { id } = req.params;
     const jobId = parseInt(id, 10);
     console.log(`[DVR_API] Received request to stop recording for job ${jobId}.`);
     stopRecording(jobId);
 
-    const query = req.session.isAdmin
-        ? "UPDATE dvr_jobs SET status = 'completed' WHERE id = ?"
-        : "UPDATE dvr_jobs SET status = 'completed' WHERE id = ? AND user_id = ?";
+    // MODIFIED: Admin can stop any job, user can only stop their own.
+    const query = req.session.isAdmin ? "UPDATE dvr_jobs SET status = 'completed' WHERE id = ?" : "UPDATE dvr_jobs SET status = 'completed' WHERE id = ? AND user_id = ?";
     const params = req.session.isAdmin ? [jobId] : [jobId, req.session.userId];
-
+    
     db.run(query, params, function(err){
         if (err) return res.status(500).json({ error: 'Could not update job status after stop.' });
         if(this.changes === 0) return res.status(404).json({ error: 'Job not found or not authorized to stop.' });
@@ -2609,7 +2611,6 @@ app.post('/api/dvr/jobs/:id/stop', requireAuth, requireDvrAccess, (req, res) => 
     });
 });
 
-// MODIFIED: Admins can edit any job.
 app.put('/api/dvr/jobs/:id', requireAuth, requireDvrAccess, (req, res) => {
     const { id } = req.params;
     const { startTime, endTime } = req.body;
@@ -2617,12 +2618,11 @@ app.put('/api/dvr/jobs/:id', requireAuth, requireDvrAccess, (req, res) => {
         return res.status(400).json({ error: 'Both startTime and endTime are required.' });
     }
     
-    const query = req.session.isAdmin
-        ? "SELECT * from dvr_jobs WHERE id = ?"
-        : "SELECT * from dvr_jobs WHERE id = ? AND user_id = ?";
-    const params = req.session.isAdmin ? [id] : [id, req.session.userId];
+    // MODIFIED: Admin can edit any job, user can only edit their own.
+    const getQuery = req.session.isAdmin ? "SELECT * from dvr_jobs WHERE id = ?" : "SELECT * from dvr_jobs WHERE id = ? AND user_id = ?";
+    const getParams = req.session.isAdmin ? [id] : [id, req.session.userId];
 
-    db.get(query, params, (err, job) => {
+    db.get(getQuery, getParams, (err, job) => {
         if (err) return res.status(500).json({ error: 'DB error fetching job.'});
         if (!job) return res.status(404).json({ error: 'Job not found or unauthorized.' });
         if (job.status !== 'scheduled') return res.status(400).json({ error: 'Only scheduled jobs can be modified.' });
@@ -2639,12 +2639,10 @@ app.put('/api/dvr/jobs/:id', requireAuth, requireDvrAccess, (req, res) => {
     });
 });
 
-// MODIFIED: Admins can delete any job history.
 app.delete('/api/dvr/jobs/:id/history', requireAuth, requireDvrAccess, (req, res) => {
     const { id } = req.params;
-    const query = req.session.isAdmin
-        ? "SELECT status FROM dvr_jobs WHERE id = ?"
-        : "SELECT status FROM dvr_jobs WHERE id = ? AND user_id = ?";
+    // MODIFIED: Admin can delete any job history, user can only delete their own.
+    const query = req.session.isAdmin ? "SELECT status FROM dvr_jobs WHERE id = ?" : "SELECT status FROM dvr_jobs WHERE id = ? AND user_id = ?";
     const params = req.session.isAdmin ? [id] : [id, req.session.userId];
 
     db.get(query, params, (err, job) => {
@@ -2662,7 +2660,6 @@ app.delete('/api/dvr/jobs/:id/history', requireAuth, requireDvrAccess, (req, res
         }
     });
 });
-
 // ... existing SSE and other endpoints ...
 app.get('/api/events', requireAuth, (req, res) => {
     const userId = req.session.userId;
@@ -2836,3 +2833,4 @@ function parseM3U(data) {
     }
     return channels;
 }
+
