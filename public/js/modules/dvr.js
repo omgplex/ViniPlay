@@ -120,7 +120,7 @@ async function playTimeshiftStream(job) {
 }
 
 /**
- * **NEW: Plays a completed .ts recording file using the main mpegts.js player.**
+ * Plays a completed .ts recording file using the main mpegts.js player.
  * @param {object} recording - The completed recording object.
  */
 async function playCompletedTsFile(recording) {
@@ -140,8 +140,11 @@ async function playCompletedTsFile(recording) {
     if (mpegts.isSupported()) {
         const mpegtsConfig = {
             enableStashBuffer: true,
-            stashInitialSize: 4096,
-            isLive: false, // This is a completed file, not a live stream
+            // **MODIFICATION: Increase buffer and disable lazy loading for better VOD seeking**
+            stashInitialSize: 16 * 1024, // 16MB buffer
+            lazyLoad: false,          // Load entire file index for seeking
+            seekType: 'range',        // Use HTTP Range requests for seeking
+            isLive: false,
         };
 
         appState.player = mpegts.createPlayer({
