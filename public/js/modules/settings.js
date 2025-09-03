@@ -292,13 +292,11 @@ export const updateUIFromSettings = async () => {
     UIElements.editDvrProfileBtn.disabled = !selectedRecordingProfile;
     UIElements.deleteDvrProfileBtn.disabled = !selectedRecordingProfile || selectedRecordingProfile?.isDefault;
 
-    // Since this page is admin-only, these sections are always visible.
-    // The conditional logic is no longer needed here.
-    UIElements.userManagementSection.classList.remove('hidden');
-    UIElements.dangerZoneSection.classList.remove('hidden');
-    
-    // Always populate user list as the user must be an admin to see this page.
-    refreshUserList();
+    // FIX: Only refresh the user list if the current user is an admin.
+    // This prevents errors for non-admin users during the initial app load.
+    if (appState.currentUser?.isAdmin) {
+        refreshUserList();
+    }
 };
 
 
@@ -852,3 +850,4 @@ export function setupSettingsEventListeners() {
         e.target.value = '';
     });
 }
+
