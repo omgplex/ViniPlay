@@ -12,12 +12,91 @@ import { castState, loadMedia, setLocalPlayerState } from './cast.js';
 let streamInfoInterval = null; // Interval to update stream stats
 let currentLocalStreamUrl = null; // ADDED: Track the original URL of the currently playing local stream
 
+// --- NEW: Auto-retry logic state ---
+let currentChannelInfo = null; // Stores { url, name, channelId } for retries
+let retryCount = 0;
+const MAX_RETRIES = 3;
+let retryTimeout = null;
+
+/**
+ * Handles a catastrophic stream error by attempting to restart the stream.
+ */
+function handleStreamError() {
+    if (retryCount >= MAX_RETRIES) {
+        showNotification(`Stream failed after ${MAX_RETRIES} retries. Please try another channel.`, true, 5000);
+        stopAndCleanupPlayer();
+        return;
+    }
+
+    retryCount++;
+    showNotification(`Stream interrupted. Retrying... (${retryCount}/${MAX_RETRIES})`, true, 2000);
+
+    // Clear any previous timeout
+    if (retryTimeout) {
+        clearTimeout(retryTimeout);
+    }
+
+    // Attempt to restart after a short delay
+    retryTimeout = setTimeout(() => {
+        console.log(`[PLAYER_RETRY] Attempting to restart stream. Attempt ${retryCount}/${MAX_RETRIES}.`);
+        if (currentChannelInfo) {
+            // Re-call playChannel which handles the full setup
+            playChannel(currentChannelInfo.url, currentChannelInfo.name, currentChannelInfo.channelId);
+        } else {
+            console.error("[PLAYER_RETRY] Cannot retry: current channel info is missing.");
+            stopAndCleanupPlayer();
+        }
+    }, 2000); // 2-second delay before retrying
+}
+
+
+/**
+ * NEW: Forcefully stops and restarts the current stream.
+ * This function will be triggered by the new refresh button.
+ */
+export async function forceRefreshStream() {
+    if (!currentChannelInfo) {
+        showNotification("No active stream to refresh.", true);
+        return;
+    }
+
+    showNotification("Refreshing stream...", false, 2000);
+    console.log('[PLAYER] User forced stream refresh.');
+
+    // Clear any pending retry to prevent it from interfering
+    if (retryTimeout) {
+        clearTimeout(retryTimeout);
+        retryTimeout = null;
+    }
+    retryCount = 0; // Reset retry count on manual refresh
+
+    // Stop the current player instance without closing the modal
+    if (appState.player) {
+        await stopStream(currentLocalStreamUrl);
+        appState.player.destroy();
+        appState.player = null;
+    }
+
+    // Immediately try to play the channel again
+    playChannel(currentChannelInfo.url, currentChannelInfo.name, currentChannelInfo.channelId);
+}
+
+
 /**
  * Stops the current local stream, cleans up the mpegts.js player instance, and closes the modal.
  * This does NOT affect an active Google Cast session.
  */
 export const stopAndCleanupPlayer = async () => { // MODIFIED: Made function async
-    // NEW: Explicitly tell the server to stop the stream process.
+    // NEW: Clear any scheduled retry attempt
+    if (retryTimeout) {
+        clearTimeout(retryTimeout);
+        retryTimeout = null;
+    }
+    retryCount = 0;
+    currentChannelInfo = null;
+
+
+    // Explicitly tell the server to stop the stream process.
     if (currentLocalStreamUrl && !castState.isCasting) {
         console.log(`[PLAYER] Sending stop request to server for URL: ${currentLocalStreamUrl}`);
         await stopStream(currentLocalStreamUrl);
@@ -85,6 +164,14 @@ function updateStreamInfo() {
  * @param {string} channelId - The unique ID of the channel.
  */
 export const playChannel = (url, name, channelId) => {
+    // On a fresh play request (not a retry), reset the retry counter
+    if (!retryTimeout) {
+        retryCount = 0;
+    }
+    
+    // Store current channel info for potential retries
+    currentChannelInfo = { url, name, channelId };
+
     // Update and save recent channels regardless of playback target
     if (channelId) {
         const recentChannels = [channelId, ...(guideState.settings.recentChannels || []).filter(id => id !== channelId)].slice(0, 15);
@@ -116,7 +203,6 @@ export const playChannel = (url, name, channelId) => {
     }
 
     // --- Local Playback Logic ---
-    // MODIFIED: Store the original stream URL for the explicit stop API call.
     currentLocalStreamUrl = url; 
     console.log(`[PLAYER] Playing channel "${name}" locally. Tracking URL for cleanup: ${currentLocalStreamUrl}`);
     
@@ -132,11 +218,10 @@ export const playChannel = (url, name, channelId) => {
     }
 
     if (mpegts.isSupported()) {
-        // NEW: Configuration for mpegts.js to increase buffer sizes
         const mpegtsConfig = {
             enableStashBuffer: true,
-            stashInitialSize: 4096, // 4MB initial buffer
-            liveBufferLatency: 2.0, // Seek to live edge after 2s of buffer
+            stashInitialSize: 4096,
+            liveBufferLatency: 2.0,
         };
 
         appState.player = mpegts.createPlayer({
@@ -144,6 +229,31 @@ export const playChannel = (url, name, channelId) => {
             isLive: true,
             url: streamUrlToPlay
         }, mpegtsConfig);
+
+        // --- NEW: Robust Error Handling ---
+        appState.player.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
+            console.error(`[PLAYER] MPEGTS Player Error: Type=${errorType}, Detail=${errorDetail}`);
+            // We only want to auto-retry on unrecoverable network/media errors.
+            if (errorType === 'NetworkError' || errorType === 'MediaError') {
+                // To prevent a retry loop if the user has manually closed the player
+                if (appState.player) { 
+                    handleStreamError();
+                }
+            } else {
+                 showNotification(`Player Error: ${errorDetail}`, true);
+                 stopAndCleanupPlayer();
+            }
+        });
+        
+        // When playback starts successfully, reset the retry counter.
+        appState.player.on(mpegts.Events.MEDIA_INFO, () => {
+            console.log('[PLAYER] Media info received, playback started successfully.');
+            retryCount = 0;
+            if (retryTimeout) {
+                clearTimeout(retryTimeout);
+                retryTimeout = null;
+            }
+        });
         
         openModal(UIElements.videoModal);
         UIElements.videoTitle.textContent = name;
@@ -153,9 +263,9 @@ export const playChannel = (url, name, channelId) => {
         UIElements.videoElement.volume = parseFloat(localStorage.getItem('iptvPlayerVolume') || 0.5);
         
         appState.player.play().catch((err) => {
-            console.error("MPEGTS Player Error:", err);
-            showNotification("Could not play stream. Check browser console & server logs.", true);
-            stopAndCleanupPlayer();
+            console.error("MPEGTS Player play() caught an error:", err);
+            // This initial play error is often critical, so we start the retry process.
+            handleStreamError();
         });
 
         streamInfoInterval = setInterval(updateStreamInfo, 2000);
@@ -170,6 +280,13 @@ export const playChannel = (url, name, channelId) => {
  */
 export function setupPlayerEventListeners() {
     UIElements.closeModal.addEventListener('click', stopAndCleanupPlayer);
+
+    // NEW: Add event listener for the refresh button
+    const refreshBtn = document.getElementById('refresh-stream-btn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', forceRefreshStream);
+    }
+
 
     UIElements.pipBtn.addEventListener('click', () => {
         if (document.pictureInPictureEnabled && UIElements.videoElement.readyState >= 3) {
