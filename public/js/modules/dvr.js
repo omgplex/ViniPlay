@@ -157,13 +157,20 @@ async function playCompletedTsFile(recording) {
     videoTitle.textContent = recording.programTitle;
 
     if (mpegts.isSupported()) {
+        // --- FIX FOR VOD SEEKING & BUFFERING ---
+        // This configuration is optimized for playing back large, static .ts files (VOD).
         const mpegtsConfig = {
-            enableStashBuffer: true,
-            // **MODIFICATION: Increase buffer and disable lazy loading for better VOD seeking**
-            stashInitialSize: 16 * 1024, // 16MB buffer
-            lazyLoad: false,          // Load entire file index for seeking
-            seekType: 'range',        // Use HTTP Range requests for seeking
             isLive: false,
+            // Automatically clean up the source buffer as the video plays.
+            // This is the most critical setting to prevent "SourceBuffer is full" errors.
+            autoCleanupSourceBuffer: true,
+            // Disable lazy loading to build a complete seek table upfront. This makes seeking reliable.
+            lazyLoad: false,
+            // Use HTTP Range requests for seeking, which is ideal for static files.
+            seekType: 'range',
+            // Increase the initial buffer size significantly to handle high-bitrate files
+            // and allow for immediate seeking without buffering issues.
+            stashInitialSize: 128 * 1024 * 1024, // 128MB buffer
         };
 
         appState.player = mpegts.createPlayer({
