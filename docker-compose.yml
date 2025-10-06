@@ -6,7 +6,9 @@ services:
   # Define the main application service.
   viniplay:
     # Build from the Dockerfile in the current directory.
-    build: .
+    #build: .
+    image: ardovini/viniplay:latest
+
     
     # Set a consistent name for the container for easy management.
     container_name: viniplay
