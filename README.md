@@ -30,12 +30,12 @@ The server-side backend resolves common CORS and browser compatibility issues by
 
   <tr>
     <td align="center">
-      <img src="https://i.imgur.com/SRJQKvw.png" alt="TV Guide page" width="400">
+      <img src="https://imgur.com/O7jk6X1.png" alt="TV Guide page" width="400">
       <br>
       <em>TV Guide page</em>
     </td>
     <td align="center">
-      <img src="https://imgur.com/zAwxzNR.png" alt="Multi-View page" width="400">
+      <img src="https://imgur.com/eE3R0Hr.png" alt="Multi-View page" width="400">
       <br>
       <em>Multi-View page</em>
     </td>
@@ -53,7 +53,7 @@ The server-side backend resolves common CORS and browser compatibility issues by
       <em>DVR</em>
     </td>
     <td align="center">
-      <img src="https://imgur.com/8OPCCht.png" alt="Admin activity" width="250">
+      <img src="https://imgur.com/4zaFF1v.png" alt="Admin activity" width="250">
       <br>
       <em>Admin activity</em>
     </td>
@@ -71,12 +71,12 @@ The server-side backend resolves common CORS and browser compatibility issues by
       <em>Settings</em>
     </td>
     <td align="center">
-      <img src="https://imgur.com/m8YpSEG.png" alt="Mobile TV Guide view" width="250">
+      <img src="https://imgur.com/j8LjxSf.png" alt="Mobile TV Guide view" width="250">
       <br>
-      <em>Description for Image 8</em>
+      <em>Mobile TV Guide view</em>
     </td>
     <td align="center">
-      <img src="https://imgur.com/QH0ueeC.png" alt="Channel description" width="250">
+      <img src="https://imgur.com/yjUCUB9.png" alt="Channel description" width="250">
       <br>
       <em>Channel description</em>
     </td>
