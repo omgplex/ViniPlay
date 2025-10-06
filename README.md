@@ -9,7 +9,6 @@ Stream your M3U playlists with EPG data, manage users, cast to your TV, and watc
 <p>
     <img src="https://img.shields.io/badge/docker-ready-blue.svg?style=for-the-badge&logo=docker" alt="Docker Ready">
     <img src="https://img.shields.io/badge/platform-node-green.svg?style=for-the-badge&logo=node.js" alt="Node.js Backend">
-    <img src="https://img.shields.io/github/license/YOUR_GITHUB_USERNAME/viniplay?style=for-the-badge" alt="License">
 </p>
 
 </div>
@@ -20,12 +19,70 @@ ViniPlay transforms your M3U and EPG files into a polished, high-performance str
 
 The server-side backend resolves common CORS and browser compatibility issues by proxying or transcoding streams with FFMPEG, while the feature-rich frontend provides a user experience comparable to premium IPTV services.
 
-<!-- It's highly recommended to add a screenshot or a GIF of your app in action -->
-<!-- 
-<div align="center">
-    <img src="URL_TO_YOUR_SCREENSHOT.png" alt="ARDO IPTV Player Screenshot" width="700">
-</div> 
--->
+<table width="100%">
+  <tr>
+    <td colspan="3" align="center">
+      <img src="https://i.imgur.com/1esDepO.gif" alt="Main GIF with UI navigation" width="100%">
+      <br>
+      <em>Main flow within the user interface</em>
+    </td>
+  </tr>
+
+  <tr>
+    <td align="center">
+      <img src="https://i.imgur.com/SRJQKvw.png" alt="TV Guide page" width="400">
+      <br>
+      <em>TV Guide page</em>
+    </td>
+    <td align="center">
+      <img src="https://imgur.com/zAwxzNR.png" alt="Multi-View page" width="400">
+      <br>
+      <em>Multi-View page</em>
+    </td>
+    <td align="center">
+      <img src="https://imgur.com/ftmxvss.png" alt="Direct player" width="400">
+      <br>
+      <em>Direct player</em>
+    </td>
+  </tr>
+
+  <tr>
+    <td align="center">
+      <img src="https://imgur.com/XVhT1pH.png" alt="DVR" width="250">
+      <br>
+      <em>DVR</em>
+    </td>
+    <td align="center">
+      <img src="https://imgur.com/8OPCCht.png" alt="Admin activity" width="250">
+      <br>
+      <em>Admin activity</em>
+    </td>
+    <td align="center">
+      <img src="https://imgur.com/D4hFLoI.png" alt="Notification" width="250">
+      <br>
+      <em>Notification</em>
+    </td>
+  </tr>
+
+  <tr>
+    <td align="center">
+      <img src="https://imgur.com/FxOFq88.png" alt="Settings" width="250">
+      <br>
+      <em>Settings</em>
+    </td>
+    <td align="center">
+      <img src="https://imgur.com/m8YpSEG.png" alt="Mobile TV Guide view" width="250">
+      <br>
+      <em>Description for Image 8</em>
+    </td>
+    <td align="center">
+      <img src="https://imgur.com/QH0ueeC.png" alt="Channel description" width="250">
+      <br>
+      <em>Channel description</em>
+    </td>
+  </tr>
+</table>
+
 
 ---
 
@@ -43,6 +100,7 @@ The server-side backend resolves common CORS and browser compatibility issues by
  - ▶️ **Picture-in-Picture**: Pop out the player to keep watching while you work on other things.
  - 🎥 **DVR**: Record programs using FFMPEG. Schedule recording via the TV Guide, or set specific channels and time with ease.
  - 📽️ **Single player**: Play .m3u8 and .ts links directly from the browser, with detailed console logs and recorded history
+ - 👥 **Admin monitoring page**: Monitor users watch stream in real time, store historical plays, and broadcast messages to all users.
 
 ---
 
@@ -70,7 +128,7 @@ This is the easiest way to get started.
         version: "3.8"
         services:
           viniplay:
-            build: .
+            image: ardovini/viniplay:latest
             container_name: viniplay
             ports:
               - "8998:8998"
@@ -91,15 +149,8 @@ This is the easiest way to get started.
         ```
         
         > **Security Note:** Your `SESSION_SECRET` should be a long, random string to properly secure user sessions.
-        
-2.  **Clone the Repository:** Clone this repository into the same directory.
     
-    ```
-    git clone <repository_url> .
-    
-    ```
-    
-3.  **Build and Run the Container:** From your project directory, run the following command:
+2.  **Build and Run the Container:** From your project directory, run the following command:
     
     ```
     docker-compose up --build -d
@@ -185,6 +236,17 @@ The project is organized into a Node.js backend and a modular vanilla JavaScript
 └── .env                             # Environment variables (e.g., SESSION_SECRET)
 
 ```
+
+## 🏗️ Roadmap
+
+There are some elements I'd like to fix and introduce in the upcoming releases:
+
+- Xtream Code (XC) and Stalker portal (STB) support
+- DVR .ts files are not seekable when watching during recording
+- Store logos to fast load time
+- Introduce a full horizontal scroll instead of pagination in the TV Guide page
+- Users force logout when account removed or locked
+
 
 ## 📄 License
 
