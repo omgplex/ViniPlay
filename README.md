@@ -22,7 +22,7 @@ The server-side backend resolves common CORS and browser compatibility issues by
 <table width="100%">
   <tr>
     <td colspan="3" align="center">
-      <img src="https://i.imgur.com/1esDepO.gif" alt="Main GIF with UI navigation" width="100%">
+      <img src="https://i.imgur.com/Sm5Faxa.gif" alt="Main GIF with UI navigation" width="100%">
       <br>
       <em>Main flow within the user interface</em>
     </td>
@@ -37,7 +37,7 @@ The server-side backend resolves common CORS and browser compatibility issues by
     <td align="center">
       <img src="https://imgur.com/eE3R0Hr.png" alt="Multi-View page" width="400">
       <br>
-      <em>Multi-View page</em>
+      <em>Multi-View page <p>(<a href="https://i.imgur.com/Sm5Faxa.gif">GIF</a>)</p></em>
     </td>
     <td align="center">
       <img src="https://imgur.com/ftmxvss.png" alt="Direct player" width="400">
@@ -50,7 +50,7 @@ The server-side backend resolves common CORS and browser compatibility issues by
     <td align="center">
       <img src="https://imgur.com/XVhT1pH.png" alt="DVR" width="250">
       <br>
-      <em>DVR</em>
+      <em>DVR <p>(<a href="https://i.imgur.com/2NPx0H4.gif">GIF</a>)</p></em>
     </td>
     <td align="center">
       <img src="https://imgur.com/4zaFF1v.png" alt="Admin activity" width="250">
@@ -60,7 +60,7 @@ The server-side backend resolves common CORS and browser compatibility issues by
     <td align="center">
       <img src="https://imgur.com/D4hFLoI.png" alt="Notification" width="250">
       <br>
-      <em>Notification</em>
+      <em>Notification <p>(<a href="https://i.imgur.com/uIAUHTm.gif">GIF</a>)</p></em>
     </td>
   </tr>
 
@@ -76,9 +76,9 @@ The server-side backend resolves common CORS and browser compatibility issues by
       <em>Mobile TV Guide view</em>
     </td>
     <td align="center">
-      <img src="https://imgur.com/yjUCUB9.png" alt="Channel description" width="250">
+      <img src="https://imgur.com/kKCnkFg.png" alt="Channel description" width="250">
       <br>
-      <em>Channel description</em>
+      <em>Favorite manager <p>(<a href="https://i.imgur.com/st30sVn.gif">GIF</a>)</p></em>
     </td>
   </tr>
 </table>
