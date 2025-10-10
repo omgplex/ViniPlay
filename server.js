@@ -413,13 +413,18 @@ function saveSettings(settings) {
     }
 }
 
-function fetchUrlContent(url) {
+function fetchUrlContent(url, options = {}) {
     return new Promise((resolve, reject) => {
         const protocol = url.startsWith('https') ? https : http;
         const TIMEOUT_DURATION = 60000; // 60 seconds
         console.log(`[FETCH] Attempting to fetch URL content: ${url} (Timeout: ${TIMEOUT_DURATION/1000}s)`);
 
-        const request = protocol.get(url, { timeout: TIMEOUT_DURATION }, (res) => {
+        const requestOptions = {
+            timeout: TIMEOUT_DURATION,
+            headers: options.headers || {}
+        };
+
+        const request = protocol.get(url, requestOptions, (res) => {
             if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
                 console.log(`[FETCH] Redirecting to: ${res.headers.location}`);
                 request.abort(); // Abort the current request before following redirect
@@ -1055,7 +1060,7 @@ const upload = multer({
 
 
 app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, res) => {
-    const { sourceType, name, url, isActive, id, refreshHours, xc } = req.body;
+    const { sourceType, name, url, isActive, id, refreshHours, xcHost, xcUsername, xcPassword } = req.body;
     console.log(`[SOURCES_API] ${id ? 'Updating' : 'Adding'} source. Type: ${sourceType}, Name: ${name}`);
 
     if (!sourceType || !name) {
@@ -1134,17 +1139,35 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
         res.json({ success: true, message: 'Source updated successfully.', settings: getSettings() });
 
     } else { // Add new source
-        const newSource = {
-            id: `src-${Date.now()}`,
-            name,
-            type: 'url', // Default to URL type
-            path: url,
-            isActive: isActive === 'true',
-            refreshHours: parseInt(refreshHours, 10) || 0,
-            lastUpdated: new Date().toISOString(),
-            status: 'Pending',
-            statusMessage: 'Source added. Process to load data.'
-        };
+        let newSource;
+        if (sourceType === 'xc') {
+            newSource = {
+                id: `src-${Date.now()}`,
+                name,
+                type: 'xc',
+                path: 'Xtream Codes Source',
+                xcHost,
+                xcUsername,
+                xcPassword,
+                isActive: isActive === 'true',
+                refreshHours: 0, // Refresh is handled by M3U processing
+                lastUpdated: new Date().toISOString(),
+                status: 'Pending',
+                statusMessage: 'Source added. Process to load data.'
+            };
+        } else {
+            newSource = {
+                id: `src-${Date.now()}`,
+                name,
+                type: req.file ? 'file' : 'url',
+                path: req.file ? req.file.path : url,
+                isActive: isActive === 'true',
+                refreshHours: parseInt(refreshHours, 10) || 0,
+                lastUpdated: new Date().toISOString(),
+                status: 'Pending',
+                statusMessage: 'Source added. Process to load data.'
+            };
+        }
         
         if (req.file) {
             newSource.type = 'file';
