@@ -501,8 +501,24 @@ async function processAndMergeSources() {
                     source.statusMessage = 'File not found.';
                     continue;
                 }
-            } else if (source.type === 'url') {
-                content = await fetchUrlContent(source.path);
+            } else if (source.type === 'url' || source.type === 'xc') {
+                let urlToFetch = source.path;
+                if (source.type === 'xc' && source.xc_data) {
+                    try {
+                        const xc = JSON.parse(source.xc_data);
+                        if (xc.server && xc.username && xc.password) {
+                            // This is where we build the URL for the M3U source
+                            urlToFetch = `${xc.server}/get.php?username=${xc.username}&password=${xc.password}&type=m3u_plus&output=ts`;
+                            console.log(`[M3U] Constructed XC URL for "${source.name}": ${urlToFetch}`);
+                        }
+                    } catch (e) {
+                        console.error(`[M3U] Failed to parse XC credentials for source "${source.name}":`, e);
+                        source.status = 'Error';
+                        source.statusMessage = 'Invalid XC credentials.';
+                        continue;
+                    }
+                }
+                content = await fetchUrlContent(urlToFetch);
             }
 
             const lines = content.split('\n');
@@ -577,8 +593,24 @@ async function processAndMergeSources() {
                     source.statusMessage = 'File not found.';
                     continue;
                 }
-            } else if (source.type === 'url') {
-                xmlString = await fetchUrlContent(source.path);
+            } else if (source.type === 'url' || source.type === 'xc') {
+                let urlToFetch = source.path;
+                if (source.type === 'xc' && source.xc_data) {
+                    try {
+                        const xc = JSON.parse(source.xc_data);
+                        if (xc.server && xc.username && xc.password) {
+                            // This is where we build the URL for the EPG source
+                            urlToFetch = `${xc.server}/xmltv.php?username=${xc.username}&password=${xc.password}`;
+                            console.log(`[EPG] Constructed XC URL for "${source.name}": ${urlToFetch}`);
+                        }
+                    } catch (e) {
+                        console.error(`[EPG] Failed to parse XC credentials for source "${source.name}":`, e);
+                        source.status = 'Error';
+                        source.statusMessage = 'Invalid XC credentials.';
+                        continue;
+                    }
+                }
+                xmlString = await fetchUrlContent(urlToFetch);
                 try {
                     fs.writeFileSync(epgFilePath, xmlString);
                     console.log(`[EPG] Downloaded EPG for "${source.name}" saved to ${epgFilePath}.`);
@@ -1023,7 +1055,7 @@ const upload = multer({
 
 
 app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, res) => {
-    const { sourceType, name, url, isActive, id, refreshHours } = req.body;
+    const { sourceType, name, url, isActive, id, refreshHours, xc } = req.body;
     console.log(`[SOURCES_API] ${id ? 'Updating' : 'Adding'} source. Type: ${sourceType}, Name: ${name}`);
 
     if (!sourceType || !name) {
@@ -1083,6 +1115,17 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
         } else if (sourceToUpdate.type === 'file' && !req.file && (!sourceToUpdate.path || !fs.existsSync(sourceToUpdate.path))) {
             console.warn(`[SOURCES_API] Existing file source ${id} has no file and no new file/URL provided.`);
             return res.status(400).json({ error: 'Existing file source requires a new file if original is missing.' });
+        } else if (xc) {
+            console.log(`[SOURCES_API] XC credentials provided for source ${id}.`);
+            if (sourceToUpdate.type === 'file' && fs.existsSync(sourceToUpdate.path)) {
+                try {
+                    fs.unlinkSync(sourceToUpdate.path);
+                    console.log(`[SOURCES_API] Deleted old file (switching to XC): ${sourceToUpdate.path}`);
+                } catch (e) { console.error("[SOURCES_API] Could not delete old source file (on type change):", e); }
+            }
+            sourceToUpdate.xc_data = xc;
+            sourceToUpdate.type = 'xc';
+            sourceToUpdate.path = 'Xtream Codes Source'; // Update placeholder
         }
 
 
@@ -1094,14 +1137,24 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
         const newSource = {
             id: `src-${Date.now()}`,
             name,
-            type: req.file ? 'file' : 'url',
-            path: req.file ? req.file.path : url,
+            type: 'url', // Default to URL type
+            path: url,
             isActive: isActive === 'true',
             refreshHours: parseInt(refreshHours, 10) || 0,
             lastUpdated: new Date().toISOString(),
             status: 'Pending',
             statusMessage: 'Source added. Process to load data.'
         };
+        
+        if (req.file) {
+            newSource.type = 'file';
+            newSource.path = req.file.path;
+        } else if (xc) {
+            newSource.type = 'xc';
+            newSource.xc_data = xc; // Store the JSON string with credentials
+            // The 'path' will be constructed later, but we can set a placeholder or leave it empty
+            newSource.path = 'Xtream Codes Source'; 
+        }
 
         if (newSource.type === 'url' && !newSource.path) {
             console.warn('[SOURCES_API] New URL source failed: URL is required.');
