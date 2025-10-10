@@ -13,13 +13,13 @@
 name: Docker Image CI/CD
 
 on:
-  workflow_dispatch: # Add this line to enable manual triggers
   push:
-    branches: [ "main", "dev" ] # Also add "dev" here to trigger on future pushes
+    branches: [ "main", "dev" ]
     tags:
       - 'v*.*.*'
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   build_and_push:
@@ -53,12 +53,17 @@ jobs:
             ghcr.io/${{ github.repository }}
             ${{ secrets.DOCKERHUB_USERNAME }}/viniplay
           tags: |
+            # Tag with the PR number when a pull request is opened or updated.
+            type=ref,event=pr
+            
+            # Tag with branch name on push to a branch.
+            type=ref,event=branch
+
             # Creates the 'latest' tag when a push is made to the default branch (main).
             type=raw,value=latest,enable={{is_default_branch}}
 
-            # Creates version tags when a git tag is pushed (e.g., v1.2.3 -> 1.2.3 and 1.2).
+            # Creates version tags when a git tag is pushed (e.g., v1.2.3 -> 1.2.3).
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -67,4 +72,3 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }} # Don't push on pull requests
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-
