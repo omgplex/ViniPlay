@@ -524,6 +524,33 @@ async function processAndMergeSources() {
                     }
                 }
                 content = await fetchUrlContent(urlToFetch);
+            } else if (source.type === 'xc') {
+                const fetchOptions = {
+                    headers: {
+                        'User-Agent': 'VLC/3.0.20 (Linux; x86_64)'
+                    }
+                };
+                const m3uUrl = `${source.xcHost}/get.php?username=${source.xcUsername}&password=${source.xcPassword}&type=m3u_plus&output=ts`;
+                console.log(`[M3U] Constructed XC URL for "${source.name}": ${m3uUrl}`);
+                content = await fetchUrlContent(m3uUrl, fetchOptions);
+                sourcePathForLog = m3uUrl; // For logging purposes
+
+                // Also add this as an automatic EPG source
+                const epgUrl = `${source.xcHost}/xmltv.php?username=${source.xcUsername}&password=${source.xcPassword}`;
+                const epgSource = {
+                    id: `epg_for_${source.id}`,
+                    name: `${source.name} (EPG)`,
+                    type: 'url',
+                    path: epgUrl,
+                    isActive: true, // Auto-activate the EPG
+                    isXcEpg: true, // Mark it so we can hide it from the UI if needed
+                    fetchOptions: fetchOptions // Pass user-agent for EPG too
+                };
+                
+                // Add it to the list of EPG sources to be processed later in this function
+                if (!activeEpgSources.some(s => s.id === epgSource.id)) {
+                    activeEpgSources.push(epgSource);
+                }
             }
 
             const lines = content.split('\n');
