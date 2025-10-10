@@ -1,4 +1,4 @@
-// A Node.js server for the VINI PLAY IPTV Player.
+// A Node.js server for the VINI PLAY IPTV Player. 
 // Implements server-side EPG parsing, secure environment variables, and improved logging.
 
 // Load environment variables from .env file
