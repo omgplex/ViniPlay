@@ -1367,6 +1367,7 @@
                              <div class="flex border border-gray-600 rounded-md overflow-hidden">
                                 <button type="button" id="source-editor-type-btn-url" class="flex-1 py-2 text-sm text-gray-300 hover:bg-gray-700/80">URL</button>
                                 <button type="button" id="source-editor-type-btn-file" class="flex-1 py-2 text-sm text-gray-300 hover:bg-gray-700/80">File</button>
+                                <button type="button" id="source-editor-type-btn-xc" class="flex-1 py-2 text-sm text-gray-300 hover:bg-gray-700/80">XC</button>
                             </div>
                         </div>
                         <div id="source-editor-url-container">
@@ -1381,6 +1382,20 @@
                             <label for="source-editor-file" class="block text-sm font-medium text-gray-400">File</label>
                             <input type="file" id="source-editor-file" class="mt-1 block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-500 file:text-white hover:file:bg-blue-600 cursor-pointer">
                             <p id="source-editor-file-info" class="text-xs text-gray-500 mt-1"></p>
+                        </div>
+                        <div id="source-editor-xc-container" class="hidden space-y-4">
+                            <div>
+                                <label for="source-editor-xc-url" class="block text-sm font-medium text-gray-400">Server URL</label>
+                                <input type="url" id="source-editor-xc-url" placeholder="http://xtream.example.com:8080" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+                            <div>
+                                <label for="source-editor-xc-username" class="block text-sm font-medium text-gray-400">Username</label>
+                                <input type="text" id="source-editor-xc-username" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+                            <div>
+                                <label for="source-editor-xc-password" class="block text-sm font-medium text-gray-400">Password</label>
+                                <input type="password" id="source-editor-xc-password" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500">
+                            </div>
                         </div>
                         <div id="source-editor-refresh-container">
                             <label for="source-editor-refresh-interval" class="block text-sm font-medium text-gray-400">Refresh Interval (URL only)</label>
