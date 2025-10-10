@@ -13,10 +13,11 @@
 name: Docker Image CI/CD
 
 on:
+  workflow_dispatch: # Add this line to enable manual triggers
   push:
-    branches: [ "main" ]
+    branches: [ "main", "dev" ] # Also add "dev" here to trigger on future pushes
     tags:
-      - 'v*.*.*' # Trigger on version tags like v1.0, v1.2.3
+      - 'v*.*.*'
   pull_request:
     branches: [ "main" ]
 
