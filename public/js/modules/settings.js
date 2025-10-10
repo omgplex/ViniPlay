@@ -369,12 +369,38 @@ const openSourceEditor = (sourceType, source = null) => {
     UIElements.sourceEditorFileContainer.classList.add('hidden');
 
     if (source) {
-        if (source.type === 'url') UIElements.sourceEditorUrl.value = source.path;
-        if (source.type === 'file') {
+        if (source.type === 'url') {
+            UIElements.sourceEditorUrl.value = source.path;
+            isFile = false;
+        } else if (source.type === 'file') {
             UIElements.sourceEditorFileInfo.textContent = `Current file: ${source.path.split('/').pop()}`;
             UIElements.sourceEditorFileInfo.classList.remove('hidden');
+            isFile = true;
+        } else if (source.type === 'xc') {
+            // Since XC is treated as a URL type on the backend, we check its path
+            // This is a simplified check; a more robust solution might be needed if URLs can be complex
+            const isXcType = source.path.includes('/get.php?'); 
+            if (isXcType) {
+                try {
+                    // The xc_data field may not exist on old entries; handle this gracefully.
+                    if(source.xc_data) {
+                        const xcData = JSON.parse(source.xc_data);
+                        UIElements.sourceEditorXcUrl.value = xcData.server || '';
+                        UIElements.sourceEditorXcUsername.value = xcData.username || '';
+                        UIElements.sourceEditorXcPassword.value = xcData.password || '';
+                    }
+                } catch (e) {
+                    console.error("Could not parse XC data for editing:", e);
+                }
+                isFile = false; // Treat it like a URL type for UI purposes
+                currentSourceTypeForEditor = 'xc'; // Set the active tab
+            } else {
+                 UIElements.sourceEditorUrl.value = source.path;
+                 isFile = false;
+            }
         }
     } else {
+        isFile = false;
         UIElements.sourceEditorFileInfo.classList.add('hidden');
     }
 
@@ -488,22 +514,27 @@ export function setupSettingsEventListeners() {
     UIElements.sourceEditorCancelBtn.addEventListener('click', () => closeModal(UIElements.sourceEditorModal));
 
     // --- Source Editor ---
-    UIElements.sourceEditorTypeBtnUrl.addEventListener('click', () => {
-        currentSourceTypeForEditor = 'url';
-        UIElements.sourceEditorTypeBtnUrl.classList.add('bg-blue-600');
-        UIElements.sourceEditorTypeBtnFile.classList.remove('bg-blue-600');
-        UIElements.sourceEditorUrlContainer.classList.remove('hidden');
-        UIElements.sourceEditorRefreshContainer.classList.remove('hidden');
-        UIElements.sourceEditorFileContainer.classList.add('hidden');
-    });
-    UIElements.sourceEditorTypeBtnFile.addEventListener('click', () => {
-        currentSourceTypeForEditor = 'file';
-        UIElements.sourceEditorTypeBtnUrl.classList.remove('bg-blue-600');
-        UIElements.sourceEditorTypeBtnFile.classList.add('bg-blue-600');
-        UIElements.sourceEditorUrlContainer.classList.add('hidden');
-        UIElements.sourceEditorRefreshContainer.classList.add('hidden');
-        UIElements.sourceEditorFileContainer.classList.remove('hidden');
-    });
+    const switchSourceEditorTab = (tabType) => {
+        currentSourceTypeForEditor = tabType;
+        const isUrl = tabType === 'url';
+        const isFile = tabType === 'file';
+        const isXc = tabType === 'xc';
+    
+        UIElements.sourceEditorTypeBtnUrl.classList.toggle('bg-blue-600', isUrl);
+        UIElements.sourceEditorTypeBtnFile.classList.toggle('bg-blue-600', isFile);
+        UIElements.sourceEditorTypeBtnXc.classList.toggle('bg-blue-600', isXc);
+    
+        UIElements.sourceEditorUrlContainer.classList.toggle('hidden', !isUrl);
+        UIElements.sourceEditorFileContainer.classList.toggle('hidden', !isFile);
+        UIElements.sourceEditorXcContainer.classList.toggle('hidden', !isXc);
+    
+        // Refresh interval is shown for URL and XC, but not for File
+        UIElements.sourceEditorRefreshContainer.classList.toggle('hidden', isFile);
+    };
+
+    UIElements.sourceEditorTypeBtnUrl.addEventListener('click', () => switchSourceEditorTab('url'));
+    UIElements.sourceEditorTypeBtnFile.addEventListener('click', () => switchSourceEditorTab('file'));
+    UIElements.sourceEditorTypeBtnXc.addEventListener('click', () => switchSourceEditorTab('xc'));
 
     UIElements.sourceEditorForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -518,11 +549,20 @@ export function setupSettingsEventListeners() {
         if (currentSourceTypeForEditor === 'url') {
             formData.append('url', UIElements.sourceEditorUrl.value);
             formData.append('refreshHours', UIElements.sourceEditorRefreshInterval.value);
-        } else if (UIElements.sourceEditorFile.files[0]) {
-            formData.append('sourceFile', UIElements.sourceEditorFile.files[0]);
-        } else if (!id) {
-             showNotification('A file must be selected for new file-based sources.', true);
-             return;
+        } else if (currentSourceTypeForEditor === 'file') {
+            if (UIElements.sourceEditorFile.files[0]) {
+                formData.append('sourceFile', UIElements.sourceEditorFile.files[0]);
+            } else if (!id) {
+                 showNotification('A file must be selected for new file-based sources.', true);
+                 return;
+            }
+        } else if (currentSourceTypeForEditor === 'xc') {
+            formData.append('xc', JSON.stringify({
+                server: UIElements.sourceEditorXcUrl.value,
+                username: UIElements.sourceEditorXcUsername.value,
+                password: UIElements.sourceEditorXcPassword.value,
+            }));
+            formData.append('refreshHours', UIElements.sourceEditorRefreshInterval.value);
         }
         
         if (id) formData.append('id', id);
