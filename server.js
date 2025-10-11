@@ -28,7 +28,7 @@ const saltRounds = 10;
 // Initialize global variables at the top-level scope
 let notificationCheckInterval = null;
 const sourceRefreshTimers = new Map();
-let detectedHardware = { nvidia: null, intel: null }; // NEW: To store detected GPU info
+let detectedHardware = { nvidia: null, intel_qsv: null, intel_vaapi: null }; // MODIFIED: To store specific Intel GPU info
 
 // --- ENHANCEMENT: For Server-Sent Events (SSE) ---
 // This map will store active client connections for real-time updates.
@@ -209,13 +209,25 @@ async function detectHardwareAcceleration() {
         }
     });
 
-    // Detect Intel Quick Sync Video (QSV)
-    if (fs.existsSync('/dev/dri/renderD128')) {
-        detectedHardware.intel = 'Intel Quick Sync Video';
-        console.log('[HW] Intel QSV detected.');
-    } else {
-        console.log('[HW] Intel QSV not detected.');
-    }
+    // MODIFIED: Use 'vainfo' for more robust detection of Intel VA-API and QSV
+    exec('vainfo', (err, stdout, stderr) => {
+        if (err || stderr) {
+            console.log('[HW] VA-API not detected or vainfo command failed.');
+            detectedHardware.intel_qsv = null;
+            detectedHardware.intel_vaapi = null;
+        } else {
+            // iHD driver is for modern Intel GPUs (Gen9+) and is preferred for QSV
+            if (stdout.includes('iHD_drv_video.so')) {
+                detectedHardware.intel_qsv = 'Intel Quick Sync Video';
+                console.log('[HW] Intel QSV (iHD driver) detected via VA-API.');
+            }
+            // i965 driver is for older Intel GPUs (pre-Gen9)
+            if (stdout.includes('i965_drv_video.so')) {
+                detectedHardware.intel_vaapi = 'Intel VA-API (Legacy)';
+                console.log('[HW] Intel VA-API (i965 driver) detected.');
+            }
+        }
+    });
 }
 
 // MODIFIED: This function is now mostly for multi-view scenarios.
@@ -310,6 +322,8 @@ function getSettings() {
             { id: 'ffmpeg-nvidia', name: 'ffmpeg (NVIDIA NVENC)', command: '-user_agent "{userAgent}" -re -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a copy -f mpegts pipe:1', isDefault: false },
             { id: 'ffmpeg-nvidia-legacy', name: 'ffmpeg (NVIDIA NVENC - Legacy)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false },
             { id: 'ffmpeg-intel', name: 'ffmpeg (Intel QSV)', command: '-hwaccel qsv -c:v h264_qsv -i "{streamUrl}" -c:v h264_qsv -preset medium -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false },
+            // NEW: Add this line for VA-API
+            { id: 'ffmpeg-vaapi', name: 'ffmpeg (VA-API)', command: '-hwaccel vaapi -hwaccel_output_format vaapi -i "{streamUrl}" -vf \'format=nv12,hwupload\' -c:v h264_vaapi -preset medium -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false },
             { id: 'ffmpeg-nvidia-reconnect', name: 'ffmpeg (NVIDIA reconnect)', command: '-user_agent "{userAgent}" -re -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a copy -f mpegts pipe:1', isDefault: false },
             { id: 'redirect', name: 'Redirect (No Transcoding)', command: 'redirect', isDefault: false }
         ],
@@ -330,7 +344,9 @@ function getSettings() {
                 // Legacy MP4 profiles, no longer default.
                 { id: 'dvr-mp4-default', name: 'Legacy MP4 (H.264/AAC)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: false },
                 { id: 'dvr-mp4-nvidia', name: 'NVIDIA NVENC MP4 (H.264/AAC)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: false },
-                { id: 'dvr-mp4-intel', name: 'Intel QSV MP4 (H.264/AAC)', command: '-hwaccel qsv -c:v h264_qsv -i "{streamUrl}" -c:v h264_qsv -preset medium -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: false }
+                { id: 'dvr-mp4-intel', name: 'Intel QSV MP4 (H.264/AAC)', command: '-hwaccel qsv -c:v h264_qsv -i "{streamUrl}" -c:v h264_qsv -preset medium -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: false },
+                // NEW: Add this line for VA-API recording
+                { id: 'dvr-mp4-vaapi', name: 'VA-API MP4 (H.264/AAC)', command: '-hwaccel vaapi -hwaccel_output_format vaapi -i "{streamUrl}" -vf \'format=nv12,hwupload\' -c:v h264_vaapi -preset medium -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: false }
             ]
         },
         activeUserAgentId: `default-ua-1724778434000`,
