@@ -7,17 +7,12 @@
 # TRIGGERS:
 # 1. On a push to the 'main' branch:
 #    - The image will be tagged as 'latest'.
-# 2. When a new tag is pushed in the format 'v*.*.*' (e.g., v0.5.0, v1.0.0):
-#    - The image will be tagged with the corresponding version number (e.g., 0.5.0, 1.0.0).
+# 2. Manually, via the 'workflow_dispatch' event for any other branch or tag.
 #
 name: Docker Image CI/CD
 
 on:
   push:
-    branches: [ "main", "dev" ]
-    tags:
-      - 'v*.*.*'
-  pull_request:
     branches: [ "main" ]
   workflow_dispatch:
 
@@ -32,7 +27,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Log in to GitHub Container Registry
+      - name: Log in to GitHub ContainerRegistry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -69,6 +64,8 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: ${{ github.event_name != 'pull_request' }} # Don't push on pull requests
+          # Push on main branch pushes or any manual run. 
+          # The original condition works because pull_request events are no longer a trigger.
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
