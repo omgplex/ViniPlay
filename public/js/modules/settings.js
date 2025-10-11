@@ -359,49 +359,64 @@ const openSourceEditor = (sourceType, source = null) => {
     UIElements.sourceEditorIsActive.checked = source ? source.isActive : true;
     UIElements.sourceEditorRefreshInterval.value = source ? (source.refreshHours || 0) : 0;
 
-    let isFile = source ? source.type === 'file' : false;
-    currentSourceTypeForEditor = isFile ? 'file' : 'url';
+    // Default to 'url' tab unless source dictates otherwise
+    let activeTab = 'url';
     
-    UIElements.sourceEditorTypeBtnUrl.classList.toggle('bg-blue-600', !isFile);
-    UIElements.sourceEditorTypeBtnFile.classList.toggle('bg-blue-600', isFile);
-    UIElements.sourceEditorUrlContainer.classList.toggle('hidden', isFile);
-    UIElements.sourceEditorRefreshContainer.classList.toggle('hidden', isFile);
-    UIElements.sourceEditorFileContainer.classList.add('hidden');
-
+    // Determine the initial tab based on the source type
     if (source) {
-        if (source.type === 'url') {
-            UIElements.sourceEditorUrl.value = source.path;
-            isFile = false;
-        } else if (source.type === 'file') {
-            UIElements.sourceEditorFileInfo.textContent = `Current file: ${source.path.split('/').pop()}`;
-            UIElements.sourceEditorFileInfo.classList.remove('hidden');
-            isFile = true;
+        if (source.type === 'file') {
+            activeTab = 'file';
         } else if (source.type === 'xc') {
-            // Since XC is treated as a URL type on the backend, we check its path
-            // This is a simplified check; a more robust solution might be needed if URLs can be complex
-            const isXcType = source.path.includes('/get.php?'); 
-            if (isXcType) {
-                try {
-                    // The xc_data field may not exist on old entries; handle this gracefully.
-                    if(source.xc_data) {
+            activeTab = 'xc';
+        } else { // 'url' or other types
+            activeTab = 'url';
+        }
+    }
+    
+    // Set the global state for which tab is active
+    currentSourceTypeForEditor = activeTab;
+
+    // Toggle tab visibility based on the active tab
+    UIElements.sourceEditorTypeBtnUrl.classList.toggle('bg-blue-600', activeTab === 'url');
+    UIElements.sourceEditorTypeBtnFile.classList.toggle('bg-blue-600', activeTab === 'file');
+    UIElements.sourceEditorTypeBtnXc.classList.toggle('bg-blue-600', activeTab === 'xc');
+
+    UIElements.sourceEditorUrlContainer.classList.toggle('hidden', activeTab !== 'url');
+    UIElements.sourceEditorFileContainer.classList.toggle('hidden', activeTab !== 'file');
+    UIElements.sourceEditorXcContainer.classList.toggle('hidden', activeTab !== 'xc');
+    
+    // Hide refresh interval for file-based sources
+    UIElements.sourceEditorRefreshContainer.classList.toggle('hidden', activeTab === 'file');
+    UIElements.sourceEditorFileInfo.classList.add('hidden'); // Hide file info by default
+
+    // Populate the form fields based on the source data
+    if (source) {
+        switch (source.type) {
+            case 'url':
+                UIElements.sourceEditorUrl.value = source.path;
+                break;
+            case 'file':
+                UIElements.sourceEditorFileInfo.textContent = `Current file: ${source.path.split('/').pop()}`;
+                UIElements.sourceEditorFileInfo.classList.remove('hidden');
+                break;
+            case 'xc':
+                // FIX: Correctly parse xc_data and populate the fields
+                if (source.xc_data) {
+                    try {
                         const xcData = JSON.parse(source.xc_data);
                         UIElements.sourceEditorXcUrl.value = xcData.server || '';
                         UIElements.sourceEditorXcUsername.value = xcData.username || '';
                         UIElements.sourceEditorXcPassword.value = xcData.password || '';
+                    } catch (e) {
+                        console.error("Could not parse XC data for editing:", e);
+                        // Clear fields if data is corrupt
+                        UIElements.sourceEditorXcUrl.value = '';
+                        UIElements.sourceEditorXcUsername.value = '';
+                        UIElements.sourceEditorXcPassword.value = '';
                     }
-                } catch (e) {
-                    console.error("Could not parse XC data for editing:", e);
                 }
-                isFile = false; // Treat it like a URL type for UI purposes
-                currentSourceTypeForEditor = 'xc'; // Set the active tab
-            } else {
-                 UIElements.sourceEditorUrl.value = source.path;
-                 isFile = false;
-            }
+                break;
         }
-    } else {
-        isFile = false;
-        UIElements.sourceEditorFileInfo.classList.add('hidden');
     }
 
     openModal(UIElements.sourceEditorModal);
