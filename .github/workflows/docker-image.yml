@@ -5,10 +5,10 @@
 # 2. Docker Hub (docker.io)
 #
 # TRIGGERS:
-# 1. On a push to the 'main' branch:
-#    - The image will be tagged as 'latest'.
-# 2. When a new tag is pushed in the format 'v*.*.*' (e.g., v0.5.0, v1.0.0):
-#    - The image will be tagged with the corresponding version number (e.g., 0.5.0, 1.0.0).
+# 1. On a push to the 'main' branch (automatic).
+# 2. When a new version tag 'v*.*.*' is pushed (automatic).
+# 3. On a pull request to 'main' (automatic, build-only validation).
+# 4. Manually for any branch, using the 'Run workflow' button (manual).
 #
 name: Docker Image CI/CD
 
@@ -19,6 +19,7 @@ on:
       - 'v*.*.*' # Trigger on version tags like v1.0, v1.2.3
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch: # Allows you to manually run this workflow
 
 jobs:
   build_and_push:
@@ -52,6 +53,10 @@ jobs:
             ghcr.io/${{ github.repository }}
             ${{ secrets.DOCKERHUB_USERNAME }}/viniplay
           tags: |
+            # Tag with branch name on push or manual run.
+            # e.g., a manual run on 'dev' branch will create a 'dev' tag.
+            type=ref,event=branch
+
             # Creates the 'latest' tag when a push is made to the default branch (main).
             type=raw,value=latest,enable={{is_default_branch}}
 
@@ -66,4 +71,3 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }} # Don't push on pull requests
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-
