@@ -15,6 +15,7 @@ const playerUrls = new Map();
 let activePlayerId = null;
 let channelSelectorCallback = null;
 let lastLayoutBeforeHide = null; // To store layout when tab is hidden
+let immersiveHeaderTimeout = null; // NEW: Timer for immersive mode header
 
 const MAX_PLAYERS = 9;
 
@@ -184,6 +185,47 @@ function updateGridBackground() {
 }
 
 /**
+ * NEW: Toggles the immersive mode for the Multi-View page.
+ * @param {boolean} isImmersive - True to enable immersive mode, false to disable.
+ */
+function setImmersiveMode(isImmersive) {
+    const appContainer = UIElements.appContainer;
+    if (!appContainer) return;
+
+    appContainer.classList.toggle('multiview-immersive', isImmersive);
+    if (grid) {
+        // A short delay before updating the grid ensures the CSS transition for the header is complete,
+        // so Gridstack can calculate the new available height correctly.
+        setTimeout(() => grid.onParentResize(), 300);
+    }
+}
+
+/**
+ * NEW: Handles showing and auto-hiding the header when in immersive mode.
+ */
+function handleImmersiveHeaderOverlay(e) {
+    const appContainer = UIElements.appContainer;
+    const multiviewHeader = UIElements.multiviewHeader;
+    if (!appContainer || !multiviewHeader || !appContainer.classList.contains('multiview-immersive')) {
+        return;
+    }
+
+    // Show header if mouse is near the top of the screen
+    if (e.clientY < 80) {
+        multiviewHeader.classList.add('overlay-visible');
+        // Clear any existing timer
+        if (immersiveHeaderTimeout) {
+            clearTimeout(immersiveHeaderTimeout);
+        }
+        // Set a new timer to hide it again
+        immersiveHeaderTimeout = setTimeout(() => {
+            multiviewHeader.classList.remove('overlay-visible');
+        }, 3000); // Hide after 3 seconds of inactivity
+    }
+}
+
+
+/**
  * Sets up global event listeners for the Multi-View page controls.
  */
 function setupMultiViewEventListeners() {
@@ -197,6 +239,20 @@ function setupMultiViewEventListeners() {
     UIElements.multiviewDeleteLayoutBtn.addEventListener('click', deleteLayout);
     UIElements.saveLayoutForm.addEventListener('submit', saveLayout);
     UIElements.saveLayoutCancelBtn.addEventListener('click', () => closeModal(UIElements.saveLayoutModal));
+
+    // --- NEW: Immersive Mode Event Listeners ---
+    const immersiveToggle = document.getElementById('immersive-mode-toggle');
+    if (immersiveToggle) {
+        immersiveToggle.addEventListener('change', (e) => {
+            setImmersiveMode(e.target.checked);
+        });
+    }
+
+    // Add mousemove listener to the main app container to detect when to show the header
+    const appContainer = UIElements.appContainer;
+    if (appContainer) {
+        appContainer.addEventListener('mousemove', handleImmersiveHeaderOverlay);
+    }
 }
 
 /**
