@@ -487,7 +487,6 @@ async function processAndMergeSources() {
 
     let mergedM3uContent = '#EXTM3U\n';
     const activeM3uSources = settings.m3uSources.filter(s => s.isActive);
-    // CORRECTED: The activeEpgSources list is now initialized here, before the M3U loop.
     const activeEpgSources = settings.epgSources.filter(s => s.isActive);
 
     if (activeM3uSources.length === 0) {
@@ -513,15 +512,26 @@ async function processAndMergeSources() {
             } else if (source.type === 'url') {
                 content = await fetchUrlContent(source.path);
             } else if (source.type === 'xc') {
+                // FIX: Correctly parse xc_data and build the URL
+                if (!source.xc_data) {
+                    throw new Error("XC source is missing credential data (xc_data).");
+                }
+                const xcInfo = JSON.parse(source.xc_data);
+                const { server, username, password } = xcInfo;
+
+                if (!server || !username || !password) {
+                    throw new Error("XC source is missing server, username, or password.");
+                }
+
                 const fetchOptions = {
                     headers: { 'User-Agent': 'VLC/3.0.20 (Linux; x86_64)' }
                 };
-                const m3uUrl = `${source.xcHost}/get.php?username=${source.xcUsername}&password=${source.xcPassword}&type=m3u_plus&output=ts`;
+                const m3uUrl = `${server}/get.php?username=${username}&password=${password}&type=m3u_plus&output=ts`;
                 console.log(`[M3U] Constructed XC URL for "${source.name}": ${m3uUrl}`);
                 content = await fetchUrlContent(m3uUrl, fetchOptions);
                 sourcePathForLog = m3uUrl;
 
-                const epgUrl = `${source.xcHost}/xmltv.php?username=${source.xcUsername}&password=${source.xcPassword}`;
+                const epgUrl = `${server}/xmltv.php?username=${username}&password=${password}`;
                 const epgSource = {
                     id: `epg_for_${source.id}`,
                     name: `${source.name} (EPG)`,
@@ -593,7 +603,6 @@ async function processAndMergeSources() {
     }
 
     for (const source of activeEpgSources) {
-        // Skip sources that might have been added but aren't active (unless it's an auto-added XC EPG)
         if (!source.isActive && !source.isXcEpg) continue;
 
         console.log(`[EPG] Processing source: "${source.name}" (ID: ${source.id}, Type: ${source.type}, Path: ${source.path})`);
