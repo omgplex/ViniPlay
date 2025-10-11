@@ -1053,7 +1053,8 @@ const upload = multer({
 
 
 app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, res) => {
-    const { sourceType, name, url, isActive, id, refreshHours, xcHost, xcUsername, xcPassword } = req.body;
+    // FIX: Correctly read all possible fields from the form data, including 'xc'.
+    const { sourceType, name, url, isActive, id, refreshHours, xc } = req.body;
     console.log(`[SOURCES_API] ${id ? 'Updating' : 'Adding'} source. Type: ${sourceType}, Name: ${name}`);
 
     if (!sourceType || !name) {
@@ -1088,19 +1089,20 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
                     console.log(`[SOURCES_API] Deleted old file: ${sourceToUpdate.path}`);
                 } catch (e) { console.error("[SOURCES_API] Could not delete old source file:", e); }
             }
-
             const extension = sourceType === 'm3u' ? '.m3u' : '.xml';
             const newPath = path.join(SOURCES_DIR, `${sourceType}_${id}${extension}`);
             try {
                 fs.renameSync(req.file.path, newPath);
                 sourceToUpdate.path = newPath;
                 sourceToUpdate.type = 'file';
+                // FIX: Clear xc_data if switching from XC to File
+                delete sourceToUpdate.xc_data;
                 console.log(`[SOURCES_API] Renamed uploaded file to: ${newPath}`);
             } catch (e) {
                 console.error('[SOURCES_API] Error renaming updated source file:', e);
                 return res.status(500).json({ error: 'Could not save updated file.' });
             }
-        } else if (url !== undefined) {
+        } else if (url !== undefined && url !== null) {
             console.log(`[SOURCES_API] URL provided for source ${id}.`);
             if (sourceToUpdate.type === 'file' && fs.existsSync(sourceToUpdate.path)) {
                 try {
@@ -1110,22 +1112,27 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
             }
             sourceToUpdate.path = url;
             sourceToUpdate.type = 'url';
-        } else if (sourceToUpdate.type === 'file' && !req.file && (!sourceToUpdate.path || !fs.existsSync(sourceToUpdate.path))) {
-            console.warn(`[SOURCES_API] Existing file source ${id} has no file and no new file/URL provided.`);
-            return res.status(400).json({ error: 'Existing file source requires a new file if original is missing.' });
+            // FIX: Clear xc_data if switching from XC to URL
+            delete sourceToUpdate.xc_data;
         } else if (xc) {
             console.log(`[SOURCES_API] XC credentials provided for source ${id}.`);
-            if (sourceToUpdate.type === 'file' && fs.existsSync(sourceToUpdate.path)) {
+             if (sourceToUpdate.type === 'file' && fs.existsSync(sourceToUpdate.path)) {
                 try {
                     fs.unlinkSync(sourceToUpdate.path);
-                    console.log(`[SOURCES_API] Deleted old file (switching to XC): ${sourceToUpdate.path}`);
                 } catch (e) { console.error("[SOURCES_API] Could not delete old source file (on type change):", e); }
             }
             sourceToUpdate.xc_data = xc;
             sourceToUpdate.type = 'xc';
-            sourceToUpdate.path = 'Xtream Codes Source'; // Update placeholder
+            try {
+                const xcData = JSON.parse(xc);
+                sourceToUpdate.path = xcData.server || 'Xtream Codes Source';
+            } catch(e) {
+                sourceToUpdate.path = 'Xtream Codes Source';
+            }
+        } else if (sourceToUpdate.type === 'file' && !req.file && (!sourceToUpdate.path || !fs.existsSync(sourceToUpdate.path))) {
+            console.warn(`[SOURCES_API] Existing file source ${id} has no file and no new file/URL provided.`);
+            return res.status(400).json({ error: 'Existing file source requires a new file if original is missing.' });
         }
-
 
         saveSettings(settings);
         console.log(`[SOURCES_API] Source ${id} updated successfully.`);
@@ -1133,22 +1140,29 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
 
     } else { // Add new source
         let newSource;
-        if (sourceType === 'xc') {
-            newSource = {
-                id: `src-${Date.now()}`,
-                name,
-                type: 'xc',
-                path: 'Xtream Codes Source',
-                xcHost,
-                xcUsername,
-                xcPassword,
-                isActive: isActive === 'true',
-                refreshHours: 0, // Refresh is handled by M3U processing
-                lastUpdated: new Date().toISOString(),
-                status: 'Pending',
-                statusMessage: 'Source added. Process to load data.'
-            };
-        } else {
+        
+        // FIX: Unified and corrected logic for adding a new source
+        if (xc) { // It's an XC source
+             let xcData = {};
+             try {
+                 xcData = JSON.parse(xc);
+             } catch (e) {
+                 console.error("Failed to parse XC JSON data:", e);
+                 return res.status(400).json({ error: 'Invalid XC data format.' });
+             }
+             newSource = {
+                 id: `src-${Date.now()}`,
+                 name,
+                 type: 'xc',
+                 path: xcData.server || 'Xtream Codes Source',
+                 xc_data: xc,
+                 isActive: isActive === 'true',
+                 refreshHours: parseInt(refreshHours, 10) || 0,
+                 lastUpdated: new Date().toISOString(),
+                 status: 'Pending',
+                 statusMessage: 'Source added. Process to load data.'
+             };
+        } else { // It's a URL or File source
             newSource = {
                 id: `src-${Date.now()}`,
                 name,
@@ -1162,16 +1176,6 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
             };
         }
         
-        if (req.file) {
-            newSource.type = 'file';
-            newSource.path = req.file.path;
-        } else if (xc) {
-            newSource.type = 'xc';
-            newSource.xc_data = xc; // Store the JSON string with credentials
-            // The 'path' will be constructed later, but we can set a placeholder or leave it empty
-            newSource.path = 'Xtream Codes Source'; 
-        }
-
         if (newSource.type === 'url' && !newSource.path) {
             console.warn('[SOURCES_API] New URL source failed: URL is required.');
             return res.status(400).json({ error: 'URL is required for URL-type source.' });
