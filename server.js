@@ -479,12 +479,17 @@ const parseEpgTime = (timeStr, offsetHours = 0) => {
     return date;
 };
 
+// server.js -> Replace the entire function with this corrected version
+
 async function processAndMergeSources() {
     console.log('[PROCESS] Starting to process and merge all active sources.');
     const settings = getSettings();
 
     let mergedM3uContent = '#EXTM3U\n';
     const activeM3uSources = settings.m3uSources.filter(s => s.isActive);
+    // CORRECTED: The activeEpgSources list is now initialized here, before the M3U loop.
+    const activeEpgSources = settings.epgSources.filter(s => s.isActive);
+
     if (activeM3uSources.length === 0) {
         console.log('[PROCESS] No active M3U sources found.');
     }
@@ -501,53 +506,32 @@ async function processAndMergeSources() {
                     content = fs.readFileSync(sourceFilePath, 'utf-8');
                     sourcePathForLog = sourceFilePath;
                 } else {
-                    console.error(`[M3U] File not found for source "${source.name}": ${sourceFilePath}. Skipping.`);
                     source.status = 'Error';
                     source.statusMessage = 'File not found.';
                     continue;
                 }
-            } else if (source.type === 'url' || source.type === 'xc') {
-                let urlToFetch = source.path;
-                if (source.type === 'xc' && source.xc_data) {
-                    try {
-                        const xc = JSON.parse(source.xc_data);
-                        if (xc.server && xc.username && xc.password) {
-                            // This is where we build the URL for the M3U source
-                            urlToFetch = `${xc.server}/get.php?username=${xc.username}&password=${xc.password}&type=m3u_plus&output=ts`;
-                            console.log(`[M3U] Constructed XC URL for "${source.name}": ${urlToFetch}`);
-                        }
-                    } catch (e) {
-                        console.error(`[M3U] Failed to parse XC credentials for source "${source.name}":`, e);
-                        source.status = 'Error';
-                        source.statusMessage = 'Invalid XC credentials.';
-                        continue;
-                    }
-                }
-                content = await fetchUrlContent(urlToFetch);
+            } else if (source.type === 'url') {
+                content = await fetchUrlContent(source.path);
             } else if (source.type === 'xc') {
                 const fetchOptions = {
-                    headers: {
-                        'User-Agent': 'VLC/3.0.20 (Linux; x86_64)'
-                    }
+                    headers: { 'User-Agent': 'VLC/3.0.20 (Linux; x86_64)' }
                 };
                 const m3uUrl = `${source.xcHost}/get.php?username=${source.xcUsername}&password=${source.xcPassword}&type=m3u_plus&output=ts`;
                 console.log(`[M3U] Constructed XC URL for "${source.name}": ${m3uUrl}`);
                 content = await fetchUrlContent(m3uUrl, fetchOptions);
-                sourcePathForLog = m3uUrl; // For logging purposes
+                sourcePathForLog = m3uUrl;
 
-                // Also add this as an automatic EPG source
                 const epgUrl = `${source.xcHost}/xmltv.php?username=${source.xcUsername}&password=${source.xcPassword}`;
                 const epgSource = {
                     id: `epg_for_${source.id}`,
                     name: `${source.name} (EPG)`,
                     type: 'url',
                     path: epgUrl,
-                    isActive: true, // Auto-activate the EPG
-                    isXcEpg: true, // Mark it so we can hide it from the UI if needed
-                    fetchOptions: fetchOptions // Pass user-agent for EPG too
+                    isActive: true,
+                    isXcEpg: true,
+                    fetchOptions: fetchOptions
                 };
-                
-                // Add it to the list of EPG sources to be processed later in this function
+
                 if (!activeEpgSources.some(s => s.id === epgSource.id)) {
                     activeEpgSources.push(epgSource);
                 }
@@ -559,7 +543,7 @@ async function processAndMergeSources() {
                 let line = lines[i].trim();
                 if (line.startsWith('#EXTINF:')) {
                     const tvgIdMatch = line.match(/tvg-id="([^"]*)"/);
-                    const tvgId = tvgIdMatch ? tvgIdMatch[1] : `no-id-${Math.random()}`; 
+                    const tvgId = tvgIdMatch ? tvgIdMatch[1] : `no-id-${Math.random()}`;
                     const uniqueChannelId = `${source.id}_${tvgId}`;
 
                     const commaIndex = line.lastIndexOf(',');
@@ -573,7 +557,7 @@ async function processAndMergeSources() {
                         const extinfEnd = processedAttributes.indexOf(' ') + 1;
                         processedAttributes = processedAttributes.slice(0, extinfEnd) + `tvg-id="${uniqueChannelId}" ` + processedAttributes.slice(extinfEnd);
                     }
-                    
+
                     processedAttributes += ` vini-source="${source.name}"`;
                     line = processedAttributes + namePart;
                 }
@@ -581,7 +565,7 @@ async function processAndMergeSources() {
                    processedContent += line + '\n';
                 }
             }
-            
+
             mergedM3uContent += processedContent.replace(/#EXTM3U/i, '') + '\n';
             source.status = 'Success';
             source.statusMessage = 'Processed successfully.';
@@ -601,15 +585,17 @@ async function processAndMergeSources() {
         console.error(`[M3U] Error writing merged M3U file: ${writeErr.message}`);
     }
 
-
     const mergedProgramData = {};
     const timezoneOffset = settings.timezoneOffset || 0;
-    const activeEpgSources = settings.epgSources.filter(s => s.isActive);
+
     if (activeEpgSources.length === 0) {
         console.log('[PROCESS] No active EPG sources found.');
     }
 
     for (const source of activeEpgSources) {
+        // Skip sources that might have been added but aren't active (unless it's an auto-added XC EPG)
+        if (!source.isActive && !source.isXcEpg) continue;
+
         console.log(`[EPG] Processing source: "${source.name}" (ID: ${source.id}, Type: ${source.type}, Path: ${source.path})`);
         try {
             let xmlString = '';
@@ -618,31 +604,13 @@ async function processAndMergeSources() {
             if (source.type === 'file') {
                 if (fs.existsSync(source.path)) {
                     xmlString = fs.readFileSync(source.path, 'utf-8');
-                    epgFilePath = source.path;
                 } else {
-                    console.error(`[EPG] File not found for source "${source.name}": ${source.path}. Skipping.`);
                     source.status = 'Error';
                     source.statusMessage = 'File not found.';
                     continue;
                 }
-            } else if (source.type === 'url' || source.type === 'xc') {
-                let urlToFetch = source.path;
-                if (source.type === 'xc' && source.xc_data) {
-                    try {
-                        const xc = JSON.parse(source.xc_data);
-                        if (xc.server && xc.username && xc.password) {
-                            // This is where we build the URL for the EPG source
-                            urlToFetch = `${xc.server}/xmltv.php?username=${xc.username}&password=${xc.password}`;
-                            console.log(`[EPG] Constructed XC URL for "${source.name}": ${urlToFetch}`);
-                        }
-                    } catch (e) {
-                        console.error(`[EPG] Failed to parse XC credentials for source "${source.name}":`, e);
-                        source.status = 'Error';
-                        source.statusMessage = 'Invalid XC credentials.';
-                        continue;
-                    }
-                }
-                xmlString = await fetchUrlContent(urlToFetch);
+            } else if (source.type === 'url') {
+                xmlString = await fetchUrlContent(source.path, source.fetchOptions || {});
                 try {
                     fs.writeFileSync(epgFilePath, xmlString);
                     console.log(`[EPG] Downloaded EPG for "${source.name}" saved to ${epgFilePath}.`);
@@ -654,19 +622,12 @@ async function processAndMergeSources() {
             const epgJson = xmlJS.xml2js(xmlString, { compact: true });
             const programs = epgJson.tv && epgJson.tv.programme ? [].concat(epgJson.tv.programme) : [];
 
-            if (programs.length === 0) {
-                console.warn(`[EPG] No programs found in EPG source "${source.name}". Check XML structure.`);
-            }
-
             const m3uSourceProviders = settings.m3uSources.filter(m3u => m3u.isActive);
 
             for (const prog of programs) {
                 const originalChannelId = prog._attributes?.channel;
-                if (!originalChannelId) {
-                    console.warn(`[EPG] Program without channel ID found in "${source.name}". Skipping.`);
-                    continue;
-                }
-                
+                if (!originalChannelId) continue;
+
                 for(const m3uSource of m3uSourceProviders) {
                     const uniqueChannelId = `${m3uSource.id}_${originalChannelId}`;
 
@@ -676,7 +637,7 @@ async function processAndMergeSources() {
 
                     const titleNode = prog.title && prog.title._cdata ? prog.title._cdata : (prog.title?._text || 'No Title');
                     const descNode = prog.desc && prog.desc._cdata ? prog.desc._cdata : (prog.desc?._text || '');
-                    
+
                     mergedProgramData[uniqueChannelId].push({
                         start: parseEpgTime(prog._attributes.start, timezoneOffset).toISOString(),
                         stop: parseEpgTime(prog._attributes.stop, timezoneOffset).toISOString(),
@@ -685,16 +646,21 @@ async function processAndMergeSources() {
                     });
                 }
             }
-            source.status = 'Success';
-            source.statusMessage = 'Processed successfully.';
-            console.log(`[EPG] Source "${source.name}" processed successfully from ${source.path}.`);
-
+            if (!source.isXcEpg) {
+                 source.status = 'Success';
+                 source.statusMessage = 'Processed successfully.';
+                 console.log(`[EPG] Source "${source.name}" processed successfully from ${source.path}.`);
+            }
         } catch (error) {
             console.error(`[EPG] Failed to process source "${source.name}" from ${source.path}:`, error.message);
-            source.status = 'Error';
-            source.statusMessage = `Processing failed: ${error.message.substring(0, 100)}...`;
+             if (!source.isXcEpg) {
+                source.status = 'Error';
+                source.statusMessage = `Processing failed: ${error.message.substring(0, 100)}...`;
+             }
         }
-         source.lastUpdated = new Date().toISOString();
+         if (!source.isXcEpg) {
+            source.lastUpdated = new Date().toISOString();
+         }
     }
     for (const channelId in mergedProgramData) {
         mergedProgramData[channelId].sort((a, b) => new Date(a.start) - new Date(b.start));
@@ -705,10 +671,10 @@ async function processAndMergeSources() {
     } catch (writeErr) {
         console.error(`[EPG] Error writing merged EPG JSON file: ${writeErr.message}`);
     }
-    
+
     settings.sourcesLastUpdated = new Date().toISOString();
     console.log(`[PROCESS] Finished processing. New 'sourcesLastUpdated' timestamp: ${settings.sourcesLastUpdated}`);
-    
+
     return { success: true, message: 'Sources merged successfully.', updatedSettings: settings };
 }
 
