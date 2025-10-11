@@ -521,6 +521,28 @@
             border-radius: 50%;
             display: inline-block;
         }
+        /* --- NEW: Immersive Mode Styles --- */
+        #app-container.multiview-immersive #main-header,
+        #app-container.multiview-immersive #multiview-header {
+            display: none;
+        }
+        #app-container.multiview-immersive .player-header {
+            display: none;
+        }
+
+        /* This is for the reappearing header logic */
+        #app-container.multiview-immersive #multiview-header.overlay-visible {
+            display: flex; /* Re-show the header */
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            background-color: rgba(31, 41, 55, 0.95); /* bg-gray-800 with transparency */
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
+            z-index: 50; /* Ensure it's on top of the grid */
+        }
+
 
     </style>
 </head>
@@ -666,6 +688,15 @@
                             <span data-icon="trash"></span>
                          </button>
                     </div>
+                    
+                    <!-- NEW: Immersive Mode Toggle -->
+                   <div class="flex items-center gap-2 border-l border-gray-700 pl-4 ml-2">
+                       <label for="immersive-mode-toggle" class="text-sm font-medium text-gray-400 cursor-pointer">Immersive Mode</label>
+                       <label class="switch">
+                           <input type="checkbox" id="immersive-mode-toggle">
+                           <span class="slider"></span>
+                       </label>
+                   </div>
                 </div>
                 <div id="multiview-container" class="flex-grow bg-gray-900 overflow-auto relative custom-scrollbar p-2">
                     <div id="multiview-grid" class="grid-stack"></div>
