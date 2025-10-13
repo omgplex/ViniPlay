@@ -1173,14 +1173,23 @@
                                  <label for="search-scope-select" class="block text-sm font-medium text-gray-400 mb-1">Guide Search Scope</label>
                                   <p class="text-xs text-gray-500 mb-2">Control what the search bar in the TV Guide looks for.</p>
                                  <select id="search-scope-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500">
-                                     <option value="channels_programs">Channels & Programs</option>
-                                     <option value="channels_only" selected>Channels Only</option>
-                                 </select>
+                                    <option value="channels_only_filtered" selected>Search Channels Only (in filtered group)</option>
+                                    <option value="channels_programs_filtered">Search Channels & Programs (in filtered group)</option>
+                                    <option value="all_channels_unfiltered">Search All Channels (ignore group filter)</option>
+                                    <option value="all_channels_programs_unfiltered">Search All Channels & Programs (ignore group filter)</option>
+                                </select>
                              </div>
                             <div>
                                 <label for="notification-lead-time-input" class="block text-sm font-medium text-gray-400 mb-1">Notify Me Before (minutes)</label>
                                 <p class="text-xs text-gray-500 mb-2">Set how many minutes before a program starts you'd like to be notified.</p>
                                 <input type="number" id="notification-lead-time-input" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" min="1" value="10">
+                            </div>
+                            <div class="border-t border-gray-700/50 pt-4">
+                                <label class="block text-sm font-medium text-gray-400 mb-1">Server Public IP Address</label>
+                                <p class="text-xs text-gray-500 mb-2">Server Public IP Address</p>
+                                <div id="public-ip-display" class="w-full bg-gray-900/50 rounded-md px-3 py-2 text-gray-300 font-mono">
+                                    Loading...
+                                </div>
                             </div>
                         </div>
                     </div>
