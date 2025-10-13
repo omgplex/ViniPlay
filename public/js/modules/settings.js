@@ -14,6 +14,24 @@ import { ICONS } from './icons.js';
 let currentSourceTypeForEditor = 'url';
 let hardwareChecked = false; // Flag to prevent re-checking hardware on every UI update
 
+
+/**
+ * Fetches the server's public IP and displays it.
+ */
+async function fetchAndDisplayPublicIp() {
+    const displayEl = document.getElementById('public-ip-display');
+    if (!displayEl) return;
+
+    const res = await apiFetch('/api/public-ip');
+    if (res && res.ok) {
+        const data = await res.json();
+        displayEl.textContent = data.publicIp || 'Could not determine IP.';
+    } else {
+        displayEl.textContent = 'Unavailable';
+    }
+}
+
+
 // --- NEW: Hardware Acceleration ---
 
 /**
@@ -237,7 +255,7 @@ export const updateUIFromSettings = async () => {
         console.warn("Could not detect user's IANA timezone.", e);
     }
     
-    settings.searchScope = settings.searchScope || 'channels_only';
+    settings.searchScope = settings.searchScope || 'channels_only_filtered';
     settings.notificationLeadTime = settings.notificationLeadTime ?? 10;
     
     settings.dvr = settings.dvr || {};
@@ -248,6 +266,7 @@ export const updateUIFromSettings = async () => {
 
     // Update dropdowns and inputs
     UIElements.timezoneOffsetSelect.value = settings.timezoneOffset;
+    fetchAndDisplayPublicIp();
     UIElements.searchScopeSelect.value = settings.searchScope;
     UIElements.notificationLeadTimeInput.value = settings.notificationLeadTime;
     
