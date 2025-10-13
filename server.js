@@ -21,6 +21,8 @@ const webpush = require('web-push');
 const schedule = require('node-schedule');
 const disk = require('diskusage');
 const si = require('systeminformation'); // NEW: For system health monitoring
+// --- NEW: Live Activity Tracking for Redirects ---
+const activeRedirectStreams = new Map(); // Tracks live redirect streams for the admin UI
 
 const app = express();
 const port = 8998;
@@ -272,30 +274,43 @@ function sendSseEvent(userId, eventName, data) {
 
 //-- ENHANCEMENT: New function to broadcast activity updates to all connected admins.
 function broadcastAdminUpdate() {
-    // Construct the current live activity list
-    const liveActivity = Array.from(activeStreamProcesses.values()).map(info => ({
+    // Combine transcoded and redirect streams into one list for the live view
+    const transcodedLive = Array.from(activeStreamProcesses.values()).map(info => ({
         streamKey: info.streamKey,
         userId: info.userId,
         username: info.username,
         channelName: info.channelName,
-        channelLogo: info.channelLogo, // Include logo
-        streamProfileName: info.streamProfileName, // Include profile name
+        channelLogo: info.channelLogo,
+        streamProfileName: info.streamProfileName,
         startTime: info.startTime,
         clientIp: info.clientIp,
-        isTranscoded: info.isTranscoded, // NEW: Include transcoding status
+        isTranscoded: true,
     }));
 
-    // Iterate through all connected SSE clients
+    const redirectLive = Array.from(activeRedirectStreams.values()).map(info => ({
+        // Use historyId for redirect streamKey to ensure it's unique per session
+        streamKey: `${info.userId}::${info.historyId}`, 
+        userId: info.userId,
+        username: info.username,
+        channelName: info.channelName,
+        channelLogo: info.channelLogo,
+        streamProfileName: info.streamProfileName,
+        startTime: info.startTime,
+        clientIp: info.clientIp,
+        isTranscoded: false,
+    }));
+
+    const combinedLiveActivity = [...transcodedLive, ...redirectLive];
+
     for (const clients of sseClients.values()) {
         clients.forEach(client => {
-            // Only send the update if the client is an admin
             if (client.isAdmin) {
-                const message = `event: activity-update\ndata: ${JSON.stringify({ live: liveActivity })}\n\n`;
+                const message = `event: activity-update\ndata: ${JSON.stringify({ live: combinedLiveActivity })}\n\n`;
                 client.res.write(message);
             }
         });
     }
-    console.log(`[SSE_ADMIN] Broadcasted activity update to all connected admins.`);
+    console.log(`[SSE_ADMIN] Broadcasted combined activity update (${combinedLiveActivity.length} live streams) to all connected admins.`);
 }
 
 // NEW: Broadcasts an event to ALL connected clients, regardless of user.
@@ -1822,6 +1837,25 @@ app.post('/api/activity/start-redirect', requireAuth, (req, res) => {
             }
             const historyId = this.lastID;
             console.log(`[REDIRECT_LOG] Logged redirect stream start for user ${username} with history ID: ${historyId}`);
+            
+            // --- NEW: Add to live tracking ---
+            const streamKey = `${userId}::${historyId}`;
+            activeRedirectStreams.set(streamKey, {
+                streamKey,
+                userId,
+                username,
+                channelId,
+                channelName,
+                channelLogo,
+                streamProfileName: 'Redirect',
+                startTime,
+                clientIp,
+                isTranscoded: false,
+                historyId,
+            });
+            broadcastAdminUpdate(); // Notify admins
+            // --- END NEW ---
+
             res.status(201).json({ success: true, historyId });
         }
     );
@@ -1833,13 +1867,22 @@ app.post('/api/activity/stop-redirect', requireAuth, (req, res) => {
         return res.status(400).json({ error: 'History ID is required.' });
     }
 
+    // --- NEW: Remove from live tracking ---
+    const streamKey = `${req.session.userId}::${historyId}`;
+    if (activeRedirectStreams.has(streamKey)) {
+        activeRedirectStreams.delete(streamKey);
+        broadcastAdminUpdate(); // Notify admins
+    }
+    // --- END NEW ---
+
     const endTime = new Date().toISOString();
     db.get("SELECT start_time FROM stream_history WHERE id = ? AND user_id = ?", [historyId, req.session.userId], (err, row) => {
         if (err || !row) {
-            return res.status(404).json({ error: 'Stream history not found.' });
+            // Even if history isn't found, we should respond successfully as the client's goal is to stop.
+            return res.status(200).json({ success: true, message: 'Stream stopped, history record not found.' });
         }
         const duration = Math.round((new Date(endTime).getTime() - new Date(row.start_time).getTime()) / 1000);
-        db.run("UPDATE stream_history SET end_time = ?, duration_seconds = ?, status = 'stopped' WHERE id = ?",
+        db.run("UPDATE stream_history SET end_time = ?, duration_seconds = ?, status = 'stopped' WHERE id = ? AND end_time IS NULL",
             [endTime, duration, historyId],
             (updateErr) => {
                 if (updateErr) {
@@ -1856,7 +1899,7 @@ app.post('/api/activity/stop-redirect', requireAuth, (req, res) => {
 // --- NEW/MODIFIED: Admin Monitoring Endpoints ---
 app.get('/api/admin/activity', requireAuth, requireAdmin, async (req, res) => {
     // 1. Get Live Activity (already up-to-date in memory)
-    const liveActivity = Array.from(activeStreamProcesses.values()).map(info => ({
+    const transcodedLive = Array.from(activeStreamProcesses.values()).map(info => ({
         streamKey: info.streamKey,
         userId: info.userId,
         username: info.username,
@@ -1865,8 +1908,22 @@ app.get('/api/admin/activity', requireAuth, requireAdmin, async (req, res) => {
         streamProfileName: info.streamProfileName,
         startTime: info.startTime,
         clientIp: info.clientIp,
-        isTranscoded: info.isTranscoded,
+        isTranscoded: true,
     }));
+
+    const redirectLive = Array.from(activeRedirectStreams.values()).map(info => ({
+        streamKey: `${info.userId}::${info.historyId}`,
+        userId: info.userId,
+        username: info.username,
+        channelName: info.channelName,
+        channelLogo: info.channelLogo,
+        streamProfileName: info.streamProfileName,
+        startTime: info.startTime,
+        clientIp: info.clientIp,
+        isTranscoded: false,
+    }));
+    
+    const liveActivity = [...transcodedLive, ...redirectLive];
 
     // 2. Get Paginated and Filtered History
     try {
