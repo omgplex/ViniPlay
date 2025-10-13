@@ -638,36 +638,51 @@ export function handleSearchAndFilter(isFirstLoad = false) {
     const searchTerm = UIElements.searchInput.value.trim();
     const selectedGroup = UIElements.groupFilter.value;
     const selectedSource = UIElements.sourceFilter.value;
+    const searchScope = guideState.settings.searchScope || 'channels_only_filtered';
+
     let channelsForGuide = guideState.channels;
 
-    if (selectedGroup !== 'all') {
-        if (selectedGroup === 'favorites') {
-            const favoriteIds = new Set(guideState.settings.favorites || []);
-            channelsForGuide = channelsForGuide.filter(ch => favoriteIds.has(ch.id));
-        } else if (selectedGroup === 'recents') {
-            const recentIds = guideState.settings.recentChannels || [];
-            channelsForGuide = recentIds.map(id => channelsForGuide.find(ch => ch.id === id)).filter(Boolean);
-        } else {
-            channelsForGuide = channelsForGuide.filter(ch => ch.group === selectedGroup);
+    // Determine the base list of channels for filtering and searching
+    let baseChannelList = guideState.channels;
+
+    // If search scope is filtered, we first apply group/source filters to get our base list.
+    if (searchScope.endsWith('_filtered')) {
+        if (selectedGroup !== 'all') {
+            if (selectedGroup === 'favorites') {
+                const favoriteIds = new Set(guideState.settings.favorites || []);
+                baseChannelList = baseChannelList.filter(ch => favoriteIds.has(ch.id));
+            } else if (selectedGroup === 'recents') {
+                const recentIds = guideState.settings.recentChannels || [];
+                baseChannelList = recentIds.map(id => baseChannelList.find(ch => ch.id === id)).filter(Boolean);
+            } else {
+                baseChannelList = baseChannelList.filter(ch => ch.group === selectedGroup);
+            }
+        }
+        if (selectedSource !== 'all') {
+            baseChannelList = baseChannelList.filter(ch => ch.source === selectedSource);
         }
     }
 
-    if (selectedSource !== 'all') {
-        channelsForGuide = channelsForGuide.filter(ch => ch.source === selectedSource);
-    }
-
-    if (searchTerm && appState.fuseChannels && appState.fusePrograms) {
+    // Now, apply search term to the determined base list
+    if (searchTerm) {
         const lowerCaseSearchTerm = searchTerm.toLowerCase();
-        channelsForGuide = channelsForGuide.filter(ch =>
+        channelsForGuide = baseChannelList.filter(ch =>
             (ch.displayName || ch.name).toLowerCase().includes(lowerCaseSearchTerm) ||
             (ch.source && ch.source.toLowerCase().includes(lowerCaseSearchTerm)) ||
             (ch.chno && ch.chno.toLowerCase().includes(lowerCaseSearchTerm))
         );
+    } else {
+        // If no search term, the guide should just show the filtered list
+        channelsForGuide = baseChannelList;
+    }
 
+    // Handle the search results dropdown separately (always searches all for convenience)
+    if (searchTerm && appState.fuseChannels && appState.fusePrograms) {
         const channelResults = appState.fuseChannels.search(searchTerm).slice(0, 10);
-
         let programResults = [];
-        if (guideState.settings.searchScope === 'channels_programs') {
+
+        // Updated logic for program search in dropdown
+        if (searchScope === 'channels_programs_filtered' || searchScope === 'all_channels_programs_unfiltered') {
             programResults = appState.fusePrograms.search(searchTerm).slice(0, 20);
         }
         renderSearchResults(channelResults, programResults);
