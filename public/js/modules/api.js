@@ -289,3 +289,41 @@ export async function stopStream(streamUrl) {
     });
     return res && res.ok;
 }
+
+/**
+ * NEW: Notifies the server that a "Redirect" stream has started.
+ * @param {string} streamUrl - The URL of the stream.
+ * @param {string} channelId - The ID of the channel.
+ * @param {string} channelName - The name of the channel.
+ * @param {string} channelLogo - The URL for the channel's logo.
+ * @returns {Promise<number|null>} - The history ID for this session, or null on failure.
+ */
+export async function startRedirectStream(streamUrl, channelId, channelName, channelLogo) {
+    console.log('[API] Notifying server of REDIRECT stream start.');
+    const res = await apiFetch('/api/activity/start-redirect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ streamUrl, channelId, channelName, channelLogo })
+    });
+
+    if (res && res.ok) {
+        const data = await res.json();
+        return data.historyId;
+    }
+    return null;
+}
+
+/**
+ * NEW: Notifies the server that a "Redirect" stream has stopped.
+ * @param {number} historyId - The history ID of the stream session to stop.
+ * @returns {Promise<boolean>} - True on success, false on failure.
+ */
+export async function stopRedirectStream(historyId) {
+    console.log(`[API] Notifying server of REDIRECT stream stop for history ID: ${historyId}.`);
+    const res = await apiFetch('/api/activity/stop-redirect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ historyId })
+    });
+    return res && res.ok;
+}
