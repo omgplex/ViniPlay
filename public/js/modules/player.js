@@ -198,6 +198,7 @@ export const playChannel = (url, name, channelId) => {
         stopRedirectStream(currentRedirectHistoryId);
         currentRedirectHistoryId = null;
     }
+    const profile = (guideState.settings.streamProfiles || []).find(p => p.id === profileId);
     // If the selected profile is redirect, start a new logging session.
     if (profile.command === 'redirect') {
         const channel = guideState.channels.find(c => c.id === channelId);
@@ -210,7 +211,7 @@ export const playChannel = (url, name, channelId) => {
     }
     // --- End Activity Logging ---
 
-    const profile = (guideState.settings.streamProfiles || []).find(p => p.id === profileId);
+    
     if (!profile) {
         return showNotification("Stream profile not found.", true);
     }
