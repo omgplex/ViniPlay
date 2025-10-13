@@ -8,11 +8,12 @@
 import { UIElements, guideState, appState } from './state.js';
 import { showNotification } from './ui.js';
 // MODIFIED: Import stopStream to explicitly kill the server process.
-import { saveUserSetting, stopStream } from './api.js';
+import { saveUserSetting, stopStream, startRedirectStream, stopRedirectStream } from './api.js';
 
 const MAX_RECENT_LINKS = 10;
 let currentStreamUrl = null; // NEW: Track the URL of the current stream
 let statisticsInterval = null; // NEW: Interval for logging stream statistics.
+let currentRedirectHistoryId = null; // To track redirect streams for logging
 
 // --- Helper Functions ---
 
@@ -118,6 +119,12 @@ export function initDirectPlayer() {
  */
 async function stopAndCleanupDirectPlayer() {
     console.log('[DEBUG] stopAndCleanupDirectPlayer: Function called.');
+
+    // If we were logging a redirect stream, tell the server it has stopped.
+    if (currentRedirectHistoryId) {
+        stopRedirectStream(currentRedirectHistoryId);
+        currentRedirectHistoryId = null;
+    }
 
     // NEW: Clear the statistics logging interval.
     if (statisticsInterval) {
@@ -229,6 +236,30 @@ function playDirectStream(url) {
         logToPlayerConsole(`Proxy URL: ${streamUrlToPlay}`);
         // --- END FIX ---
 
+        } else {
+            logToPlayerConsole('Direct Play is ON. Connecting directly to stream.');
+            // --- Activity Logging for Redirect Streams ---
+            // First, ensure any previous redirect logging session is stopped.
+            if (currentRedirectHistoryId) {
+                stopRedirectStream(currentRedirectHistoryId);
+                currentRedirectHistoryId = null;
+            }
+            // Since this is Direct Play, we need to find channel info manually
+            const allChannels = guideState.channels || [];
+            const channel = allChannels.find(c => c.url === url);
+            const channelId = channel ? channel.id : null;
+            const channelName = channel ? (channel.displayName || channel.name) : 'Direct Stream';
+            const channelLogo = channel ? channel.logo : null;
+    
+            startRedirectStream(url, channelId, channelName, channelLogo)
+                .then(historyId => {
+                    if (historyId) {
+                        currentRedirectHistoryId = historyId;
+                    }
+                });
+            // --- End Activity Logging ---
+        }
+        
     } else {
         logToPlayerConsole('Direct Play is ON. Connecting directly to stream.');
     }
