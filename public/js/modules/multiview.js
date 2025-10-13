@@ -539,10 +539,11 @@ function setActivePlayer(widgetId) {
  * @param {object} channel - The channel object with id, name, and url.
  * @param {HTMLElement} gridstackItemContentEl - The player widget's content container.
  */
-function playChannelInWidget(widgetId, channel, gridstackItemContentEl) {
+async function playChannelInWidget(widgetId, channel, gridstackItemContentEl) {
     if (!gridstackItemContentEl) return;
 
-    stopAndCleanupPlayer(widgetId, false);
+    // Await the cleanup of the previous player to prevent race conditions
+    await stopAndCleanupPlayer(widgetId, false);
 
     const videoEl = gridstackItemContentEl.querySelector('video');
     const playerPlaceholderEl = gridstackItemContentEl.querySelector(`.player-placeholder[id="${widgetId}"]`);
@@ -556,15 +557,11 @@ function playChannelInWidget(widgetId, channel, gridstackItemContentEl) {
     playerUrls.set(widgetId, channel.url);
     console.log(`[MultiView] Stored URL for widget ${widgetId}: ${channel.url}`);
 
-
     videoEl.classList.remove('hidden');
     if (playerPlaceholderEl) {
         playerPlaceholderEl.classList.add('hidden');
     }
 
-    // --- FIX: Simplified Profile Selection ---
-    // This now mirrors the logic in player_direct.js. The client sends the
-    // active profile from settings, and the server handles the HW accel logic.
     const settings = guideState.settings;
     const profileIdToUse = settings.activeStreamProfileId;
     const userAgentId = settings.activeUserAgentId;
@@ -572,7 +569,6 @@ function playChannelInWidget(widgetId, channel, gridstackItemContentEl) {
     console.log(`[MultiView] Using active stream profile from settings: ${profileIdToUse}`);
 
     const profile = (settings.streamProfiles || []).find(p => p.id === profileIdToUse);
-
     if (!profile) {
         showNotification("Active stream profile not found in settings.", true);
         return;
@@ -583,39 +579,30 @@ function playChannelInWidget(widgetId, channel, gridstackItemContentEl) {
         : `/stream?url=${encodeURIComponent(channel.url)}&profileId=${profileIdToUse}&userAgentId=${userAgentId}`;
     
     console.log(`[MultiView] Final stream URL for widget ${widgetId}: ${streamUrlToPlay}`);
-    // --- Activity Logging for Redirect Streams ---
+
     if (profile.command === 'redirect') {
-        startRedirectStream(channel.url, channel.id, channel.name, channel.logo)
-            .then(historyId => {
-                if (historyId) {
-                    redirectHistoryIds.set(widgetId, historyId);
-                }
-            });
+        const historyId = await startRedirectStream(channel.url, channel.id, channel.name, channel.logo);
+        if (historyId) {
+            redirectHistoryIds.set(widgetId, historyId);
+        }
     }
-    // --- End Activity Logging ---
-    // --- END FIX ---
 
     if (mpegts.isSupported()) {
-        // NEW: Configuration for mpegts.js to increase buffer sizes
         const mpegtsConfig = {
             enableStashBuffer: true,
-            stashInitialSize: 4096, // 4MB initial buffer
-            liveBufferLatency: 2.0, // Seek to live edge after 2s of buffer
+            stashInitialSize: 4096,
+            liveBufferLatency: 2.0,
         };
         
         const player = mpegts.createPlayer({
             type: 'mse',
             isLive: true,
             url: streamUrlToPlay
-        }, mpegtsConfig); // Pass the new config here
+        }, mpegtsConfig);
 
-        // Add robust error handling
         player.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
             console.error(`[MultiView] MPEGTS Player Error for ${widgetId}:`, errorType, errorDetail);
-            // If the tab is hidden, this error is expected as part of cleanup. Don't show a notification.
-            if (document.hidden) {
-                console.warn(`[MultiView] Player error occurred while tab was hidden for ${widgetId}. Suppressing notification.`);
-            } else {
+            if (!document.hidden) {
                 showNotification(`Could not play stream: ${channel.name}`, true);
             }
             stopAndCleanupPlayer(widgetId, true);
@@ -624,55 +611,65 @@ function playChannelInWidget(widgetId, channel, gridstackItemContentEl) {
         players.set(widgetId, player);
         player.attachMediaElement(videoEl);
         player.load();
-        player.play().catch(err => {
-            // This catch block might handle initial play errors
-            if (document.hidden) {
-                 console.warn(`[MultiView] player.play() failed for ${widgetId} while hidden. Suppressing notification.`);
-            } else {
-                console.error(`[MultiView] player.play() caught an error for ${widgetId}:`, err);
-                showNotification(`Could not play stream: ${channel.name}`, true);
+        
+        try {
+            await player.play();
+            setActivePlayer(widgetId);
+        } catch (err) {
+            if (err.name !== 'AbortError') { // AbortError is expected if we stop it quickly
+                 console.error(`[MultiView] player.play() caught an error for ${widgetId}:`, err);
+                if (!document.hidden) {
+                    showNotification(`Could not play stream: ${channel.name}`, true);
+                }
+                stopAndCleanupPlayer(widgetId, true);
             }
-            stopAndCleanupPlayer(widgetId, true);
-        });
-
-        setActivePlayer(widgetId);
-
+        }
     } else {
         showNotification('Your browser does not support Media Source Extensions (MSE).', true);
     }
 }
-
 /**
  * Stops the stream and cleans up resources for a specific player widget.
  * @param {string} widgetId - The ID of the player.
  * @param {boolean} resetUI - If true, resets the widget's UI to the placeholder state.
  */
 async function stopAndCleanupPlayer(widgetId, resetUI = true) {
-    // If we were logging a redirect stream for this widget, stop it.
+    const stopPromises = [];
+
     if (redirectHistoryIds.has(widgetId)) {
-        stopRedirectStream(redirectHistoryIds.get(widgetId));
+        stopPromises.push(stopRedirectStream(redirectHistoryIds.get(widgetId)));
         redirectHistoryIds.delete(widgetId);
     }
+
     if (playerUrls.has(widgetId)) {
         const originalUrl = playerUrls.get(widgetId);
         console.log(`[MultiView] Sending stop request for widget ${widgetId}, URL: ${originalUrl}`);
-        await stopStream(originalUrl);
+        stopPromises.push(stopStream(originalUrl));
         playerUrls.delete(widgetId);
     }
 
     if (players.has(widgetId)) {
         const player = players.get(widgetId);
-        try {
-            player.pause();
-            player.unload();
-            player.detachMediaElement();
-            player.destroy();
-        } catch (e) {
-            console.warn(`[MultiView] Error during full cleanup of player for widget ${widgetId}:`, e.message);
-        }
-        players.delete(widgetId);
-        console.log(`[MultiView] Client-side player destroyed for widget ${widgetId}`);
+        players.delete(widgetId); // Immediately remove from map
+        
+        // This is a fire-and-forget cleanup. We don't wait for it.
+        // This prevents blocking when the browser is slow to destroy the player.
+        Promise.resolve().then(() => {
+            try {
+                player.pause();
+                player.unload();
+                player.detachMediaElement();
+                player.destroy();
+                console.log(`[MultiView] Client-side player for widget ${widgetId} destroyed.`);
+            } catch (e) {
+                 // Errors here are common if the player is already in a bad state. We can ignore them.
+                 console.warn(`[MultiView] Non-critical error during player cleanup for widget ${widgetId}:`, e.message);
+            }
+        });
     }
+    
+    // Wait for server-side cleanup to complete
+    await Promise.all(stopPromises);
 
     if (resetUI) {
         const playerPlaceholderEl = document.getElementById(widgetId);
@@ -680,17 +677,18 @@ async function stopAndCleanupPlayer(widgetId, resetUI = true) {
 
         if (widgetContentEl) {
             const videoEl = widgetContentEl.querySelector('video');
-            
-            videoEl.src = "";
-            videoEl.removeAttribute('src');
-            videoEl.load();
-            videoEl.classList.add('hidden');
-            
+            if (videoEl) {
+                videoEl.src = "";
+                videoEl.removeAttribute('src');
+                videoEl.load();
+                videoEl.classList.add('hidden');
+            }
             if (playerPlaceholderEl) {
                 playerPlaceholderEl.classList.remove('hidden');
                 playerPlaceholderEl.dataset.channelId = '';
             }
-            widgetContentEl.querySelector('.player-header-title').textContent = 'No Channel';
+            const titleEl = widgetContentEl.querySelector('.player-header-title');
+            if(titleEl) titleEl.textContent = 'No Channel';
         }
     }
 }
