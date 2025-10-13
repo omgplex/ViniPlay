@@ -641,16 +641,63 @@ export function handleSearchAndFilter(isFirstLoad = false) {
     const searchScope = guideState.settings.searchScope || 'channels_only_filtered';
 
     let channelsForGuide = guideState.channels;
+    let searchResultsChannels = [];
+    let searchResultsPrograms = [];
 
-    // --- CORRECTED LOGIC ---
-    // 1. Always apply group and source filters to determine what's visible in the guide.
+    // --- NEW LOGIC ---
+    // 1. Perform the search first, based on the selected search scope.
+    if (searchTerm && appState.fuseChannels) {
+        let channelSearchPool = guideState.channels; // Default to all channels
+
+        // If scope is "filtered", first apply group/source filters to the search pool.
+        if (searchScope.endsWith('_filtered')) {
+            if (selectedGroup !== 'all') {
+                if (selectedGroup === 'favorites') {
+                    channelSearchPool = channelSearchPool.filter(ch => ch.isFavorite);
+                } else if (selectedGroup === 'recents') {
+                    const recentIds = guideState.settings.recentChannels || [];
+                    channelSearchPool = recentIds.map(id => channelSearchPool.find(ch => ch.id === id)).filter(Boolean);
+                } else {
+                    channelSearchPool = channelSearchPool.filter(ch => ch.group === selectedGroup);
+                }
+            }
+            if (selectedSource !== 'all') {
+                channelSearchPool = channelSearchPool.filter(ch => ch.source === selectedSource);
+            }
+        }
+        
+        // Now, search within the determined pool.
+        const fuseForChannels = new Fuse(channelSearchPool, { keys: ['name', 'displayName', 'source', 'chno'], threshold: 0.4, includeScore: true });
+        searchResultsChannels = fuseForChannels.search(searchTerm);
+
+        // If the guide itself should be filtered by the search term, apply it now.
+        channelsForGuide = searchResultsChannels.map(result => result.item);
+
+        // Search programs if scope includes it.
+        if (searchScope.includes('programs') && appState.fusePrograms) {
+            searchResultsPrograms = appState.fusePrograms.search(searchTerm).slice(0, 20);
+        }
+        
+        renderSearchResults(searchResultsChannels.slice(0, 10), searchResultsPrograms);
+
+    } else {
+        // If no search term, hide the results dropdown.
+        UIElements.searchResultsContainer.innerHTML = '';
+        UIElements.searchResultsContainer.classList.add('hidden');
+    }
+
+    // 2. Apply group and source filters for the main guide view.
+    // If there was a search, this will filter the search results. If not, it filters all channels.
     if (selectedGroup !== 'all') {
         if (selectedGroup === 'favorites') {
-            const favoriteIds = new Set(guideState.settings.favorites || []);
-            channelsForGuide = channelsForGuide.filter(ch => favoriteIds.has(ch.id));
+            channelsForGuide = channelsForGuide.filter(ch => ch.isFavorite);
         } else if (selectedGroup === 'recents') {
             const recentIds = guideState.settings.recentChannels || [];
-            channelsForGuide = recentIds.map(id => channelsForGuide.find(ch => ch.id === id)).filter(Boolean);
+            // We need to find the channels from the already filtered `channelsForGuide` list
+            const guideChannelIds = new Set(channelsForGuide.map(c => c.id));
+            channelsForGuide = recentIds.map(id => {
+                return guideChannelIds.has(id) ? channelsForGuide.find(ch => ch.id === id) : null;
+            }).filter(Boolean);
         } else {
             channelsForGuide = channelsForGuide.filter(ch => ch.group === selectedGroup);
         }
@@ -659,39 +706,9 @@ export function handleSearchAndFilter(isFirstLoad = false) {
         channelsForGuide = channelsForGuide.filter(ch => ch.source === selectedSource);
     }
 
-    // 2. The search term now filters the already-filtered list of channels.
-    if (searchTerm) {
-        channelsForGuide = channelsForGuide.filter(ch =>
-            (ch.displayName || ch.name).toLowerCase().includes(searchTerm) ||
-            (ch.source && ch.source.toLowerCase().includes(searchTerm)) ||
-            (ch.chno && ch.chno.toLowerCase().includes(searchTerm))
-        );
-    }
-    
-    // 3. The search results dropdown logic remains, but is now separate from the guide rendering.
-    if (searchTerm && appState.fuseChannels && appState.fusePrograms) {
-        let channelSearchList = guideState.channels;
-        // The search scope now correctly determines the source list for the dropdown search.
-        if (searchScope.endsWith('_filtered')) {
-            channelSearchList = channelsForGuide;
-        }
-        
-        const fuseForChannels = new Fuse(channelSearchList, { keys: ['name', 'displayName', 'source', 'chno'], threshold: 0.4, includeScore: true });
-        const channelResults = fuseForChannels.search(searchTerm).slice(0, 10);
-        
-        let programResults = [];
-        if (searchScope.includes('programs')) {
-            programResults = appState.fusePrograms.search(searchTerm).slice(0, 20);
-        }
-        renderSearchResults(channelResults, programResults);
-    } else {
-        UIElements.searchResultsContainer.innerHTML = '';
-        UIElements.searchResultsContainer.classList.add('hidden');
-    }
-
+    // 3. Render the guide with the final list of channels.
     return renderGuide(channelsForGuide, isFirstLoad);
 };
-
 /**
  * Renders the search results dropdown.
  * @param {Array} channelResults - Results from Fuse.js channel search.
