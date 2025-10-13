@@ -525,14 +525,20 @@ document.addEventListener('DOMContentLoaded', () => {
     // Register Service Worker
     if ('serviceWorker' in navigator && 'PushManager' in window) {
         console.log('[APP_START] Service Worker and Push API are supported by browser.');
-        navigator.serviceWorker.register('/sw.js') // FIX: Use absolute path
+        navigator.serviceWorker.register('/sw.js')
             .then(swReg => {
                 console.log('[APP_START] Service Worker registered successfully:', swReg);
                 appState.swRegistration = swReg;
+                // The following function is now INSIDE the .then() block
+                // This ensures it only runs after the service worker is ready.
+                return subscribeUserToPush(); 
+            })
+            .then(() => {
+                console.log('[MAIN] Push notification subscription process initiated after SW registration.');
             })
             .catch(error => {
-                console.error('[APP_START] Service Worker registration failed:', error);
-                showNotification('Failed to register service worker for notifications.', true);
+                console.error('[APP_START] Service Worker registration or Push Subscription failed:', error);
+                showNotification('Failed to set up notifications.', true);
             });
     } else {
         console.warn('[APP_START] Push messaging is not supported in this browser environment.');
