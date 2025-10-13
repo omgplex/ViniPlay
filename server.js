@@ -1805,6 +1805,54 @@ app.post('/api/stream/stop', requireAuth, (req, res) => {
     }
 });
 
+app.post('/api/activity/start-redirect', requireAuth, (req, res) => {
+    const { streamUrl, channelId, channelName, channelLogo } = req.body;
+    const userId = req.session.userId;
+    const username = req.session.username;
+    const clientIp = req.clientIp;
+    const startTime = new Date().toISOString();
+
+    db.run(
+        `INSERT INTO stream_history (user_id, username, channel_id, channel_name, start_time, status, client_ip, channel_logo, stream_profile_name) VALUES (?, ?, ?, ?, ?, 'playing', ?, ?, ?)`,
+        [userId, username, channelId, channelName, startTime, clientIp, channelLogo, 'Redirect'],
+        function(err) {
+            if (err) {
+                console.error('[REDIRECT_LOG] Error logging redirect stream start:', err.message);
+                return res.status(500).json({ error: 'Could not log stream start.' });
+            }
+            const historyId = this.lastID;
+            console.log(`[REDIRECT_LOG] Logged redirect stream start for user ${username} with history ID: ${historyId}`);
+            res.status(201).json({ success: true, historyId });
+        }
+    );
+});
+
+app.post('/api/activity/stop-redirect', requireAuth, (req, res) => {
+    const { historyId } = req.body;
+    if (!historyId) {
+        return res.status(400).json({ error: 'History ID is required.' });
+    }
+
+    const endTime = new Date().toISOString();
+    db.get("SELECT start_time FROM stream_history WHERE id = ? AND user_id = ?", [historyId, req.session.userId], (err, row) => {
+        if (err || !row) {
+            return res.status(404).json({ error: 'Stream history not found.' });
+        }
+        const duration = Math.round((new Date(endTime).getTime() - new Date(row.start_time).getTime()) / 1000);
+        db.run("UPDATE stream_history SET end_time = ?, duration_seconds = ?, status = 'stopped' WHERE id = ?",
+            [endTime, duration, historyId],
+            (updateErr) => {
+                if (updateErr) {
+                    console.error(`[REDIRECT_LOG] Error updating redirect stream end for history ID ${historyId}:`, updateErr.message);
+                    return res.status(500).json({ error: 'Could not log stream end.' });
+                }
+                console.log(`[REDIRECT_LOG] Logged redirect stream end for history ID: ${historyId}`);
+                res.json({ success: true });
+            }
+        );
+    });
+});
+
 // --- NEW/MODIFIED: Admin Monitoring Endpoints ---
 app.get('/api/admin/activity', requireAuth, requireAdmin, async (req, res) => {
     // 1. Get Live Activity (already up-to-date in memory)
@@ -2816,6 +2864,22 @@ app.post('/api/validate-url', requireAuth, async (req, res) => {
 // --- NEW: Hardware Info Endpoint ---
 app.get('/api/hardware', requireAuth, (req, res) => {
     res.json(detectedHardware);
+});
+
+app.get('/api/public-ip', requireAuth, (req, res) => {
+    console.log('[IP_API] Fetching public IP address...');
+    https.get('https://ifconfig.me/ip', (ipRes) => {
+        let data = '';
+        ipRes.on('data', (chunk) => {
+            data += chunk;
+        });
+        ipRes.on('end', () => {
+            res.json({ publicIp: data.trim() });
+        });
+    }).on('error', (err) => {
+        console.error('[IP_API] Error fetching public IP:', err.message);
+        res.status(500).json({ error: 'Could not fetch public IP address.' });
+    });
 });
 
 // --- Backup & Restore Endpoints ---
