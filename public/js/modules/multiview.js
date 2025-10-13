@@ -5,7 +5,7 @@
  */
 
 import { appState, guideState, UIElements } from './state.js';
-import { apiFetch, stopStream } from './api.js';
+import { apiFetch, stopStream, startRedirectStream, stopRedirectStream } from './api.js';
 import { showNotification, openModal, closeModal, showConfirm } from './ui.js';
 import { ICONS } from './icons.js';
 
@@ -18,6 +18,7 @@ let lastLayoutBeforeHide = null; // To store layout when tab is hidden
 let immersiveHeaderTimeout = null; // NEW: Timer for immersive mode header
 
 const MAX_PLAYERS = 9;
+const redirectHistoryIds = new Map(); // To track redirect streams for logging
 
 /**
  * NEW: A less aggressive cleanup function specifically for when the tab is hidden.
@@ -168,6 +169,11 @@ export async function cleanupMultiView() {
     }
     players.clear();
     playerUrls.clear();
+    // Stop any active redirect logging sessions
+    for (const historyId of redirectHistoryIds.values()) {
+        stopRedirectStream(historyId);
+    }
+    redirectHistoryIds.clear();
     activePlayerId = null;
     channelSelectorCallback = null;
     lastLayoutBeforeHide = null; // A full cleanup should clear this
@@ -577,6 +583,16 @@ function playChannelInWidget(widgetId, channel, gridstackItemContentEl) {
         : `/stream?url=${encodeURIComponent(channel.url)}&profileId=${profileIdToUse}&userAgentId=${userAgentId}`;
     
     console.log(`[MultiView] Final stream URL for widget ${widgetId}: ${streamUrlToPlay}`);
+    // --- Activity Logging for Redirect Streams ---
+    if (profile.command === 'redirect') {
+        startRedirectStream(channel.url, channel.id, channel.name, channel.logo)
+            .then(historyId => {
+                if (historyId) {
+                    redirectHistoryIds.set(widgetId, historyId);
+                }
+            });
+    }
+    // --- End Activity Logging ---
     // --- END FIX ---
 
     if (mpegts.isSupported()) {
@@ -632,6 +648,11 @@ function playChannelInWidget(widgetId, channel, gridstackItemContentEl) {
  * @param {boolean} resetUI - If true, resets the widget's UI to the placeholder state.
  */
 async function stopAndCleanupPlayer(widgetId, resetUI = true) {
+    // If we were logging a redirect stream for this widget, stop it.
+    if (redirectHistoryIds.has(widgetId)) {
+        stopRedirectStream(redirectHistoryIds.get(widgetId));
+        redirectHistoryIds.delete(widgetId);
+    }
     if (playerUrls.has(widgetId)) {
         const originalUrl = playerUrls.get(widgetId);
         console.log(`[MultiView] Sending stop request for widget ${widgetId}, URL: ${originalUrl}`);
