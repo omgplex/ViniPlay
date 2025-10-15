@@ -13,7 +13,7 @@ import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './
 import { setupPlayerEventListeners, playChannel, stopAndCleanupPlayer } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
 // MODIFIED: Imported showBroadcastMessage
-import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu, showNotification, showBroadcastMessage, updateProcessingStatus } from './modules/ui.js';
+import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu, showNotification, showBroadcastMessage, updateProcessingStatus, showConfirm, refreshGuideAfterProcessing } from './modules/ui.js';
 // MODIFIED: Import navigateToProgramInGuide to handle deep links from notifications.
 import { loadAndScheduleNotifications, subscribeUserToPush, navigateToProgramInGuide } from './modules/notification.js';
 import { setupDvrEventListeners, handleDvrChannelClick, initDvrPage } from './modules/dvr.js';
@@ -513,6 +513,16 @@ function setupCoreEventListeners() {
         });
         mainHeaderObserver.observe(UIElements.mainHeader);
     }
+
+    // monitor the processes of channel sources
+    document.addEventListener('background-process-finished', () => {
+        console.log('[MAIN] Detected background process has finished.');
+        showConfirm(
+            'Sources Processed',
+            'Your sources have finished processing in the background. Would you like to update the TV Guide now?',
+            refreshGuideAfterProcessing // The callback function to execute on confirm
+        );
+    });
 }
 
 
