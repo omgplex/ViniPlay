@@ -635,50 +635,69 @@ const populateSourceFilter = () => {
  * @returns {Promise<boolean>} A promise that resolves when the re-render is complete.
  */
 export function handleSearchAndFilter(isFirstLoad = false) {
-    const searchTerm = UIElements.searchInput.value.trim();
+    const searchTerm = UIElements.searchInput.value.trim().toLowerCase();
     const selectedGroup = UIElements.groupFilter.value;
     const selectedSource = UIElements.sourceFilter.value;
-    let channelsForGuide = guideState.channels;
+    const searchScope = guideState.settings.searchScope || 'channels_only_filtered';
 
+    let channelsForGuide;
+
+    // --- NEW CORRECTED LOGIC ---
+
+    // 1. First, determine the base list of channels based on the group/source filters.
+    // This is what the user sees when NOT searching.
+    let baseFilteredChannels = guideState.channels;
     if (selectedGroup !== 'all') {
         if (selectedGroup === 'favorites') {
-            const favoriteIds = new Set(guideState.settings.favorites || []);
-            channelsForGuide = channelsForGuide.filter(ch => favoriteIds.has(ch.id));
+            baseFilteredChannels = baseFilteredChannels.filter(ch => ch.isFavorite);
         } else if (selectedGroup === 'recents') {
             const recentIds = guideState.settings.recentChannels || [];
-            channelsForGuide = recentIds.map(id => channelsForGuide.find(ch => ch.id === id)).filter(Boolean);
+            baseFilteredChannels = recentIds.map(id => guideState.channels.find(ch => ch.id === id)).filter(Boolean);
         } else {
-            channelsForGuide = channelsForGuide.filter(ch => ch.group === selectedGroup);
+            baseFilteredChannels = baseFilteredChannels.filter(ch => ch.group === selectedGroup);
         }
     }
-
     if (selectedSource !== 'all') {
-        channelsForGuide = channelsForGuide.filter(ch => ch.source === selectedSource);
+        baseFilteredChannels = baseFilteredChannels.filter(ch => ch.source === selectedSource);
     }
 
-    if (searchTerm && appState.fuseChannels && appState.fusePrograms) {
-        const lowerCaseSearchTerm = searchTerm.toLowerCase();
-        channelsForGuide = channelsForGuide.filter(ch =>
-            (ch.displayName || ch.name).toLowerCase().includes(lowerCaseSearchTerm) ||
-            (ch.source && ch.source.toLowerCase().includes(lowerCaseSearchTerm)) ||
-            (ch.chno && ch.chno.toLowerCase().includes(lowerCaseSearchTerm))
-        );
+    // 2. Now, handle the search logic.
+    if (searchTerm) {
+        let channelSearchPool;
+        // Determine if we search ALL channels or just the base filtered list.
+        if (searchScope.endsWith('_unfiltered')) {
+            channelSearchPool = guideState.channels; // Use all channels for the search
+        } else {
+            channelSearchPool = baseFilteredChannels; // Use the already filtered list for the search
+        }
 
-        const channelResults = appState.fuseChannels.search(searchTerm).slice(0, 10);
+        // Perform the channel search on the determined pool.
+        const fuseForChannels = new Fuse(channelSearchPool, { keys: ['name', 'displayName', 'source', 'chno'], threshold: 0.4, includeScore: true });
+        const channelResults = fuseForChannels.search(searchTerm);
 
+        // The guide itself should now ONLY display the results of the search.
+        channelsForGuide = channelResults.map(result => result.item);
+
+        // Perform the program search if the scope allows it.
         let programResults = [];
-        if (guideState.settings.searchScope === 'channels_programs') {
+        if (searchScope.includes('programs') && appState.fusePrograms) {
             programResults = appState.fusePrograms.search(searchTerm).slice(0, 20);
         }
-        renderSearchResults(channelResults, programResults);
+        
+        // Render the search results dropdown.
+        renderSearchResults(channelResults.slice(0, 10), programResults);
+
     } else {
+        // If there is no search term, the guide simply displays the base filtered channels.
+        channelsForGuide = baseFilteredChannels;
+        // And we hide the search results dropdown.
         UIElements.searchResultsContainer.innerHTML = '';
         UIElements.searchResultsContainer.classList.add('hidden');
     }
 
+    // 3. Finally, render the guide with the correct list of channels.
     return renderGuide(channelsForGuide, isFirstLoad);
 };
-
 /**
  * Renders the search results dropdown.
  * @param {Array} channelResults - Results from Fuse.js channel search.

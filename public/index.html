@@ -521,6 +521,28 @@
             border-radius: 50%;
             display: inline-block;
         }
+        /* --- NEW: Immersive Mode Styles --- */
+        #app-container.multiview-immersive #main-header,
+        #app-container.multiview-immersive #multiview-header {
+            display: none;
+        }
+        #app-container.multiview-immersive .player-header {
+            display: none;
+        }
+
+        /* This is for the reappearing header logic */
+        #app-container.multiview-immersive #multiview-header.overlay-visible {
+            display: flex; /* Re-show the header */
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            background-color: rgba(31, 41, 55, 0.95); /* bg-gray-800 with transparency */
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
+            z-index: 50; /* Ensure it's on top of the grid */
+        }
+
 
     </style>
 </head>
@@ -594,7 +616,7 @@
         <main class="flex-grow flex flex-col overflow-hidden">
             <!-- TV Guide Page -->
             <div id="page-guide" class="flex flex-grow flex-col overflow-hidden">
-                <div id="unified-guide-header" class="flex-shrink-0 bg-gray-800 p-2 sm:p-4 border-b border-gray-700 flex flex-col sm:flex-row items-stretch sm:items-center sm:justify-between gap-3">
+                <div id="unified-guide-header" class="relative flex-shrink-0 bg-gray-800 p-2 sm:p-4 border-b border-gray-700 flex flex-col sm:flex-row items-stretch sm:items-center sm:justify-between gap-3 z-40">
                     <div class="flex items-center gap-2 sm:gap-3 date-nav-controls">
                         <span id="guide-date-display" class="text-base sm:text-lg font-semibold text-white"></span>
                         <label for="guide-date-picker" class="bg-gray-700 hover:bg-gray-600 border border-gray-600 rounded-md p-2 cursor-pointer transition-colors" title="Jump to date">
@@ -607,7 +629,7 @@
                         <select id="group-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"></select>
                         <select id="source-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500"></select>
                         <input type="search" id="search-input" placeholder="Search..." class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500 sm:w-48">
-                        <div id="search-results-container" class="hidden absolute top-full right-0 w-full sm:w-96 max-h-80 overflow-y-auto bg-gray-800 border border-gray-600 rounded-md mt-1 z-50 custom-scrollbar shadow-lg"></div>
+                        <div id="search-results-container" class="hidden absolute top-full right-0 w-full sm:w-96 max-h-80 overflow-y-auto bg-gray-800 border border-gray-600 rounded-md mt-1 z-[51] custom-scrollbar shadow-lg"></div>
                     </div>
                 </div>
 
@@ -666,6 +688,15 @@
                             <span data-icon="trash"></span>
                          </button>
                     </div>
+                    
+                    <!-- NEW: Immersive Mode Toggle -->
+                   <div class="flex items-center gap-2 border-l border-gray-700 pl-4 ml-2">
+                       <label for="immersive-mode-toggle" class="text-sm font-medium text-gray-400 cursor-pointer">Immersive Mode</label>
+                       <label class="switch">
+                           <input type="checkbox" id="immersive-mode-toggle">
+                           <span class="slider"></span>
+                       </label>
+                   </div>
                 </div>
                 <div id="multiview-container" class="flex-grow bg-gray-900 overflow-auto relative custom-scrollbar p-2">
                     <div id="multiview-grid" class="grid-stack"></div>
@@ -739,7 +770,7 @@
 
             <!-- DVR Page -->
             <div id="page-dvr" class="hidden flex-grow flex-col items-center p-4 overflow-y-auto custom-scrollbar">
-                <div class="w-full max-w-6xl mx-auto space-y-8 pb-16">
+                <div class="w-full max-w-6xl xl:max-w-screen-xl mx-auto space-y-8 pb-16">
                     <div id="dvr-storage-bar-container" class="bg-gray-800 p-4 rounded-xl shadow-lg">
                         <div class="flex justify-between items-center mb-1 text-sm">
                             <span class="font-medium text-white">Storage Usage</span>
@@ -1142,14 +1173,23 @@
                                  <label for="search-scope-select" class="block text-sm font-medium text-gray-400 mb-1">Guide Search Scope</label>
                                   <p class="text-xs text-gray-500 mb-2">Control what the search bar in the TV Guide looks for.</p>
                                  <select id="search-scope-select" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500">
-                                     <option value="channels_programs">Channels & Programs</option>
-                                     <option value="channels_only" selected>Channels Only</option>
-                                 </select>
+                                    <option value="channels_only_filtered" selected>Search Channels Only (in filtered group)</option>
+                                    <option value="channels_programs_filtered">Search Channels & Programs (in filtered group)</option>
+                                    <option value="all_channels_unfiltered">Search All Channels (ignore group filter)</option>
+                                    <option value="all_channels_programs_unfiltered">Search All Channels & Programs (ignore group filter)</option>
+                                </select>
                              </div>
                             <div>
                                 <label for="notification-lead-time-input" class="block text-sm font-medium text-gray-400 mb-1">Notify Me Before (minutes)</label>
                                 <p class="text-xs text-gray-500 mb-2">Set how many minutes before a program starts you'd like to be notified.</p>
                                 <input type="number" id="notification-lead-time-input" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" min="1" value="10">
+                            </div>
+                            <div class="border-t border-gray-700/50 pt-4">
+                                <label class="block text-sm font-medium text-gray-400 mb-1">Server Public IP Address</label>
+                                <p class="text-xs text-gray-500 mb-2">Server Public IP Address</p>
+                                <div id="public-ip-display" class="w-full bg-gray-900/50 rounded-md px-3 py-2 text-gray-300 font-mono">
+                                    Loading...
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1367,6 +1407,7 @@
                              <div class="flex border border-gray-600 rounded-md overflow-hidden">
                                 <button type="button" id="source-editor-type-btn-url" class="flex-1 py-2 text-sm text-gray-300 hover:bg-gray-700/80">URL</button>
                                 <button type="button" id="source-editor-type-btn-file" class="flex-1 py-2 text-sm text-gray-300 hover:bg-gray-700/80">File</button>
+                                <button type="button" id="source-editor-type-btn-xc" class="flex-1 py-2 text-sm text-gray-300 hover:bg-gray-700/80">XC</button>
                             </div>
                         </div>
                         <div id="source-editor-url-container">
@@ -1381,6 +1422,20 @@
                             <label for="source-editor-file" class="block text-sm font-medium text-gray-400">File</label>
                             <input type="file" id="source-editor-file" class="mt-1 block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-500 file:text-white hover:file:bg-blue-600 cursor-pointer">
                             <p id="source-editor-file-info" class="text-xs text-gray-500 mt-1"></p>
+                        </div>
+                        <div id="source-editor-xc-container" class="hidden space-y-4">
+                            <div>
+                                <label for="source-editor-xc-url" class="block text-sm font-medium text-gray-400">Server URL</label>
+                                <input type="url" id="source-editor-xc-url" placeholder="http://xtream.example.com:8080" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+                            <div>
+                                <label for="source-editor-xc-username" class="block text-sm font-medium text-gray-400">Username</label>
+                                <input type="text" id="source-editor-xc-username" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+                            <div>
+                                <label for="source-editor-xc-password" class="block text-sm font-medium text-gray-400">Password</label>
+                                <input type="password" id="source-editor-xc-password" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500">
+                            </div>
                         </div>
                         <div id="source-editor-refresh-container">
                             <label for="source-editor-refresh-interval" class="block text-sm font-medium text-gray-400">Refresh Interval (URL only)</label>
@@ -1526,5 +1581,23 @@
 
     <script type="module" src="/js/main.js"></script>
 
+    <div id="processing-status-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-[70] p-4">
+        <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl flex flex-col" style="max-height: 80vh;">
+            <div class="p-4 border-b border-gray-700 flex-shrink-0">
+                <h3 id="processing-status-title" class="text-xl font-bold text-white">Processing Sources...</h3>
+            </div>
+            <div id="processing-status-log" class="p-6 flex-grow overflow-y-auto custom-scrollbar font-mono text-sm text-gray-400 space-y-2">
+                </div>
+            <div id="processing-status-footer" class="bg-gray-700/50 px-6 py-4 flex justify-end gap-4 rounded-b-lg flex-shrink-0">
+                <div id="processing-status-running-actions" class="hidden">
+                    <button type="button" id="processing-status-background-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Continue in the background</button>
+                </div>
+                <div id="processing-status-finished-actions" class="hidden">
+                    <button type="button" id="processing-status-close-refresh-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md">Close and update</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
 </body>
 </html>

@@ -11,7 +11,8 @@ import { initMultiView, isMultiViewActive, cleanupMultiView } from './multiview.
 import { initDvrPage } from './dvr.js';
 import { stopAndCleanupPlayer } from './player.js';
 import { initDirectPlayer, isDirectPlayerActive, cleanupDirectPlayer } from './player_direct.js';
-import { finalizeGuideLoad } from './guide.js';
+// MODIFIED: Import handleGuideLoad and fetchConfig for the refresh logic
+import { finalizeGuideLoad, handleGuideLoad } from './guide.js';
 import { fetchConfig } from './api.js';
 import { initActivityPage } from './admin.js';
 
@@ -22,6 +23,9 @@ let activeModalCloseListener = null;
 let isResizing = false;
 // FINAL FIX: Flag to temporarily block config reloads after a setting is saved.
 let blockConfigReload = false;
+
+// NEW: Exported variable to track if processing is running
+export let isProcessingRunning = false;
 
 
 /**
@@ -501,3 +505,144 @@ export const switchTab = (activeTab) => {
     else newPath = '/settings';
     navigate(newPath);
 };
+
+// Variable to track the last processing status to determine the action of the main button
+// let isProcessingRunning = false; //commenting this out as it's exported above
+
+// MODIFIED: Add export to this function
+/**
+ * NEW: Initiates a refresh of the TV Guide with new data.
+ */
+export async function refreshGuideAfterProcessing() {
+    console.log('[UI_PROCESS] Finalizing process and refreshing guide...');
+    // 1. Fetch the absolute latest config from the server
+    const config = await fetchConfig();
+
+    // 2. Update the global state
+    if (config) {
+        Object.assign(guideState.settings, config.settings || {});
+    }
+
+    // 3. Close the modal
+    closeModal(UIElements.processingStatusModal);
+
+    // 4. Force a refresh of the TV Guide page with the new data
+    // This uses the content from the latest config fetch.
+    if (config?.m3uContent) {
+        await guideState.settings.timezoneOffset; // Ensure timezone is set before parsing
+        await import('./guide.js').then(module => module.handleGuideLoad(config.m3uContent, config.epgContent));
+        showNotification('Sources processed. TV Guide updated!', false, 4000);
+        navigate('/tvguide');
+    } else {
+        showNotification('Sources processed, but no guide data found.', true, 4000);
+    }
+
+    // 5. Update settings page UI for source status indicators
+    import('./settings.js').then(module => module.updateUIFromSettings());
+}
+
+
+/**
+ * NEW: Shows and resets the processing status modal.
+ */
+export function showProcessingModal() {
+    const modal = UIElements.processingStatusModal;
+    const logContainer = UIElements.processingStatusLog;
+    
+    if (!modal || !logContainer || !UIElements.processingStatusBackgroundBtn || !UIElements.processingStatusCloseRefreshBtn || !UIElements.processingStatusRunningActions || !UIElements.processingStatusFinishedActions) {
+        console.error('[UI_PROCESS] Missing processing modal elements in UIElements.');
+        return;
+    }
+
+    // Reset the modal state
+    logContainer.innerHTML = '';
+    isProcessingRunning = true; // Assume running when modal is first opened
+    
+    // Hide all action buttons initially
+    UIElements.processingStatusRunningActions.classList.remove('hidden');
+    UIElements.processingStatusFinishedActions.classList.add('hidden');
+    UIElements.processingStatusBackgroundBtn.classList.remove('hidden');
+    
+    // 1. Setup 'Continue in the background' button
+    UIElements.processingStatusBackgroundBtn.onclick = () => {
+        closeModal(modal);
+        showNotification('Processing continued in the background.');
+        // The main process-sources-btn listener is set up in settings.js to handle reopening
+    };
+
+    // 2. Setup 'Close and refresh' button
+    UIElements.processingStatusCloseRefreshBtn.onclick = refreshGuideAfterProcessing;
+
+    openModal(modal);
+}
+
+// MODIFIED: updateProcessingStatus function
+/**
+ * NEW: Updates the content of the processing status modal.
+ * @param {string} message - The log message to display.
+ * @param {string} type - The type of message ('info', 'success', 'error', 'final_success').
+ */
+export function updateProcessingStatus(message, type = 'info') {
+    const logContainer = UIElements.processingStatusLog;
+    const modal = UIElements.processingStatusModal; // Get a reference to the modal
+
+    // --- New Button Logic ---
+    const runningActionsEl = UIElements.processingStatusRunningActions;
+    const finishedActionsEl = UIElements.processingStatusFinishedActions;
+    // --- End New Button Logic ---
+
+    if (!logContainer || !runningActionsEl || !finishedActionsEl || !modal) return;
+
+    const logEntry = document.createElement('p');
+    const timestamp = new Date().toLocaleTimeString();
+    let typeIndicator = '';
+    let colorClass = 'text-gray-400';
+    let isFinished = false;
+
+    switch (type) {
+        case 'success':
+            typeIndicator = '[SUCCESS]';
+            colorClass = 'text-green-400';
+            break;
+        case 'final_success':
+            typeIndicator = '[SUCCESS]';
+            colorClass = 'text-green-400';
+            isFinished = true;
+            break;
+        case 'error':
+            typeIndicator = '[ERROR]';
+            colorClass = 'text-red-400';
+            isFinished = true;
+            break;
+        case 'info':
+        default:
+            typeIndicator = '[INFO]';
+            break;
+    }
+
+    logEntry.innerHTML = `<span class="text-gray-500">${timestamp}</span> <span class="${colorClass} font-semibold">${typeIndicator}</span> <span class="${colorClass}">${message}</span>`;
+    logContainer.appendChild(logEntry);
+
+    // Auto-scroll to the bottom
+    logContainer.scrollTop = logContainer.scrollHeight;
+
+    // Update button visibility based on completion
+    if (isFinished) {
+        isProcessingRunning = false;
+        runningActionsEl.classList.add('hidden');
+        finishedActionsEl.classList.remove('hidden');
+
+        // *** NEW LOGIC ***
+        // If the process is finished and the modal is hidden (running in background),
+        // dispatch a global event to notify the app.
+        if (modal.classList.contains('hidden')) {
+            console.log('[UI_PROCESS] Background process finished. Dispatching event.');
+            document.dispatchEvent(new CustomEvent('background-process-finished'));
+        }
+        // *** END NEW LOGIC ***
+
+    } else {
+        runningActionsEl.classList.remove('hidden');
+        finishedActionsEl.classList.add('hidden');
+    }
+}

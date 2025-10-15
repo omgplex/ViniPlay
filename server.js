@@ -1,4 +1,4 @@
-// A Node.js server for the VINI PLAY IPTV Player.
+// A Node.js server for the VINI PLAY IPTV Player. 
 // Implements server-side EPG parsing, secure environment variables, and improved logging.
 
 // Load environment variables from .env file
@@ -21,6 +21,8 @@ const webpush = require('web-push');
 const schedule = require('node-schedule');
 const disk = require('diskusage');
 const si = require('systeminformation'); // NEW: For system health monitoring
+// --- NEW: Live Activity Tracking for Redirects ---
+const activeRedirectStreams = new Map(); // Tracks live redirect streams for the admin UI
 
 const app = express();
 const port = 8998;
@@ -28,7 +30,7 @@ const saltRounds = 10;
 // Initialize global variables at the top-level scope
 let notificationCheckInterval = null;
 const sourceRefreshTimers = new Map();
-let detectedHardware = { nvidia: null, intel: null }; // NEW: To store detected GPU info
+let detectedHardware = { nvidia: null, intel_qsv: null, intel_vaapi: null }; // MODIFIED: To store specific Intel GPU info
 
 // --- ENHANCEMENT: For Server-Sent Events (SSE) ---
 // This map will store active client connections for real-time updates.
@@ -194,6 +196,19 @@ app.use('/dvr', requireAuth, express.static(DVR_DIR));
 
 // --- Helper Functions ---
 /**
+ * NEW: Sends a real-time status update to the client during source processing.
+ * @param {object} req - The Express request object, used to identify the user.
+ * @param {string} message - The status message to send.
+ * @param {string} type - The type of message (e.g., 'info', 'success', 'error').
+ */
+function sendProcessingStatus(req, message, type = 'info') {
+    if (req && req.session && req.session.userId) {
+        sendSseEvent(req.session.userId, 'processing-status', { message, type });
+    }
+}
+
+
+/**
  * NEW: Detects available hardware for transcoding.
  */
 async function detectHardwareAcceleration() {
@@ -209,13 +224,25 @@ async function detectHardwareAcceleration() {
         }
     });
 
-    // Detect Intel Quick Sync Video (QSV)
-    if (fs.existsSync('/dev/dri/renderD128')) {
-        detectedHardware.intel = 'Intel Quick Sync Video';
-        console.log('[HW] Intel QSV detected.');
-    } else {
-        console.log('[HW] Intel QSV not detected.');
-    }
+    // MODIFIED: Use 'vainfo' for more robust detection of Intel VA-API and QSV
+    exec('vainfo', (err, stdout, stderr) => {
+        if (err || stderr) {
+            console.log('[HW] VA-API not detected or vainfo command failed.');
+            detectedHardware.intel_qsv = null;
+            detectedHardware.intel_vaapi = null;
+        } else {
+            // iHD driver is for modern Intel GPUs (Gen9+) and is preferred for QSV
+            if (stdout.includes('iHD_drv_video.so')) {
+                detectedHardware.intel_qsv = 'Intel Quick Sync Video';
+                console.log('[HW] Intel QSV (iHD driver) detected via VA-API.');
+            }
+            // i965 driver is for older Intel GPUs (pre-Gen9)
+            if (stdout.includes('i965_drv_video.so')) {
+                detectedHardware.intel_vaapi = 'Intel VA-API (Legacy)';
+                console.log('[HW] Intel VA-API (i965 driver) detected.');
+            }
+        }
+    });
 }
 
 // MODIFIED: This function is now mostly for multi-view scenarios.
@@ -260,30 +287,43 @@ function sendSseEvent(userId, eventName, data) {
 
 //-- ENHANCEMENT: New function to broadcast activity updates to all connected admins.
 function broadcastAdminUpdate() {
-    // Construct the current live activity list
-    const liveActivity = Array.from(activeStreamProcesses.values()).map(info => ({
+    // Combine transcoded and redirect streams into one list for the live view
+    const transcodedLive = Array.from(activeStreamProcesses.values()).map(info => ({
         streamKey: info.streamKey,
         userId: info.userId,
         username: info.username,
         channelName: info.channelName,
-        channelLogo: info.channelLogo, // Include logo
-        streamProfileName: info.streamProfileName, // Include profile name
+        channelLogo: info.channelLogo,
+        streamProfileName: info.streamProfileName,
         startTime: info.startTime,
         clientIp: info.clientIp,
-        isTranscoded: info.isTranscoded, // NEW: Include transcoding status
+        isTranscoded: true,
     }));
 
-    // Iterate through all connected SSE clients
+    const redirectLive = Array.from(activeRedirectStreams.values()).map(info => ({
+        // Use historyId for redirect streamKey to ensure it's unique per session
+        streamKey: `${info.userId}::${info.historyId}`, 
+        userId: info.userId,
+        username: info.username,
+        channelName: info.channelName,
+        channelLogo: info.channelLogo,
+        streamProfileName: info.streamProfileName,
+        startTime: info.startTime,
+        clientIp: info.clientIp,
+        isTranscoded: false,
+    }));
+
+    const combinedLiveActivity = [...transcodedLive, ...redirectLive];
+
     for (const clients of sseClients.values()) {
         clients.forEach(client => {
-            // Only send the update if the client is an admin
             if (client.isAdmin) {
-                const message = `event: activity-update\ndata: ${JSON.stringify({ live: liveActivity })}\n\n`;
+                const message = `event: activity-update\ndata: ${JSON.stringify({ live: combinedLiveActivity })}\n\n`;
                 client.res.write(message);
             }
         });
     }
-    console.log(`[SSE_ADMIN] Broadcasted activity update to all connected admins.`);
+    console.log(`[SSE_ADMIN] Broadcasted combined activity update (${combinedLiveActivity.length} live streams) to all connected admins.`);
 }
 
 // NEW: Broadcasts an event to ALL connected clients, regardless of user.
@@ -310,6 +350,8 @@ function getSettings() {
             { id: 'ffmpeg-nvidia', name: 'ffmpeg (NVIDIA NVENC)', command: '-user_agent "{userAgent}" -re -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a copy -f mpegts pipe:1', isDefault: false },
             { id: 'ffmpeg-nvidia-legacy', name: 'ffmpeg (NVIDIA NVENC - Legacy)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false },
             { id: 'ffmpeg-intel', name: 'ffmpeg (Intel QSV)', command: '-hwaccel qsv -c:v h264_qsv -i "{streamUrl}" -c:v h264_qsv -preset medium -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false },
+            // NEW: Add this line for VA-API
+            { id: 'ffmpeg-vaapi', name: 'ffmpeg (VA-API)', command: '-hwaccel vaapi -hwaccel_output_format vaapi -i "{streamUrl}" -vf \'format=nv12,hwupload\' -c:v h264_vaapi -preset medium -c:a aac -b:a 128k -f mpegts pipe:1', isDefault: false },
             { id: 'ffmpeg-nvidia-reconnect', name: 'ffmpeg (NVIDIA reconnect)', command: '-user_agent "{userAgent}" -re -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a copy -f mpegts pipe:1', isDefault: false },
             { id: 'redirect', name: 'Redirect (No Transcoding)', command: 'redirect', isDefault: false }
         ],
@@ -330,7 +372,9 @@ function getSettings() {
                 // Legacy MP4 profiles, no longer default.
                 { id: 'dvr-mp4-default', name: 'Legacy MP4 (H.264/AAC)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: false },
                 { id: 'dvr-mp4-nvidia', name: 'NVIDIA NVENC MP4 (H.264/AAC)', command: '-user_agent "{userAgent}" -i "{streamUrl}" -c:v h264_nvenc -preset p6 -tune hq -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: false },
-                { id: 'dvr-mp4-intel', name: 'Intel QSV MP4 (H.264/AAC)', command: '-hwaccel qsv -c:v h264_qsv -i "{streamUrl}" -c:v h264_qsv -preset medium -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: false }
+                { id: 'dvr-mp4-intel', name: 'Intel QSV MP4 (H.264/AAC)', command: '-hwaccel qsv -c:v h264_qsv -i "{streamUrl}" -c:v h264_qsv -preset medium -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: false },
+                // NEW: Add this line for VA-API recording
+                { id: 'dvr-mp4-vaapi', name: 'VA-API MP4 (H.264/AAC)', command: '-hwaccel vaapi -hwaccel_output_format vaapi -i "{streamUrl}" -vf \'format=nv12,hwupload\' -c:v h264_vaapi -preset medium -c:a aac -b:a 128k -movflags +faststart -f mp4 "{filePath}"', isDefault: false }
             ]
         },
         activeUserAgentId: `default-ua-1724778434000`,
@@ -413,17 +457,17 @@ function saveSettings(settings) {
     }
 }
 
-function fetchUrlContent(url) {
+function fetchUrlContent(url, options = {}) { // <-- MODIFIED
     return new Promise((resolve, reject) => {
         const protocol = url.startsWith('https') ? https : http;
-        const TIMEOUT_DURATION = 60000; // 60 seconds
+        const TIMEOUT_DURATION = 60000;
         console.log(`[FETCH] Attempting to fetch URL content: ${url} (Timeout: ${TIMEOUT_DURATION/1000}s)`);
 
-        const request = protocol.get(url, { timeout: TIMEOUT_DURATION }, (res) => {
+        const request = protocol.get(url, { timeout: TIMEOUT_DURATION, ...options }, (res) => { // <-- MODIFIED
             if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
                 console.log(`[FETCH] Redirecting to: ${res.headers.location}`);
-                request.abort(); // Abort the current request before following redirect
-                return fetchUrlContent(new URL(res.headers.location, url).href).then(resolve, reject);
+                request.abort(); 
+                return fetchUrlContent(new URL(res.headers.location, url).href, options).then(resolve, reject); // <-- MODIFIED
             }
             if (res.statusCode !== 200) {
                 console.error(`[FETCH] Failed to fetch ${url}: Status Code ${res.statusCode}`);
@@ -444,7 +488,7 @@ function fetchUrlContent(url) {
             console.error(`[FETCH] ${timeoutError.message}`);
             reject(timeoutError);
         });
-        
+
         request.on('error', (err) => {
             console.error(`[FETCH] Network error fetching ${url}: ${err.message}`);
             reject(err);
@@ -474,18 +518,25 @@ const parseEpgTime = (timeStr, offsetHours = 0) => {
     return date;
 };
 
-async function processAndMergeSources() {
+// server.js -> Replace the entire function with this corrected version
+
+async function processAndMergeSources(req) { // <-- MODIFIED
     console.log('[PROCESS] Starting to process and merge all active sources.');
+    sendProcessingStatus(req, 'Starting to process sources...', 'info'); // <-- NEW
     const settings = getSettings();
 
     let mergedM3uContent = '#EXTM3U\n';
     const activeM3uSources = settings.m3uSources.filter(s => s.isActive);
+    const activeEpgSources = settings.epgSources.filter(s => s.isActive);
+
     if (activeM3uSources.length === 0) {
         console.log('[PROCESS] No active M3U sources found.');
+        sendProcessingStatus(req, 'No active M3U sources found.', 'info'); // <-- NEW
     }
 
     for (const source of activeM3uSources) {
         console.log(`[M3U] Processing source: "${source.name}" (ID: ${source.id}, Type: ${source.type}, Path: ${source.path})`);
+        sendProcessingStatus(req, `Processing M3U source: "${source.name}"...`, 'info'); // <-- NEW
         try {
             let content = '';
             let sourcePathForLog = source.path;
@@ -496,22 +547,63 @@ async function processAndMergeSources() {
                     content = fs.readFileSync(sourceFilePath, 'utf-8');
                     sourcePathForLog = sourceFilePath;
                 } else {
-                    console.error(`[M3U] File not found for source "${source.name}": ${sourceFilePath}. Skipping.`);
+                    const errorMsg = `File not found for source "${source.name}". Skipping.`; // <-- NEW
+                    sendProcessingStatus(req, `Error: ${errorMsg}`, 'error'); // <-- NEW
                     source.status = 'Error';
                     source.statusMessage = 'File not found.';
                     continue;
                 }
             } else if (source.type === 'url') {
+                sendProcessingStatus(req, ` -> Fetching content from URL...`, 'info'); // <-- NEW
                 content = await fetchUrlContent(source.path);
+                sendProcessingStatus(req, ` -> Successfully fetched M3U content.`, 'info'); // <-- NEW
+            } else if (source.type === 'xc') {
+                if (!source.xc_data) {
+                    throw new Error("XC source is missing credential data (xc_data).");
+                }
+                const xcInfo = JSON.parse(source.xc_data);
+                const { server, username, password } = xcInfo;
+
+                if (!server || !username || !password) {
+                    throw new Error("XC source is missing server, username, or password.");
+                }
+
+                const fetchOptions = {
+                    headers: { 'User-Agent': 'VLC/3.0.20 (Linux; x86_64)' }
+                };
+                const m3uUrl = `${server}/get.php?username=${username}&password=${password}&type=m3u_plus&output=ts`;
+                console.log(`[M3U] Constructed XC URL for "${source.name}": ${m3uUrl}`);
+                sendProcessingStatus(req, ` -> Fetching content from XC server...`, 'info'); // <-- NEW
+                content = await fetchUrlContent(m3uUrl, fetchOptions);
+                sourcePathForLog = m3uUrl;
+                sendProcessingStatus(req, ` -> Successfully fetched M3U content from XC server.`, 'info'); // <-- NEW
+
+                const epgUrl = `${server}/xmltv.php?username=${username}&password=${password}`;
+                const epgSource = {
+                    id: `epg_for_${source.id}`,
+                    name: `${source.name} (EPG)`,
+                    type: 'url',
+                    path: epgUrl,
+                    isActive: true,
+                    isXcEpg: true,
+                    fetchOptions: fetchOptions
+                };
+
+                if (!activeEpgSources.some(s => s.id === epgSource.id)) {
+                    activeEpgSources.push(epgSource);
+                    sendProcessingStatus(req, ` -> Automatically added EPG source for "${source.name}".`, 'info'); // <-- NEW
+                }
             }
 
             const lines = content.split('\n');
             let processedContent = '';
+            let streamCount = 0; // <-- NEW
             for (let i = 0; i < lines.length; i++) {
                 let line = lines[i].trim();
                 if (line.startsWith('#EXTINF:')) {
+                    streamCount++; // <-- NEW
                     const tvgIdMatch = line.match(/tvg-id="([^"]*)"/);
-                    const tvgId = tvgIdMatch ? tvgIdMatch[1] : `no-id-${Math.random()}`; 
+                    const tvgId = tvgIdMatch ? tvgIdMatch[1] : `no-id-${Math.random()}`;
                     const uniqueChannelId = `${source.id}_${tvgId}`;
 
                     const commaIndex = line.lastIndexOf(',');
@@ -525,7 +617,7 @@ async function processAndMergeSources() {
                         const extinfEnd = processedAttributes.indexOf(' ') + 1;
                         processedAttributes = processedAttributes.slice(0, extinfEnd) + `tvg-id="${uniqueChannelId}" ` + processedAttributes.slice(extinfEnd);
                     }
-                    
+
                     processedAttributes += ` vini-source="${source.name}"`;
                     line = processedAttributes + namePart;
                 }
@@ -533,14 +625,17 @@ async function processAndMergeSources() {
                    processedContent += line + '\n';
                 }
             }
-            
+
             mergedM3uContent += processedContent.replace(/#EXTM3U/i, '') + '\n';
             source.status = 'Success';
-            source.statusMessage = 'Processed successfully.';
+            source.statusMessage = `Processed ${streamCount} streams successfully.`; // <-- CORRECT, DYNAMIC VERSION
             console.log(`[M3U] Source "${source.name}" processed successfully from ${sourcePathForLog}.`);
+            sendProcessingStatus(req, ` -> Processed ${streamCount} streams from "${source.name}".`, 'info'); // <-- NEW
 
         } catch (error) {
-            console.error(`[M3U] Failed to process source "${source.name}" from ${source.path}:`, error.message);
+            const errorMsg = `Failed to process source "${source.name}" from ${source.path}: ${error.message}`; // <-- NEW
+            console.error(`[M3U] ${errorMsg}`); // <-- MODIFIED
+            sendProcessingStatus(req, `Error: ${errorMsg}`, 'error'); // <-- NEW
             source.status = 'Error';
             source.statusMessage = `Processing failed: ${error.message.substring(0, 100)}...`;
         }
@@ -549,20 +644,25 @@ async function processAndMergeSources() {
     try {
         fs.writeFileSync(MERGED_M3U_PATH, mergedM3uContent);
         console.log(`[M3U] Merged M3U content saved to ${MERGED_M3U_PATH}.`);
+        sendProcessingStatus(req, `Successfully merged all M3U sources.`, 'success'); // <-- NEW
     } catch (writeErr) {
         console.error(`[M3U] Error writing merged M3U file: ${writeErr.message}`);
+        sendProcessingStatus(req, `Error writing merged M3U file: ${writeErr.message}`, 'error'); // <-- NEW
     }
-
 
     const mergedProgramData = {};
     const timezoneOffset = settings.timezoneOffset || 0;
-    const activeEpgSources = settings.epgSources.filter(s => s.isActive);
+
     if (activeEpgSources.length === 0) {
         console.log('[PROCESS] No active EPG sources found.');
+        sendProcessingStatus(req, 'No active EPG sources found.', 'info'); // <-- NEW
     }
 
     for (const source of activeEpgSources) {
+        if (!source.isActive && !source.isXcEpg) continue;
+
         console.log(`[EPG] Processing source: "${source.name}" (ID: ${source.id}, Type: ${source.type}, Path: ${source.path})`);
+        sendProcessingStatus(req, `Processing EPG source: "${source.name}"...`, 'info'); // <-- NEW
         try {
             let xmlString = '';
             let epgFilePath = path.join(SOURCES_DIR, `epg_${source.id}.xml`);
@@ -570,15 +670,17 @@ async function processAndMergeSources() {
             if (source.type === 'file') {
                 if (fs.existsSync(source.path)) {
                     xmlString = fs.readFileSync(source.path, 'utf-8');
-                    epgFilePath = source.path;
                 } else {
-                    console.error(`[EPG] File not found for source "${source.name}": ${source.path}. Skipping.`);
+                    const errorMsg = `File not found for source "${source.name}". Skipping.`; // <-- NEW
+                    sendProcessingStatus(req, `Error: ${errorMsg}`, 'error'); // <-- NEW
                     source.status = 'Error';
                     source.statusMessage = 'File not found.';
                     continue;
                 }
             } else if (source.type === 'url') {
-                xmlString = await fetchUrlContent(source.path);
+                sendProcessingStatus(req, ` -> Fetching content from URL...`, 'info'); // <-- NEW
+                xmlString = await fetchUrlContent(source.path, source.fetchOptions || {});
+                sendProcessingStatus(req, ` -> Successfully fetched EPG content.`, 'info'); // <-- NEW
                 try {
                     fs.writeFileSync(epgFilePath, xmlString);
                     console.log(`[EPG] Downloaded EPG for "${source.name}" saved to ${epgFilePath}.`);
@@ -589,20 +691,19 @@ async function processAndMergeSources() {
 
             const epgJson = xmlJS.xml2js(xmlString, { compact: true });
             const programs = epgJson.tv && epgJson.tv.programme ? [].concat(epgJson.tv.programme) : [];
+            let programCount = 0; // <-- NEW
 
-            if (programs.length === 0) {
-                console.warn(`[EPG] No programs found in EPG source "${source.name}". Check XML structure.`);
+            if (programs.length === 0) { // <-- NEW
+                sendProcessingStatus(req, `Warning: No programs found in "${source.name}".`, 'info');
             }
 
             const m3uSourceProviders = settings.m3uSources.filter(m3u => m3u.isActive);
 
             for (const prog of programs) {
                 const originalChannelId = prog._attributes?.channel;
-                if (!originalChannelId) {
-                    console.warn(`[EPG] Program without channel ID found in "${source.name}". Skipping.`);
-                    continue;
-                }
-                
+                if (!originalChannelId) continue;
+                programCount++; // <-- NEW
+
                 for(const m3uSource of m3uSourceProviders) {
                     const uniqueChannelId = `${m3uSource.id}_${originalChannelId}`;
 
@@ -612,7 +713,7 @@ async function processAndMergeSources() {
 
                     const titleNode = prog.title && prog.title._cdata ? prog.title._cdata : (prog.title?._text || 'No Title');
                     const descNode = prog.desc && prog.desc._cdata ? prog.desc._cdata : (prog.desc?._text || '');
-                    
+
                     mergedProgramData[uniqueChannelId].push({
                         start: parseEpgTime(prog._attributes.start, timezoneOffset).toISOString(),
                         stop: parseEpgTime(prog._attributes.stop, timezoneOffset).toISOString(),
@@ -621,16 +722,25 @@ async function processAndMergeSources() {
                     });
                 }
             }
-            source.status = 'Success';
-            source.statusMessage = 'Processed successfully.';
-            console.log(`[EPG] Source "${source.name}" processed successfully from ${source.path}.`);
+            if (!source.isXcEpg) {
+                 source.status = 'Success';
+                 source.statusMessage = `Processed ${programCount} programs successfully.`; // <-- MODIFIED
+                 console.log(`[EPG] Source "${source.name}" processed successfully from ${source.path}.`);
+            }
+            sendProcessingStatus(req, ` -> Processed ${programCount} programs from "${source.name}".`, 'info'); // <-- NEW
 
         } catch (error) {
-            console.error(`[EPG] Failed to process source "${source.name}" from ${source.path}:`, error.message);
-            source.status = 'Error';
-            source.statusMessage = `Processing failed: ${error.message.substring(0, 100)}...`;
+            const errorMsg = `Failed to process source "${source.name}" from ${source.path}: ${error.message}`; // <-- NEW
+            console.error(`[EPG] ${errorMsg}`); // <-- MODIFIED
+            sendProcessingStatus(req, `Error: ${errorMsg}`, 'error'); // <-- NEW
+             if (!source.isXcEpg) {
+                 source.status = 'Error';
+                 source.statusMessage = `Processing failed: ${error.message.substring(0, 100)}...`;
+             }
         }
-         source.lastUpdated = new Date().toISOString();
+         if (!source.isXcEpg) {
+            source.lastUpdated = new Date().toISOString();
+         }
     }
     for (const channelId in mergedProgramData) {
         mergedProgramData[channelId].sort((a, b) => new Date(a.start) - new Date(b.start));
@@ -638,16 +748,18 @@ async function processAndMergeSources() {
     try {
         fs.writeFileSync(MERGED_EPG_JSON_PATH, JSON.stringify(mergedProgramData));
         console.log(`[EPG] Merged EPG JSON content saved to ${MERGED_EPG_JSON_PATH}.`);
+        sendProcessingStatus(req, `Successfully merged all EPG sources.`, 'success'); // <-- NEW
     } catch (writeErr) {
         console.error(`[EPG] Error writing merged EPG JSON file: ${writeErr.message}`);
+        sendProcessingStatus(req, `Error writing merged EPG JSON file: ${writeErr.message}`, 'error'); // <-- NEW
     }
-    
+
     settings.sourcesLastUpdated = new Date().toISOString();
     console.log(`[PROCESS] Finished processing. New 'sourcesLastUpdated' timestamp: ${settings.sourcesLastUpdated}`);
-    
+    sendProcessingStatus(req, 'All sources processed successfully!', 'final_success'); // <-- NEW
+
     return { success: true, message: 'Sources merged successfully.', updatedSettings: settings };
 }
-
 
 const updateAndScheduleSourceRefreshes = () => {
     console.log('[SCHEDULER] Updating and scheduling all source refreshes...');
@@ -1023,7 +1135,8 @@ const upload = multer({
 
 
 app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, res) => {
-    const { sourceType, name, url, isActive, id, refreshHours } = req.body;
+    // FIX: Correctly read all possible fields from the form data, including 'xc'.
+    const { sourceType, name, url, isActive, id, refreshHours, xc } = req.body;
     console.log(`[SOURCES_API] ${id ? 'Updating' : 'Adding'} source. Type: ${sourceType}, Name: ${name}`);
 
     if (!sourceType || !name) {
@@ -1058,19 +1171,20 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
                     console.log(`[SOURCES_API] Deleted old file: ${sourceToUpdate.path}`);
                 } catch (e) { console.error("[SOURCES_API] Could not delete old source file:", e); }
             }
-
             const extension = sourceType === 'm3u' ? '.m3u' : '.xml';
             const newPath = path.join(SOURCES_DIR, `${sourceType}_${id}${extension}`);
             try {
                 fs.renameSync(req.file.path, newPath);
                 sourceToUpdate.path = newPath;
                 sourceToUpdate.type = 'file';
+                // FIX: Clear xc_data if switching from XC to File
+                delete sourceToUpdate.xc_data;
                 console.log(`[SOURCES_API] Renamed uploaded file to: ${newPath}`);
             } catch (e) {
                 console.error('[SOURCES_API] Error renaming updated source file:', e);
                 return res.status(500).json({ error: 'Could not save updated file.' });
             }
-        } else if (url !== undefined) {
+        } else if (url !== undefined && url !== null) {
             console.log(`[SOURCES_API] URL provided for source ${id}.`);
             if (sourceToUpdate.type === 'file' && fs.existsSync(sourceToUpdate.path)) {
                 try {
@@ -1080,29 +1194,70 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
             }
             sourceToUpdate.path = url;
             sourceToUpdate.type = 'url';
+            // FIX: Clear xc_data if switching from XC to URL
+            delete sourceToUpdate.xc_data;
+        } else if (xc) {
+            console.log(`[SOURCES_API] XC credentials provided for source ${id}.`);
+             if (sourceToUpdate.type === 'file' && fs.existsSync(sourceToUpdate.path)) {
+                try {
+                    fs.unlinkSync(sourceToUpdate.path);
+                } catch (e) { console.error("[SOURCES_API] Could not delete old source file (on type change):", e); }
+            }
+            sourceToUpdate.xc_data = xc;
+            sourceToUpdate.type = 'xc';
+            try {
+                const xcData = JSON.parse(xc);
+                sourceToUpdate.path = xcData.server || 'Xtream Codes Source';
+            } catch(e) {
+                sourceToUpdate.path = 'Xtream Codes Source';
+            }
         } else if (sourceToUpdate.type === 'file' && !req.file && (!sourceToUpdate.path || !fs.existsSync(sourceToUpdate.path))) {
             console.warn(`[SOURCES_API] Existing file source ${id} has no file and no new file/URL provided.`);
             return res.status(400).json({ error: 'Existing file source requires a new file if original is missing.' });
         }
-
 
         saveSettings(settings);
         console.log(`[SOURCES_API] Source ${id} updated successfully.`);
         res.json({ success: true, message: 'Source updated successfully.', settings: getSettings() });
 
     } else { // Add new source
-        const newSource = {
-            id: `src-${Date.now()}`,
-            name,
-            type: req.file ? 'file' : 'url',
-            path: req.file ? req.file.path : url,
-            isActive: isActive === 'true',
-            refreshHours: parseInt(refreshHours, 10) || 0,
-            lastUpdated: new Date().toISOString(),
-            status: 'Pending',
-            statusMessage: 'Source added. Process to load data.'
-        };
-
+        let newSource;
+        
+        // FIX: Unified and corrected logic for adding a new source
+        if (xc) { // It's an XC source
+             let xcData = {};
+             try {
+                 xcData = JSON.parse(xc);
+             } catch (e) {
+                 console.error("Failed to parse XC JSON data:", e);
+                 return res.status(400).json({ error: 'Invalid XC data format.' });
+             }
+             newSource = {
+                 id: `src-${Date.now()}`,
+                 name,
+                 type: 'xc',
+                 path: xcData.server || 'Xtream Codes Source',
+                 xc_data: xc,
+                 isActive: isActive === 'true',
+                 refreshHours: parseInt(refreshHours, 10) || 0,
+                 lastUpdated: new Date().toISOString(),
+                 status: 'Pending',
+                 statusMessage: 'Source added. Process to load data.'
+             };
+        } else { // It's a URL or File source
+            newSource = {
+                id: `src-${Date.now()}`,
+                name,
+                type: req.file ? 'file' : 'url',
+                path: req.file ? req.file.path : url,
+                isActive: isActive === 'true',
+                refreshHours: parseInt(refreshHours, 10) || 0,
+                lastUpdated: new Date().toISOString(),
+                status: 'Pending',
+                statusMessage: 'Source added. Process to load data.'
+            };
+        }
+        
         if (newSource.type === 'url' && !newSource.path) {
             console.warn('[SOURCES_API] New URL source failed: URL is required.');
             return res.status(400).json({ error: 'URL is required for URL-type source.' });
@@ -1195,7 +1350,8 @@ app.delete('/api/sources/:sourceType/:id', requireAuth, (req, res) => {
 app.post('/api/process-sources', requireAuth, async (req, res) => {
     console.log('[API] Received request to /api/process-sources (manual trigger).');
     try {
-        const result = await processAndMergeSources();
+        const result = await processAndMergeSources(req); // <-- MODIFIED: Pass req
+
         if (result.success) {
             fs.writeFileSync(SETTINGS_PATH, JSON.stringify(result.updatedSettings, null, 2));
             console.log('[API] Source processing completed and settings saved (manual trigger).');
@@ -1206,6 +1362,7 @@ app.post('/api/process-sources', requireAuth, async (req, res) => {
     }
     catch (error) {
         console.error("[API] Error during manual source processing:", error);
+        sendProcessingStatus(req, `A critical error occurred: ${error.message}`, 'error'); // <-- MODIFIED
         res.status(500).json({ error: 'Failed to process sources. Check server logs.' });
     }
 });
@@ -1707,10 +1864,86 @@ app.post('/api/stream/stop', requireAuth, (req, res) => {
     }
 });
 
+app.post('/api/activity/start-redirect', requireAuth, (req, res) => {
+    const { streamUrl, channelId, channelName, channelLogo } = req.body;
+    const userId = req.session.userId;
+    const username = req.session.username;
+    const clientIp = req.clientIp;
+    const startTime = new Date().toISOString();
+
+    db.run(
+        `INSERT INTO stream_history (user_id, username, channel_id, channel_name, start_time, status, client_ip, channel_logo, stream_profile_name) VALUES (?, ?, ?, ?, ?, 'playing', ?, ?, ?)`,
+        [userId, username, channelId, channelName, startTime, clientIp, channelLogo, 'Redirect'],
+        function(err) {
+            if (err) {
+                console.error('[REDIRECT_LOG] Error logging redirect stream start:', err.message);
+                return res.status(500).json({ error: 'Could not log stream start.' });
+            }
+            const historyId = this.lastID;
+            console.log(`[REDIRECT_LOG] Logged redirect stream start for user ${username} with history ID: ${historyId}`);
+            
+            // --- NEW: Add to live tracking ---
+            const streamKey = `${userId}::${historyId}`;
+            activeRedirectStreams.set(streamKey, {
+                streamKey,
+                userId,
+                username,
+                channelId,
+                channelName,
+                channelLogo,
+                streamProfileName: 'Redirect',
+                startTime,
+                clientIp,
+                isTranscoded: false,
+                historyId,
+            });
+            broadcastAdminUpdate(); // Notify admins
+            // --- END NEW ---
+
+            res.status(201).json({ success: true, historyId });
+        }
+    );
+});
+
+app.post('/api/activity/stop-redirect', requireAuth, (req, res) => {
+    const { historyId } = req.body;
+    if (!historyId) {
+        return res.status(400).json({ error: 'History ID is required.' });
+    }
+
+    // --- NEW: Remove from live tracking ---
+    const streamKey = `${req.session.userId}::${historyId}`;
+    if (activeRedirectStreams.has(streamKey)) {
+        activeRedirectStreams.delete(streamKey);
+        broadcastAdminUpdate(); // Notify admins
+    }
+    // --- END NEW ---
+
+    const endTime = new Date().toISOString();
+    db.get("SELECT start_time FROM stream_history WHERE id = ? AND user_id = ?", [historyId, req.session.userId], (err, row) => {
+        if (err || !row) {
+            // Even if history isn't found, we should respond successfully as the client's goal is to stop.
+            return res.status(200).json({ success: true, message: 'Stream stopped, history record not found.' });
+        }
+        const duration = Math.round((new Date(endTime).getTime() - new Date(row.start_time).getTime()) / 1000);
+        db.run("UPDATE stream_history SET end_time = ?, duration_seconds = ?, status = 'stopped' WHERE id = ? AND end_time IS NULL",
+            [endTime, duration, historyId],
+            (updateErr) => {
+                if (updateErr) {
+                    console.error(`[REDIRECT_LOG] Error updating redirect stream end for history ID ${historyId}:`, updateErr.message);
+                    return res.status(500).json({ error: 'Could not log stream end.' });
+                }
+                console.log(`[REDIRECT_LOG] Logged redirect stream end for history ID: ${historyId}`);
+                res.json({ success: true });
+            }
+        );
+    });
+});
+
 // --- NEW/MODIFIED: Admin Monitoring Endpoints ---
 app.get('/api/admin/activity', requireAuth, requireAdmin, async (req, res) => {
     // 1. Get Live Activity (already up-to-date in memory)
-    const liveActivity = Array.from(activeStreamProcesses.values()).map(info => ({
+    const transcodedLive = Array.from(activeStreamProcesses.values()).map(info => ({
         streamKey: info.streamKey,
         userId: info.userId,
         username: info.username,
@@ -1719,8 +1952,22 @@ app.get('/api/admin/activity', requireAuth, requireAdmin, async (req, res) => {
         streamProfileName: info.streamProfileName,
         startTime: info.startTime,
         clientIp: info.clientIp,
-        isTranscoded: info.isTranscoded,
+        isTranscoded: true,
     }));
+
+    const redirectLive = Array.from(activeRedirectStreams.values()).map(info => ({
+        streamKey: `${info.userId}::${info.historyId}`,
+        userId: info.userId,
+        username: info.username,
+        channelName: info.channelName,
+        channelLogo: info.channelLogo,
+        streamProfileName: info.streamProfileName,
+        startTime: info.startTime,
+        clientIp: info.clientIp,
+        isTranscoded: false,
+    }));
+    
+    const liveActivity = [...transcodedLive, ...redirectLive];
 
     // 2. Get Paginated and Filtered History
     try {
@@ -2718,6 +2965,22 @@ app.post('/api/validate-url', requireAuth, async (req, res) => {
 // --- NEW: Hardware Info Endpoint ---
 app.get('/api/hardware', requireAuth, (req, res) => {
     res.json(detectedHardware);
+});
+
+app.get('/api/public-ip', requireAuth, (req, res) => {
+    console.log('[IP_API] Fetching public IP address...');
+    https.get('https://ifconfig.me/ip', (ipRes) => {
+        let data = '';
+        ipRes.on('data', (chunk) => {
+            data += chunk;
+        });
+        ipRes.on('end', () => {
+            res.json({ publicIp: data.trim() });
+        });
+    }).on('error', (err) => {
+        console.error('[IP_API] Error fetching public IP:', err.message);
+        res.status(500).json({ error: 'Could not fetch public IP address.' });
+    });
 });
 
 // --- Backup & Restore Endpoints ---

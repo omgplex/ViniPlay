@@ -5,12 +5,13 @@
 
 import { appState, guideState, UIElements } from './state.js';
 // MODIFIED: Added stopStream to the import
-import { saveUserSetting, stopStream } from './api.js';
+import { saveUserSetting, stopStream, startRedirectStream, stopRedirectStream } from './api.js';
 import { showNotification, openModal, closeModal } from './ui.js';
 import { castState, loadMedia, setLocalPlayerState } from './cast.js';
 
 let streamInfoInterval = null; // Interval to update stream stats
 let currentLocalStreamUrl = null; // ADDED: Track the original URL of the currently playing local stream
+let currentRedirectHistoryId = null; // To track redirect streams for logging
 
 // --- NEW: Auto-retry logic state ---
 let currentChannelInfo = null; // Stores { url, name, channelId } for retries
@@ -87,6 +88,12 @@ export async function forceRefreshStream() {
  * This does NOT affect an active Google Cast session.
  */
 export const stopAndCleanupPlayer = async () => { // MODIFIED: Made function async
+    // If we were logging a redirect stream, tell the server it has stopped.
+    if (currentRedirectHistoryId) {
+        stopRedirectStream(currentRedirectHistoryId);
+        currentRedirectHistoryId = null;
+    }
+    
     // NEW: Clear any scheduled retry attempt
     if (retryTimeout) {
         clearTimeout(retryTimeout);
@@ -185,8 +192,26 @@ export const playChannel = (url, name, channelId) => {
         showNotification("Active stream profile or user agent not set. Please check settings.", true);
         return;
     }
-
+    // --- Activity Logging for Redirect Streams ---
+    // First, ensure any previous redirect logging session is stopped.
+    if (currentRedirectHistoryId) {
+        stopRedirectStream(currentRedirectHistoryId);
+        currentRedirectHistoryId = null;
+    }
     const profile = (guideState.settings.streamProfiles || []).find(p => p.id === profileId);
+    // If the selected profile is redirect, start a new logging session.
+    if (profile.command === 'redirect') {
+        const channel = guideState.channels.find(c => c.id === channelId);
+        startRedirectStream(url, channelId, name, channel ? channel.logo : '')
+            .then(historyId => {
+                if (historyId) {
+                    currentRedirectHistoryId = historyId;
+                }
+            });
+    }
+    // --- End Activity Logging ---
+
+    
     if (!profile) {
         return showNotification("Stream profile not found.", true);
     }

@@ -6,13 +6,31 @@
 
 import { appState, guideState, UIElements } from './state.js';
 import { apiFetch, saveGlobalSetting, saveUserSetting } from './api.js';
-import { showNotification, openModal, closeModal, showConfirm, setButtonLoadingState } from './ui.js';
+// MODIFIED: Import isProcessingRunning for the button logic
+import { showNotification, openModal, closeModal, showConfirm, setButtonLoadingState, showProcessingModal, isProcessingRunning } from './ui.js'; 
 import { handleGuideLoad } from './guide.js';
 import { navigate } from './ui.js';
 import { ICONS } from './icons.js';
 
 let currentSourceTypeForEditor = 'url';
 let hardwareChecked = false; // Flag to prevent re-checking hardware on every UI update
+
+/**
+ * Fetches the server's public IP and displays it.
+ */
+async function fetchAndDisplayPublicIp() {
+    const displayEl = document.getElementById('public-ip-display');
+    if (!displayEl) return;
+
+    const res = await apiFetch('/api/public-ip');
+    if (res && res.ok) {
+        const data = await res.json();
+        displayEl.textContent = data.publicIp || 'Could not determine IP.';
+    } else {
+        displayEl.textContent = 'Unavailable';
+    }
+}
+
 
 // --- NEW: Hardware Acceleration ---
 
@@ -237,7 +255,7 @@ export const updateUIFromSettings = async () => {
         console.warn("Could not detect user's IANA timezone.", e);
     }
     
-    settings.searchScope = settings.searchScope || 'channels_only';
+    settings.searchScope = settings.searchScope || 'channels_only_filtered';
     settings.notificationLeadTime = settings.notificationLeadTime ?? 10;
     
     settings.dvr = settings.dvr || {};
@@ -248,6 +266,7 @@ export const updateUIFromSettings = async () => {
 
     // Update dropdowns and inputs
     UIElements.timezoneOffsetSelect.value = settings.timezoneOffset;
+    fetchAndDisplayPublicIp();
     UIElements.searchScopeSelect.value = settings.searchScope;
     UIElements.notificationLeadTimeInput.value = settings.notificationLeadTime;
     
@@ -359,23 +378,64 @@ const openSourceEditor = (sourceType, source = null) => {
     UIElements.sourceEditorIsActive.checked = source ? source.isActive : true;
     UIElements.sourceEditorRefreshInterval.value = source ? (source.refreshHours || 0) : 0;
 
-    let isFile = source ? source.type === 'file' : false;
-    currentSourceTypeForEditor = isFile ? 'file' : 'url';
+    // Default to 'url' tab unless source dictates otherwise
+    let activeTab = 'url';
     
-    UIElements.sourceEditorTypeBtnUrl.classList.toggle('bg-blue-600', !isFile);
-    UIElements.sourceEditorTypeBtnFile.classList.toggle('bg-blue-600', isFile);
-    UIElements.sourceEditorUrlContainer.classList.toggle('hidden', isFile);
-    UIElements.sourceEditorRefreshContainer.classList.toggle('hidden', isFile);
-    UIElements.sourceEditorFileContainer.classList.add('hidden');
-
+    // Determine the initial tab based on the source type
     if (source) {
-        if (source.type === 'url') UIElements.sourceEditorUrl.value = source.path;
         if (source.type === 'file') {
-            UIElements.sourceEditorFileInfo.textContent = `Current file: ${source.path.split('/').pop()}`;
-            UIElements.sourceEditorFileInfo.classList.remove('hidden');
+            activeTab = 'file';
+        } else if (source.type === 'xc') {
+            activeTab = 'xc';
+        } else { // 'url' or other types
+            activeTab = 'url';
         }
-    } else {
-        UIElements.sourceEditorFileInfo.classList.add('hidden');
+    }
+    
+    // Set the global state for which tab is active
+    currentSourceTypeForEditor = activeTab;
+
+    // Toggle tab visibility based on the active tab
+    UIElements.sourceEditorTypeBtnUrl.classList.toggle('bg-blue-600', activeTab === 'url');
+    UIElements.sourceEditorTypeBtnFile.classList.toggle('bg-blue-600', activeTab === 'file');
+    UIElements.sourceEditorTypeBtnXc.classList.toggle('bg-blue-600', activeTab === 'xc');
+
+    UIElements.sourceEditorUrlContainer.classList.toggle('hidden', activeTab !== 'url');
+    UIElements.sourceEditorFileContainer.classList.toggle('hidden', activeTab !== 'file');
+    UIElements.sourceEditorXcContainer.classList.toggle('hidden', activeTab !== 'xc');
+    
+    // Hide refresh interval for file-based sources
+    UIElements.sourceEditorRefreshContainer.classList.toggle('hidden', activeTab === 'file');
+    UIElements.sourceEditorFileInfo.classList.add('hidden'); // Hide file info by default
+
+    // Populate the form fields based on the source data
+    if (source) {
+        switch (source.type) {
+            case 'url':
+                UIElements.sourceEditorUrl.value = source.path;
+                break;
+            case 'file':
+                UIElements.sourceEditorFileInfo.textContent = `Current file: ${source.path.split('/').pop()}`;
+                UIElements.sourceEditorFileInfo.classList.remove('hidden');
+                break;
+            case 'xc':
+                // FIX: Correctly parse xc_data and populate the fields
+                if (source.xc_data) {
+                    try {
+                        const xcData = JSON.parse(source.xc_data);
+                        UIElements.sourceEditorXcUrl.value = xcData.server || '';
+                        UIElements.sourceEditorXcUsername.value = xcData.username || '';
+                        UIElements.sourceEditorXcPassword.value = xcData.password || '';
+                    } catch (e) {
+                        console.error("Could not parse XC data for editing:", e);
+                        // Clear fields if data is corrupt
+                        UIElements.sourceEditorXcUrl.value = '';
+                        UIElements.sourceEditorXcUsername.value = '';
+                        UIElements.sourceEditorXcPassword.value = '';
+                    }
+                }
+                break;
+        }
     }
 
     openModal(UIElements.sourceEditorModal);
@@ -453,57 +513,54 @@ const saveSettingAndNotify = async (saveFunction, ...args) => {
 export function setupSettingsEventListeners() {
 
     // --- Source Management ---
-    if (UIElements.processSourcesBtn) {
-        UIElements.processSourcesBtn.addEventListener('click', async () => {
-            const originalContent = UIElements.processSourcesBtnContent.innerHTML;
-            setButtonLoadingState(UIElements.processSourcesBtn, true, originalContent);
-            const res = await apiFetch('/api/process-sources', { method: 'POST' });
-            if (res && res.ok) {
-                const configResponse = await apiFetch(`/api/config?t=${Date.now()}`);
-                if (configResponse && configResponse.ok) {
-                    const config = await configResponse.json();
-                    if (!config.m3uContent) {
-                        showNotification("No active M3U sources found or sources are empty.", true);
-                        handleGuideLoad('', '');
-                    } else {
-                        handleGuideLoad(config.m3uContent, config.epgContent);
-                        Object.assign(guideState.settings, config.settings || {}); // Merge settings
-                        updateUIFromSettings();
-                        navigate('/tvguide');
-                        showNotification('Sources processed successfully!');
-                    }
-                } else {
-                    showNotification("Failed to reload config after processing.", true);
+        if (UIElements.processSourcesBtn) {
+            UIElements.processSourcesBtn.addEventListener('click', async () => {
+                if (isProcessingRunning && UIElements.processingStatusModal.classList.contains('hidden')) {
+                    // Process is running in the background, just reopen the modal
+                    openModal(UIElements.processingStatusModal);
+                    return;
                 }
-            } else {
-                const data = res ? await res.json() : { error: 'Unknown error' };
-                showNotification(`Error processing sources: ${data.error}`, true);
-            }
-            setButtonLoadingState(UIElements.processSourcesBtn, false, originalContent);
-        });
-    }
+    
+                // 1. Open the processing modal (this sets isProcessingRunning = true)
+                showProcessingModal();
+        
+                // 2. Trigger the backend process.
+                const res = await apiFetch('/api/process-sources', { method: 'POST' });
+        
+                // 3. Handle initial request failure
+                if (!res || !res.ok) {
+                    const data = res ? await res.json() : { error: 'Could not connect to server.'};
+                    updateProcessingStatus(`Failed to start process: ${data.error}`, 'error');
+                }
+            });
+        }
     
     UIElements.addM3uBtn.addEventListener('click', () => openSourceEditor('m3u'));
     UIElements.addEpgBtn.addEventListener('click', () => openSourceEditor('epg'));
     UIElements.sourceEditorCancelBtn.addEventListener('click', () => closeModal(UIElements.sourceEditorModal));
 
     // --- Source Editor ---
-    UIElements.sourceEditorTypeBtnUrl.addEventListener('click', () => {
-        currentSourceTypeForEditor = 'url';
-        UIElements.sourceEditorTypeBtnUrl.classList.add('bg-blue-600');
-        UIElements.sourceEditorTypeBtnFile.classList.remove('bg-blue-600');
-        UIElements.sourceEditorUrlContainer.classList.remove('hidden');
-        UIElements.sourceEditorRefreshContainer.classList.remove('hidden');
-        UIElements.sourceEditorFileContainer.classList.add('hidden');
-    });
-    UIElements.sourceEditorTypeBtnFile.addEventListener('click', () => {
-        currentSourceTypeForEditor = 'file';
-        UIElements.sourceEditorTypeBtnUrl.classList.remove('bg-blue-600');
-        UIElements.sourceEditorTypeBtnFile.classList.add('bg-blue-600');
-        UIElements.sourceEditorUrlContainer.classList.add('hidden');
-        UIElements.sourceEditorRefreshContainer.classList.add('hidden');
-        UIElements.sourceEditorFileContainer.classList.remove('hidden');
-    });
+    const switchSourceEditorTab = (tabType) => {
+        currentSourceTypeForEditor = tabType;
+        const isUrl = tabType === 'url';
+        const isFile = tabType === 'file';
+        const isXc = tabType === 'xc';
+    
+        UIElements.sourceEditorTypeBtnUrl.classList.toggle('bg-blue-600', isUrl);
+        UIElements.sourceEditorTypeBtnFile.classList.toggle('bg-blue-600', isFile);
+        UIElements.sourceEditorTypeBtnXc.classList.toggle('bg-blue-600', isXc);
+    
+        UIElements.sourceEditorUrlContainer.classList.toggle('hidden', !isUrl);
+        UIElements.sourceEditorFileContainer.classList.toggle('hidden', !isFile);
+        UIElements.sourceEditorXcContainer.classList.toggle('hidden', !isXc);
+    
+        // Refresh interval is shown for URL and XC, but not for File
+        UIElements.sourceEditorRefreshContainer.classList.toggle('hidden', isFile);
+    };
+
+    UIElements.sourceEditorTypeBtnUrl.addEventListener('click', () => switchSourceEditorTab('url'));
+    UIElements.sourceEditorTypeBtnFile.addEventListener('click', () => switchSourceEditorTab('file'));
+    UIElements.sourceEditorTypeBtnXc.addEventListener('click', () => switchSourceEditorTab('xc'));
 
     UIElements.sourceEditorForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -518,11 +575,20 @@ export function setupSettingsEventListeners() {
         if (currentSourceTypeForEditor === 'url') {
             formData.append('url', UIElements.sourceEditorUrl.value);
             formData.append('refreshHours', UIElements.sourceEditorRefreshInterval.value);
-        } else if (UIElements.sourceEditorFile.files[0]) {
-            formData.append('sourceFile', UIElements.sourceEditorFile.files[0]);
-        } else if (!id) {
-             showNotification('A file must be selected for new file-based sources.', true);
-             return;
+        } else if (currentSourceTypeForEditor === 'file') {
+            if (UIElements.sourceEditorFile.files[0]) {
+                formData.append('sourceFile', UIElements.sourceEditorFile.files[0]);
+            } else if (!id) {
+                 showNotification('A file must be selected for new file-based sources.', true);
+                 return;
+            }
+        } else if (currentSourceTypeForEditor === 'xc') {
+            formData.append('xc', JSON.stringify({
+                server: UIElements.sourceEditorXcUrl.value,
+                username: UIElements.sourceEditorXcUsername.value,
+                password: UIElements.sourceEditorXcPassword.value,
+            }));
+            formData.append('refreshHours', UIElements.sourceEditorRefreshInterval.value);
         }
         
         if (id) formData.append('id', id);

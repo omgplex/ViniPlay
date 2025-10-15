@@ -40,14 +40,17 @@ FROM nvidia/cuda:12.2.2-base-ubuntu22.04
 ENV NVIDIA_DRIVER_CAPABILITIES all
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install only the necessary runtime dependencies: Node.js and FFmpeg.
+# Install only the necessary runtime dependencies: Node.js, FFmpeg, and drivers.
 # We also add 'ca-certificates' which is crucial for making HTTPS requests from Node.js.
+# MODIFIED: Added intel-media-va-driver and vainfo for Intel QSV / VA-API hardware acceleration.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     curl \
     gnupg \
     ffmpeg \
-    ca-certificates && \
+    ca-certificates \
+    intel-media-va-driver \
+    vainfo && \
     curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     # Clean up apt caches to reduce final image size
@@ -70,4 +73,3 @@ VOLUME /dvr
 
 # Define the command to run your application
 CMD [ "npm", "start" ]
-

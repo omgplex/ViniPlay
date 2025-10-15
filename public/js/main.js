@@ -13,7 +13,7 @@ import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './
 import { setupPlayerEventListeners, playChannel, stopAndCleanupPlayer } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
 // MODIFIED: Imported showBroadcastMessage
-import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu, showNotification, showBroadcastMessage } from './modules/ui.js';
+import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu, showNotification, showBroadcastMessage, updateProcessingStatus, showConfirm, refreshGuideAfterProcessing } from './modules/ui.js';
 // MODIFIED: Import navigateToProgramInGuide to handle deep links from notifications.
 import { loadAndScheduleNotifications, subscribeUserToPush, navigateToProgramInGuide } from './modules/notification.js';
 import { setupDvrEventListeners, handleDvrChannelClick, initDvrPage } from './modules/dvr.js';
@@ -86,6 +86,13 @@ function initializeSse() {
         // Automatically trigger the re-subscription process. The `true` flag forces it to
         // first unsubscribe the bad subscription from the browser before creating a new one.
         subscribeUserToPush(true); 
+    });
+
+    // NEW: Listen for real-time processing status updates
+    eventSource.addEventListener('processing-status', (event) => {
+        const data = JSON.parse(event.data);
+        // This function will be created in ui.js to update the modal
+        updateProcessingStatus(data.message, data.type);
     });
 
     // NEW: Listen for the 'force-logout' event
@@ -506,6 +513,16 @@ function setupCoreEventListeners() {
         });
         mainHeaderObserver.observe(UIElements.mainHeader);
     }
+
+    // monitor the processes of channel sources
+    document.addEventListener('background-process-finished', () => {
+        console.log('[MAIN] Detected background process has finished.');
+        showConfirm(
+            'Sources Processed',
+            'Your sources have finished processing in the background. Would you like to update the TV Guide now?',
+            refreshGuideAfterProcessing // The callback function to execute on confirm
+        );
+    });
 }
 
 
@@ -525,14 +542,20 @@ document.addEventListener('DOMContentLoaded', () => {
     // Register Service Worker
     if ('serviceWorker' in navigator && 'PushManager' in window) {
         console.log('[APP_START] Service Worker and Push API are supported by browser.');
-        navigator.serviceWorker.register('/sw.js') // FIX: Use absolute path
+        navigator.serviceWorker.register('/sw.js')
             .then(swReg => {
                 console.log('[APP_START] Service Worker registered successfully:', swReg);
                 appState.swRegistration = swReg;
+                // The following function is now INSIDE the .then() block
+                // This ensures it only runs after the service worker is ready.
+                return subscribeUserToPush(); 
+            })
+            .then(() => {
+                console.log('[MAIN] Push notification subscription process initiated after SW registration.');
             })
             .catch(error => {
-                console.error('[APP_START] Service Worker registration failed:', error);
-                showNotification('Failed to register service worker for notifications.', true);
+                console.error('[APP_START] Service Worker registration or Push Subscription failed:', error);
+                showNotification('Failed to set up notifications.', true);
             });
     } else {
         console.warn('[APP_START] Push messaging is not supported in this browser environment.');

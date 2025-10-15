@@ -8,11 +8,12 @@
 import { UIElements, guideState, appState } from './state.js';
 import { showNotification } from './ui.js';
 // MODIFIED: Import stopStream to explicitly kill the server process.
-import { saveUserSetting, stopStream } from './api.js';
+import { saveUserSetting, stopStream, startRedirectStream, stopRedirectStream } from './api.js';
 
 const MAX_RECENT_LINKS = 10;
 let currentStreamUrl = null; // NEW: Track the URL of the current stream
 let statisticsInterval = null; // NEW: Interval for logging stream statistics.
+let currentRedirectHistoryId = null; // To track redirect streams for logging
 
 // --- Helper Functions ---
 
@@ -119,6 +120,12 @@ export function initDirectPlayer() {
 async function stopAndCleanupDirectPlayer() {
     console.log('[DEBUG] stopAndCleanupDirectPlayer: Function called.');
 
+    // If we were logging a redirect stream, tell the server it has stopped.
+    if (currentRedirectHistoryId) {
+        stopRedirectStream(currentRedirectHistoryId);
+        currentRedirectHistoryId = null;
+    }
+
     // NEW: Clear the statistics logging interval.
     if (statisticsInterval) {
         clearInterval(statisticsInterval);
@@ -209,10 +216,6 @@ function playDirectStream(url) {
     if (!isDirectPlay) {
         logToPlayerConsole('Direct Play is OFF. Using server proxy.');
         
-        // --- FIX: Simplified Profile Selection ---
-        // The client no longer decides which hardware profile to use.
-        // It simply sends the active profile selected by the user in the settings.
-        // The server is now responsible for interpreting the 'hardwareAcceleration' setting.
         const settings = guideState.settings;
         const profileIdToUse = settings.activeStreamProfileId;
         const userAgentId = settings.activeUserAgentId;
@@ -227,10 +230,27 @@ function playDirectStream(url) {
         }
         streamUrlToPlay = `/stream?url=${encodeURIComponent(url)}&profileId=${profileIdToUse}&userAgentId=${userAgentId}`;
         logToPlayerConsole(`Proxy URL: ${streamUrlToPlay}`);
-        // --- END FIX ---
 
     } else {
         logToPlayerConsole('Direct Play is ON. Connecting directly to stream.');
+        // --- Activity Logging for Redirect Streams ---
+        if (currentRedirectHistoryId) {
+            stopRedirectStream(currentRedirectHistoryId);
+            currentRedirectHistoryId = null;
+        }
+        const allChannels = guideState.channels || [];
+        const channel = allChannels.find(c => c.url === url);
+        const channelId = channel ? channel.id : null;
+        const channelName = channel ? (channel.displayName || channel.name) : 'Direct Stream';
+        const channelLogo = channel ? channel.logo : null;
+
+        startRedirectStream(url, channelId, channelName, channelLogo)
+            .then(historyId => {
+                if (historyId) {
+                    currentRedirectHistoryId = historyId;
+                }
+            });
+        // --- End Activity Logging ---
     }
     
     // Set the current stream URL for tracking and stopping purposes.
@@ -243,13 +263,9 @@ function playDirectStream(url) {
         try {
             console.log(`[DEBUG] playDirectStream: Creating new mpegts.js player for URL: ${streamUrlToPlay}`);
 
-            // NEW: Configuration for mpegts.js to increase buffer sizes
             const mpegtsConfig = {
-                // Keep the stash buffer enabled (default is true)
                 enableStashBuffer: true,
-                // Increase initial buffer size to 4MB to better handle network fluctuations
                 stashInitialSize: 4096,
-                // For live streams, try to seek to the live edge after 2 seconds of media is buffered
                 liveBufferLatency: 2.0,
             };
             logToPlayerConsole(`Player config: stashInitialSize=${mpegtsConfig.stashInitialSize}KB, liveBufferLatency=${mpegtsConfig.liveBufferLatency}s`);
@@ -258,9 +274,9 @@ function playDirectStream(url) {
                 type: 'mse',
                 isLive: true,
                 url: streamUrlToPlay
-            }, mpegtsConfig); // Pass the new config here
+            }, mpegtsConfig);
             
-            appState.player = newPlayer; // Assign to global state immediately
+            appState.player = newPlayer;
             console.log('[DEBUG] playDirectStream: New player instance created and assigned to appState.player.');
 
             UIElements.directPlayerContainer.classList.remove('hidden');
@@ -276,7 +292,6 @@ function playDirectStream(url) {
                 stopAndCleanupDirectPlayer();
             });
             
-            // NEW: Set up periodic logging of stream statistics.
             if (statisticsInterval) {
                 clearInterval(statisticsInterval);
             }
@@ -290,7 +305,7 @@ function playDirectStream(url) {
                     const logMsg = `Speed: ${(stats.speed / 1024).toFixed(1)} KB/s --- Buffer: ${buffer.toFixed(2)}s --- Decoded Frames: ${stats.decodedFrames}`;
                     logToPlayerConsole(logMsg);
                 }
-            }, 2000); // Log stats every 2 seconds.
+            }, 2000);
 
             console.log('[DEBUG] playDirectStream: Calling player.load().');
             appState.player.load();
@@ -321,7 +336,6 @@ function playDirectStream(url) {
         showNotification(errorMsg, true);
     }
 }
-
 // --- Event Listener Setup ---
 
 /**
