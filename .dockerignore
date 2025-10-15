@@ -10,6 +10,7 @@ npm-debug.log
 # Docker
 Dockerfile
 docker-compose.yml
+README.md
 
 # Persistent data directory (should be mounted as a volume, not copied)
 viniplay-data
