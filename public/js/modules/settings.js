@@ -6,7 +6,7 @@
 
 import { appState, guideState, UIElements } from './state.js';
 import { apiFetch, saveGlobalSetting, saveUserSetting } from './api.js';
-import { showNotification, openModal, closeModal, showConfirm, setButtonLoadingState } from './ui.js';
+import { showNotification, openModal, closeModal, showConfirm, setButtonLoadingState, showProcessingModal } from './ui.js';
 import { handleGuideLoad } from './guide.js';
 import { navigate } from './ui.js';
 import { ICONS } from './icons.js';
@@ -515,31 +515,19 @@ export function setupSettingsEventListeners() {
     // --- Source Management ---
     if (UIElements.processSourcesBtn) {
         UIElements.processSourcesBtn.addEventListener('click', async () => {
-            const originalContent = UIElements.processSourcesBtnContent.innerHTML;
-            setButtonLoadingState(UIElements.processSourcesBtn, true, originalContent);
+            // NEW: Open the processing modal which will show the status
+            showProcessingModal();
+    
+            // Trigger the backend process. We don't need to wait for it to finish here,
+            // as status updates will come via Server-Sent Events (SSE).
             const res = await apiFetch('/api/process-sources', { method: 'POST' });
-            if (res && res.ok) {
-                const configResponse = await apiFetch(`/api/config?t=${Date.now()}`);
-                if (configResponse && configResponse.ok) {
-                    const config = await configResponse.json();
-                    if (!config.m3uContent) {
-                        showNotification("No active M3U sources found or sources are empty.", true);
-                        handleGuideLoad('', '');
-                    } else {
-                        handleGuideLoad(config.m3uContent, config.epgContent);
-                        Object.assign(guideState.settings, config.settings || {}); // Merge settings
-                        updateUIFromSettings();
-                        navigate('/tvguide');
-                        showNotification('Sources processed successfully!');
-                    }
-                } else {
-                    showNotification("Failed to reload config after processing.", true);
-                }
-            } else {
-                const data = res ? await res.json() : { error: 'Unknown error' };
-                showNotification(`Error processing sources: ${data.error}`, true);
+    
+            // If the initial request fails (e.g., server is down), show an error in the modal.
+            if (!res || !res.ok) {
+                const data = res ? await res.json() : { error: 'Could not connect to server.'};
+                // This function will be created in the next step (ui.js)
+                updateProcessingStatus(`Failed to start process: ${data.error}`, 'error');
             }
-            setButtonLoadingState(UIElements.processSourcesBtn, false, originalContent);
         });
     }
     
