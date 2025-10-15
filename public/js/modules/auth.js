@@ -142,6 +142,13 @@ const initializeUIElements = () => {
     UIElements.addEpgBtn = document.getElementById('add-epg-btn');
     UIElements.processSourcesBtnContent = document.getElementById('process-sources-btn-content');
     UIElements.processSourcesBtn = document.getElementById('process-sources-btn');
+    // NEW: Processing Modal Buttons
+    UIElements.processingStatusRunningActions = document.getElementById('processing-status-running-actions');
+    UIElements.processingStatusFinishedActions = document.getElementById('processing-status-finished-actions');
+    UIElements.processingStatusBackgroundBtn = document.getElementById('processing-status-background-btn');
+    UIElements.processingStatusCloseRefreshBtn = document.getElementById('processing-status-close-refresh-btn');
+
+    
 };
 
 
