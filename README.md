@@ -19,7 +19,7 @@ ViniPlay transforms your M3U and EPG files into a polished, high-performance str
 The server-side backend resolves common CORS and browser compatibility issues by proxying or transcoding streams with FFMPEG, while the feature-rich frontend provides a user experience comparable to premium IPTV services.
 
 ### Main User Interface Flow
-![Main User Interface Flow](https://github.com/ardoviniandrea/ViniPlay/blob/image-1/images/multiview.gif)
+![Main User Interface Flow](https://github.com/ardoviniandrea/ViniPlay/blob/main/images/viniplay-main%20ux-min.gif)
 
 ### Feature Snapshots
 
