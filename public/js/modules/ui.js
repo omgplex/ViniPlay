@@ -11,7 +11,8 @@ import { initMultiView, isMultiViewActive, cleanupMultiView } from './multiview.
 import { initDvrPage } from './dvr.js';
 import { stopAndCleanupPlayer } from './player.js';
 import { initDirectPlayer, isDirectPlayerActive, cleanupDirectPlayer } from './player_direct.js';
-import { finalizeGuideLoad } from './guide.js';
+// MODIFIED: Import handleGuideLoad and fetchConfig for the refresh logic
+import { finalizeGuideLoad, handleGuideLoad } from './guide.js';
 import { fetchConfig } from './api.js';
 import { initActivityPage } from './admin.js';
 
@@ -22,6 +23,9 @@ let activeModalCloseListener = null;
 let isResizing = false;
 // FINAL FIX: Flag to temporarily block config reloads after a setting is saved.
 let blockConfigReload = false;
+
+// NEW: Exported variable to track if processing is running
+export let isProcessingRunning = false;
 
 
 /**
