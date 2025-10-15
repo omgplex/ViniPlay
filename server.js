@@ -196,6 +196,19 @@ app.use('/dvr', requireAuth, express.static(DVR_DIR));
 
 // --- Helper Functions ---
 /**
+ * NEW: Sends a real-time status update to the client during source processing.
+ * @param {object} req - The Express request object, used to identify the user.
+ * @param {string} message - The status message to send.
+ * @param {string} type - The type of message (e.g., 'info', 'success', 'error').
+ */
+function sendProcessingStatus(req, message, type = 'info') {
+    if (req && req.session && req.session.userId) {
+        sendSseEvent(req.session.userId, 'processing-status', { message, type });
+    }
+}
+
+
+/**
  * NEW: Detects available hardware for transcoding.
  */
 async function detectHardwareAcceleration() {
@@ -444,22 +457,17 @@ function saveSettings(settings) {
     }
 }
 
-function fetchUrlContent(url, options = {}) {
+function fetchUrlContent(url, options = {}) { // <-- MODIFIED
     return new Promise((resolve, reject) => {
         const protocol = url.startsWith('https') ? https : http;
-        const TIMEOUT_DURATION = 60000; // 60 seconds
+        const TIMEOUT_DURATION = 60000;
         console.log(`[FETCH] Attempting to fetch URL content: ${url} (Timeout: ${TIMEOUT_DURATION/1000}s)`);
 
-        const requestOptions = {
-            timeout: TIMEOUT_DURATION,
-            headers: options.headers || {}
-        };
-
-        const request = protocol.get(url, requestOptions, (res) => {
+        const request = protocol.get(url, { timeout: TIMEOUT_DURATION, ...options }, (res) => { // <-- MODIFIED
             if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
                 console.log(`[FETCH] Redirecting to: ${res.headers.location}`);
-                request.abort(); // Abort the current request before following redirect
-                return fetchUrlContent(new URL(res.headers.location, url).href).then(resolve, reject);
+                request.abort(); 
+                return fetchUrlContent(new URL(res.headers.location, url).href, options).then(resolve, reject); // <-- MODIFIED
             }
             if (res.statusCode !== 200) {
                 console.error(`[FETCH] Failed to fetch ${url}: Status Code ${res.statusCode}`);
@@ -480,7 +488,7 @@ function fetchUrlContent(url, options = {}) {
             console.error(`[FETCH] ${timeoutError.message}`);
             reject(timeoutError);
         });
-        
+
         request.on('error', (err) => {
             console.error(`[FETCH] Network error fetching ${url}: ${err.message}`);
             reject(err);
@@ -512,8 +520,9 @@ const parseEpgTime = (timeStr, offsetHours = 0) => {
 
 // server.js -> Replace the entire function with this corrected version
 
-async function processAndMergeSources() {
+async function processAndMergeSources(req) { // <-- MODIFIED
     console.log('[PROCESS] Starting to process and merge all active sources.');
+    sendProcessingStatus(req, 'Starting to process sources...', 'info'); // <-- NEW
     const settings = getSettings();
 
     let mergedM3uContent = '#EXTM3U\n';
@@ -522,10 +531,12 @@ async function processAndMergeSources() {
 
     if (activeM3uSources.length === 0) {
         console.log('[PROCESS] No active M3U sources found.');
+        sendProcessingStatus(req, 'No active M3U sources found.', 'info'); // <-- NEW
     }
 
     for (const source of activeM3uSources) {
         console.log(`[M3U] Processing source: "${source.name}" (ID: ${source.id}, Type: ${source.type}, Path: ${source.path})`);
+        sendProcessingStatus(req, `Processing M3U source: "${source.name}"...`, 'info'); // <-- NEW
         try {
             let content = '';
             let sourcePathForLog = source.path;
@@ -536,14 +547,17 @@ async function processAndMergeSources() {
                     content = fs.readFileSync(sourceFilePath, 'utf-8');
                     sourcePathForLog = sourceFilePath;
                 } else {
+                    const errorMsg = `File not found for source "${source.name}". Skipping.`; // <-- NEW
+                    sendProcessingStatus(req, `Error: ${errorMsg}`, 'error'); // <-- NEW
                     source.status = 'Error';
                     source.statusMessage = 'File not found.';
                     continue;
                 }
             } else if (source.type === 'url') {
+                sendProcessingStatus(req, ` -> Fetching content from URL...`, 'info'); // <-- NEW
                 content = await fetchUrlContent(source.path);
+                sendProcessingStatus(req, ` -> Successfully fetched M3U content.`, 'info'); // <-- NEW
             } else if (source.type === 'xc') {
-                // FIX: Correctly parse xc_data and build the URL
                 if (!source.xc_data) {
                     throw new Error("XC source is missing credential data (xc_data).");
                 }
@@ -559,8 +573,10 @@ async function processAndMergeSources() {
                 };
                 const m3uUrl = `${server}/get.php?username=${username}&password=${password}&type=m3u_plus&output=ts`;
                 console.log(`[M3U] Constructed XC URL for "${source.name}": ${m3uUrl}`);
+                sendProcessingStatus(req, ` -> Fetching content from XC server...`, 'info'); // <-- NEW
                 content = await fetchUrlContent(m3uUrl, fetchOptions);
                 sourcePathForLog = m3uUrl;
+                sendProcessingStatus(req, ` -> Successfully fetched M3U content from XC server.`, 'info'); // <-- NEW
 
                 const epgUrl = `${server}/xmltv.php?username=${username}&password=${password}`;
                 const epgSource = {
@@ -575,14 +591,17 @@ async function processAndMergeSources() {
 
                 if (!activeEpgSources.some(s => s.id === epgSource.id)) {
                     activeEpgSources.push(epgSource);
+                    sendProcessingStatus(req, ` -> Automatically added EPG source for "${source.name}".`, 'info'); // <-- NEW
                 }
             }
 
             const lines = content.split('\n');
             let processedContent = '';
+            let streamCount = 0; // <-- NEW
             for (let i = 0; i < lines.length; i++) {
                 let line = lines[i].trim();
                 if (line.startsWith('#EXTINF:')) {
+                    streamCount++; // <-- NEW
                     const tvgIdMatch = line.match(/tvg-id="([^"]*)"/);
                     const tvgId = tvgIdMatch ? tvgIdMatch[1] : `no-id-${Math.random()}`;
                     const uniqueChannelId = `${source.id}_${tvgId}`;
@@ -609,11 +628,14 @@ async function processAndMergeSources() {
 
             mergedM3uContent += processedContent.replace(/#EXTM3U/i, '') + '\n';
             source.status = 'Success';
-            source.statusMessage = 'Processed successfully.';
+            source.statusMessage = `Processed ${streamCount} streams successfully.`; // <-- CORRECT, DYNAMIC VERSION
             console.log(`[M3U] Source "${source.name}" processed successfully from ${sourcePathForLog}.`);
+            sendProcessingStatus(req, ` -> Processed ${streamCount} streams from "${source.name}".`, 'info'); // <-- NEW
 
         } catch (error) {
-            console.error(`[M3U] Failed to process source "${source.name}" from ${source.path}:`, error.message);
+            const errorMsg = `Failed to process source "${source.name}" from ${source.path}: ${error.message}`; // <-- NEW
+            console.error(`[M3U] ${errorMsg}`); // <-- MODIFIED
+            sendProcessingStatus(req, `Error: ${errorMsg}`, 'error'); // <-- NEW
             source.status = 'Error';
             source.statusMessage = `Processing failed: ${error.message.substring(0, 100)}...`;
         }
@@ -622,8 +644,10 @@ async function processAndMergeSources() {
     try {
         fs.writeFileSync(MERGED_M3U_PATH, mergedM3uContent);
         console.log(`[M3U] Merged M3U content saved to ${MERGED_M3U_PATH}.`);
+        sendProcessingStatus(req, `Successfully merged all M3U sources.`, 'success'); // <-- NEW
     } catch (writeErr) {
         console.error(`[M3U] Error writing merged M3U file: ${writeErr.message}`);
+        sendProcessingStatus(req, `Error writing merged M3U file: ${writeErr.message}`, 'error'); // <-- NEW
     }
 
     const mergedProgramData = {};
@@ -631,12 +655,14 @@ async function processAndMergeSources() {
 
     if (activeEpgSources.length === 0) {
         console.log('[PROCESS] No active EPG sources found.');
+        sendProcessingStatus(req, 'No active EPG sources found.', 'info'); // <-- NEW
     }
 
     for (const source of activeEpgSources) {
         if (!source.isActive && !source.isXcEpg) continue;
 
         console.log(`[EPG] Processing source: "${source.name}" (ID: ${source.id}, Type: ${source.type}, Path: ${source.path})`);
+        sendProcessingStatus(req, `Processing EPG source: "${source.name}"...`, 'info'); // <-- NEW
         try {
             let xmlString = '';
             let epgFilePath = path.join(SOURCES_DIR, `epg_${source.id}.xml`);
@@ -645,12 +671,16 @@ async function processAndMergeSources() {
                 if (fs.existsSync(source.path)) {
                     xmlString = fs.readFileSync(source.path, 'utf-8');
                 } else {
+                    const errorMsg = `File not found for source "${source.name}". Skipping.`; // <-- NEW
+                    sendProcessingStatus(req, `Error: ${errorMsg}`, 'error'); // <-- NEW
                     source.status = 'Error';
                     source.statusMessage = 'File not found.';
                     continue;
                 }
             } else if (source.type === 'url') {
+                sendProcessingStatus(req, ` -> Fetching content from URL...`, 'info'); // <-- NEW
                 xmlString = await fetchUrlContent(source.path, source.fetchOptions || {});
+                sendProcessingStatus(req, ` -> Successfully fetched EPG content.`, 'info'); // <-- NEW
                 try {
                     fs.writeFileSync(epgFilePath, xmlString);
                     console.log(`[EPG] Downloaded EPG for "${source.name}" saved to ${epgFilePath}.`);
@@ -661,12 +691,18 @@ async function processAndMergeSources() {
 
             const epgJson = xmlJS.xml2js(xmlString, { compact: true });
             const programs = epgJson.tv && epgJson.tv.programme ? [].concat(epgJson.tv.programme) : [];
+            let programCount = 0; // <-- NEW
+
+            if (programs.length === 0) { // <-- NEW
+                sendProcessingStatus(req, `Warning: No programs found in "${source.name}".`, 'info');
+            }
 
             const m3uSourceProviders = settings.m3uSources.filter(m3u => m3u.isActive);
 
             for (const prog of programs) {
                 const originalChannelId = prog._attributes?.channel;
                 if (!originalChannelId) continue;
+                programCount++; // <-- NEW
 
                 for(const m3uSource of m3uSourceProviders) {
                     const uniqueChannelId = `${m3uSource.id}_${originalChannelId}`;
@@ -688,14 +724,18 @@ async function processAndMergeSources() {
             }
             if (!source.isXcEpg) {
                  source.status = 'Success';
-                 source.statusMessage = 'Processed successfully.';
+                 source.statusMessage = `Processed ${programCount} programs successfully.`; // <-- MODIFIED
                  console.log(`[EPG] Source "${source.name}" processed successfully from ${source.path}.`);
             }
+            sendProcessingStatus(req, ` -> Processed ${programCount} programs from "${source.name}".`, 'info'); // <-- NEW
+
         } catch (error) {
-            console.error(`[EPG] Failed to process source "${source.name}" from ${source.path}:`, error.message);
+            const errorMsg = `Failed to process source "${source.name}" from ${source.path}: ${error.message}`; // <-- NEW
+            console.error(`[EPG] ${errorMsg}`); // <-- MODIFIED
+            sendProcessingStatus(req, `Error: ${errorMsg}`, 'error'); // <-- NEW
              if (!source.isXcEpg) {
-                source.status = 'Error';
-                source.statusMessage = `Processing failed: ${error.message.substring(0, 100)}...`;
+                 source.status = 'Error';
+                 source.statusMessage = `Processing failed: ${error.message.substring(0, 100)}...`;
              }
         }
          if (!source.isXcEpg) {
@@ -708,16 +748,18 @@ async function processAndMergeSources() {
     try {
         fs.writeFileSync(MERGED_EPG_JSON_PATH, JSON.stringify(mergedProgramData));
         console.log(`[EPG] Merged EPG JSON content saved to ${MERGED_EPG_JSON_PATH}.`);
+        sendProcessingStatus(req, `Successfully merged all EPG sources.`, 'success'); // <-- NEW
     } catch (writeErr) {
         console.error(`[EPG] Error writing merged EPG JSON file: ${writeErr.message}`);
+        sendProcessingStatus(req, `Error writing merged EPG JSON file: ${writeErr.message}`, 'error'); // <-- NEW
     }
 
     settings.sourcesLastUpdated = new Date().toISOString();
     console.log(`[PROCESS] Finished processing. New 'sourcesLastUpdated' timestamp: ${settings.sourcesLastUpdated}`);
+    sendProcessingStatus(req, 'All sources processed successfully!', 'final_success'); // <-- NEW
 
     return { success: true, message: 'Sources merged successfully.', updatedSettings: settings };
 }
-
 
 const updateAndScheduleSourceRefreshes = () => {
     console.log('[SCHEDULER] Updating and scheduling all source refreshes...');
@@ -1308,7 +1350,8 @@ app.delete('/api/sources/:sourceType/:id', requireAuth, (req, res) => {
 app.post('/api/process-sources', requireAuth, async (req, res) => {
     console.log('[API] Received request to /api/process-sources (manual trigger).');
     try {
-        const result = await processAndMergeSources();
+        const result = await processAndMergeSources(req); // <-- MODIFIED: Pass req
+
         if (result.success) {
             fs.writeFileSync(SETTINGS_PATH, JSON.stringify(result.updatedSettings, null, 2));
             console.log('[API] Source processing completed and settings saved (manual trigger).');
@@ -1319,6 +1362,7 @@ app.post('/api/process-sources', requireAuth, async (req, res) => {
     }
     catch (error) {
         console.error("[API] Error during manual source processing:", error);
+        sendProcessingStatus(req, `A critical error occurred: ${error.message}`, 'error'); // <-- MODIFIED
         res.status(500).json({ error: 'Failed to process sources. Check server logs.' });
     }
 });
