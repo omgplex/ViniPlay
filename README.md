@@ -19,23 +19,21 @@ ViniPlay transforms your M3U and EPG files into a polished, high-performance str
 The server-side backend resolves common CORS and browser compatibility issues by proxying or transcoding streams with FFMPEG, while the feature-rich frontend provides a user experience comparable to premium IPTV services.
 
 ### Main User Interface Flow
-<div align="center">
-  <img src="https://i.imgur.com/Sm5Faxa.gif" alt="Main GIF with UI navigation" style="width:100%; max-width: 800px;">
-</div>
+![Main User Interface Flow](https://github.com/ardoviniandrea/ViniPlay/blob/image-1/images/multiview.gif)
 
 ### Feature Snapshots
 
 | TV Guide Page | Multi-View Page | Direct Player |
 | :---: | :---: | :---: |
-| ![TV Guide page](https://i.imgur.com/O7jk6X1.png) | ![Multi-View page](https://i.imgur.com/eE3R0Hr.png) <br> [View Animation](https://i.imgur.com/Sm5Faxa.gif) | ![Direct player](https://i.imgur.com/ftmxvss.png) |
+| ![TV Guide page](https://i.imgur.com/O7jk6X1.png) | ![Multi-View page](https://i.imgur.com/eE3R0Hr.png) <br> [View Animation](https://github.com/ardoviniandrea/ViniPlay/blob/image-1/images/multiview.gif) | ![Direct player](https://i.imgur.com/ftmxvss.png) |
 
 | DVR & Recording | Admin Activity Monitoring | Push Notifications |
 | :---: | :---: | :---: |
-| ![DVR](https://i.imgur.com/XVhT1pH.png) <br> [View Animation](https://i.imgur.com/2NPx0H4.gif) | ![Admin activity](https://i.imgur.com/4zaFF1v.png) | ![Notification](https://i.imgur.com/D4hFLoI.png) <br> [View Animation](https://i.imgur.com/uIAUHTm.gif) |
+| ![DVR](https://i.imgur.com/XVhT1pH.png) <br> [View Animation](https://github.com/ardoviniandrea/ViniPlay/blob/image-1/images/DVR.gif) | ![Admin activity](https://i.imgur.com/4zaFF1v.png) | ![Notification](https://i.imgur.com/D4hFLoI.png) <br> [View Animation](https://github.com/ardoviniandrea/ViniPlay/blob/image-1/images/notification.gif) |
 
 | Powerful Settings | Responsive Mobile View | Favorite Manager |
 | :---: | :---: | :---: |
-| ![Settings](https://i.imgur.com/FxOFq88.png) | ![Mobile TV Guide view](https://i.imgur.com/j8LjxSf.png) | ![Favorite manager](https://i.imgur.com/kKCnkFg.png) <br> [View Animation](https://i.imgur.com/st30sVn.gif) |
+| ![Settings](https://i.imgur.com/FxOFq88.png) | ![Mobile TV Guide view](https://i.imgur.com/j8LjxSf.png) | ![Favorite manager](https://i.imgur.com/kKCnkFg.png) <br> [View Animation](https://github.com/ardoviniandrea/ViniPlay/blob/image-1/images/Favorites.gif) |
 
 
 ---
