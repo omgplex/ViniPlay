@@ -1,4 +1,3 @@
-
 <div align="center">
 
 # ViniPlay
@@ -19,69 +18,24 @@ ViniPlay transforms your M3U and EPG files into a polished, high-performance str
 
 The server-side backend resolves common CORS and browser compatibility issues by proxying or transcoding streams with FFMPEG, while the feature-rich frontend provides a user experience comparable to premium IPTV services.
 
-<table width="100%">
-  <tr>
-    <td colspan="3" align="center">
-      <img src="https://i.imgur.com/Sm5Faxa.gif" alt="Main GIF with UI navigation" width="100%">
-      <br>
-      <em>Main flow within the user interface</em>
-    </td>
-  </tr>
+### Main User Interface Flow
+<div align="center">
+  <img src="https://i.imgur.com/Sm5Faxa.gif" alt="Main GIF with UI navigation" style="width:100%; max-width: 800px;">
+</div>
 
-  <tr>
-    <td align="center">
-      <img src="https://imgur.com/O7jk6X1.png" alt="TV Guide page" width="400">
-      <br>
-      <em>TV Guide page</em>
-    </td>
-    <td align="center">
-      <img src="https://imgur.com/eE3R0Hr.png" alt="Multi-View page" width="400">
-      <br>
-      <em>Multi-View page <p>(<a href="https://i.imgur.com/Sm5Faxa.gif">GIF</a>)</p></em>
-    </td>
-    <td align="center">
-      <img src="https://imgur.com/ftmxvss.png" alt="Direct player" width="400">
-      <br>
-      <em>Direct player</em>
-    </td>
-  </tr>
+### Feature Snapshots
 
-  <tr>
-    <td align="center">
-      <img src="https://imgur.com/XVhT1pH.png" alt="DVR" width="250">
-      <br>
-      <em>DVR <p>(<a href="https://i.imgur.com/2NPx0H4.gif">GIF</a>)</p></em>
-    </td>
-    <td align="center">
-      <img src="https://imgur.com/4zaFF1v.png" alt="Admin activity" width="250">
-      <br>
-      <em>Admin activity</em>
-    </td>
-    <td align="center">
-      <img src="https://imgur.com/D4hFLoI.png" alt="Notification" width="250">
-      <br>
-      <em>Notification <p>(<a href="https://i.imgur.com/uIAUHTm.gif">GIF</a>)</p></em>
-    </td>
-  </tr>
+| TV Guide Page | Multi-View Page | Direct Player |
+| :---: | :---: | :---: |
+| ![TV Guide page](https://i.imgur.com/O7jk6X1.png) | ![Multi-View page](https://i.imgur.com/eE3R0Hr.png) <br> [View Animation](https://i.imgur.com/Sm5Faxa.gif) | ![Direct player](https://i.imgur.com/ftmxvss.png) |
 
-  <tr>
-    <td align="center">
-      <img src="https://imgur.com/FxOFq88.png" alt="Settings" width="250">
-      <br>
-      <em>Settings</em>
-    </td>
-    <td align="center">
-      <img src="https://imgur.com/j8LjxSf.png" alt="Mobile TV Guide view" width="250">
-      <br>
-      <em>Mobile TV Guide view</em>
-    </td>
-    <td align="center">
-      <img src="https://imgur.com/kKCnkFg.png" alt="Channel description" width="250">
-      <br>
-      <em>Favorite manager <p>(<a href="https://i.imgur.com/st30sVn.gif">GIF</a>)</p></em>
-    </td>
-  </tr>
-</table>
+| DVR & Recording | Admin Activity Monitoring | Push Notifications |
+| :---: | :---: | :---: |
+| ![DVR](https://i.imgur.com/XVhT1pH.png) <br> [View Animation](https://i.imgur.com/2NPx0H4.gif) | ![Admin activity](https://i.imgur.com/4zaFF1v.png) | ![Notification](https://i.imgur.com/D4hFLoI.png) <br> [View Animation](https://i.imgur.com/uIAUHTm.gif) |
+
+| Powerful Settings | Responsive Mobile View | Favorite Manager |
+| :---: | :---: | :---: |
+| ![Settings](https://i.imgur.com/FxOFq88.png) | ![Mobile TV Guide view](https://i.imgur.com/j8LjxSf.png) | ![Favorite manager](https://i.imgur.com/kKCnkFg.png) <br> [View Animation](https://i.imgur.com/st30sVn.gif) |
 
 
 ---
@@ -101,7 +55,6 @@ The server-side backend resolves common CORS and browser compatibility issues by
  - 🎥 **DVR**: Record programs using FFMPEG. Schedule recording via the TV Guide, or set specific channels and time with ease.
  - 📽️ **Single player**: Play .m3u8 and .ts links directly from the browser, with detailed console logs and recorded history
  - 👥 **Admin monitoring page**: Monitor users watch stream in real time, store historical plays, and broadcast messages to all users.
-
 ---
 
 
@@ -111,16 +64,12 @@ ViniPlay is designed for easy deployment using Docker.
 
 ### Prerequisites
 
--   [Docker](https://docs.docker.com/get-docker/ "null")
+-   Docker
+-   Docker Compose (Recommended)
     
--   [Docker Compose](https://docs.docker.com/compose/install/ "null") (Recommended)
-    
-
 ### Method 1: Using `docker-compose` (Recommended)
 
-This is the easiest way to get started.
-
-1.  **Create Project Files:** Create a directory for your ViniPlay setup and add the following two files:
+1.  **Create Project Files:** Create a directory for your ViniPlay setup and add a `docker-compose.yml` and a `.env` file.
     
     -   `docker-compose.yml`:
         
@@ -150,7 +99,7 @@ This is the easiest way to get started.
         
         > **Security Note:** Your `SESSION_SECRET` should be a long, random string to properly secure user sessions.
     
-2.  **Build and Run the Container:** From your project directory, run the following command:
+2.  **Build and Run the Container:**
     
     ```
     docker-compose up --build -d
@@ -159,9 +108,7 @@ This is the easiest way to get started.
 
 ### Method 2: Using `docker`
 
-If you prefer not to use Docker Compose, you can build and run the container manually.
-
-1.  **Build the Image:** From the root of the project directory, run:
+1.  **Build the Image:**
     
     ```
     docker build -t viniplay .
@@ -180,30 +127,21 @@ If you prefer not to use Docker Compose, you can build and run the container man
     
     ```
     
-
 ### First-Time Setup
 
-Once the container is running, open your browser and navigate to `http://localhost:8998`.
+Once the container is running, open your browser and navigate to `http://localhost:8998`. You will be prompted to create your initial **admin account**. After creating the admin account, you can log in and start configuring your sources in the **Settings** tab.
 
-You will be prompted to create your initial **admin account**. This is a one-time setup that secures your instance. After creating the admin account, you can log in and start configuring your sources in the **Settings** tab.
-
+---
 ## 🔧 Configuration
 
 All configuration is done via the web interface in the **Settings** tab.
 
--   **Data Sources:** Add your M3U and EPG sources. You can use remote URLs or upload files directly. Activate the sources you want to use and set refresh intervals for URLs to keep data current.
-    
--   **Processing:** After adding sources, click the **Process Sources & View Guide** button. This will download, parse, and merge all your data.
-    
--   **Player Settings:**
-    
-    -   **User Agents:** Manage the User-Agent strings sent with stream requests. This can help bypass provider blocks.
-        
-    -   **Stream Profiles:** Define how `ffmpeg` processes streams. You can use the built-in profiles or create your own custom commands.
-        
--   **User Management (Admin):** Admins can create, edit, and delete user accounts from the settings page.
-    
+-   **Data Sources:** Add your M3U and EPG sources from remote URLs, XC Codes, uploaded files.
+-   **Processing:** After adding sources, click the **Process Sources & View Guide** button to download, parse, and merge all your data.
+-   **Player Settings:** Manage User-Agent strings and define `ffmpeg` stream profiles.
+-   **User Management (Admin):** Admins can create, edit, and delete user accounts.
 
+---
 ## 🏗️ Project Structure
 
 The project is organized into a Node.js backend and a modular vanilla JavaScript frontend.
@@ -237,15 +175,16 @@ The project is organized into a Node.js backend and a modular vanilla JavaScript
 
 ```
 
+---
 ## 🏗️ Roadmap
 
-There are some elements I'd like to fix and introduce in the upcoming releases:
+Upcoming features and fixes include:
 
-- DVR .ts files are not seekable when watching during recording
-- Store logos to fast load time
-- Introduce a full horizontal scroll instead of pagination in the TV Guide page
+-   Making DVR .ts files seekable during recording.
+-   Storing logos to improve load time.
+-   Implementing full horizontal scroll in the TV Guide.
 
-
+---
 ## 📄 License
 
-This project is licensed under the MIT License. See the `LICENSE` file for details.
+This project is licensed under the MIT License.
