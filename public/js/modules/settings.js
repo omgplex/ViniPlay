@@ -513,23 +513,27 @@ const saveSettingAndNotify = async (saveFunction, ...args) => {
 export function setupSettingsEventListeners() {
 
     // --- Source Management ---
-    if (UIElements.processSourcesBtn) {
-        UIElements.processSourcesBtn.addEventListener('click', async () => {
-            // NEW: Open the processing modal which will show the status
-            showProcessingModal();
+        if (UIElements.processSourcesBtn) {
+            UIElements.processSourcesBtn.addEventListener('click', async () => {
+                if (isProcessingRunning && UIElements.processingStatusModal.classList.contains('hidden')) {
+                    // Process is running in the background, just reopen the modal
+                    openModal(UIElements.processingStatusModal);
+                    return;
+                }
     
-            // Trigger the backend process. We don't need to wait for it to finish here,
-            // as status updates will come via Server-Sent Events (SSE).
-            const res = await apiFetch('/api/process-sources', { method: 'POST' });
-    
-            // If the initial request fails (e.g., server is down), show an error in the modal.
-            if (!res || !res.ok) {
-                const data = res ? await res.json() : { error: 'Could not connect to server.'};
-                // This function will be created in the next step (ui.js)
-                updateProcessingStatus(`Failed to start process: ${data.error}`, 'error');
-            }
-        });
-    }
+                // 1. Open the processing modal (this sets isProcessingRunning = true)
+                showProcessingModal();
+        
+                // 2. Trigger the backend process.
+                const res = await apiFetch('/api/process-sources', { method: 'POST' });
+        
+                // 3. Handle initial request failure
+                if (!res || !res.ok) {
+                    const data = res ? await res.json() : { error: 'Could not connect to server.'};
+                    updateProcessingStatus(`Failed to start process: ${data.error}`, 'error');
+                }
+            });
+        }
     
     UIElements.addM3uBtn.addEventListener('click', () => openSourceEditor('m3u'));
     UIElements.addEpgBtn.addEventListener('click', () => openSourceEditor('epg'));
