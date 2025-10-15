@@ -1589,7 +1589,12 @@
             <div id="processing-status-log" class="p-6 flex-grow overflow-y-auto custom-scrollbar font-mono text-sm text-gray-400 space-y-2">
                 </div>
             <div id="processing-status-footer" class="bg-gray-700/50 px-6 py-4 flex justify-end gap-4 rounded-b-lg flex-shrink-0">
-                <button type="button" id="processing-status-close-btn" class="hidden bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Close</button>
+                <div id="processing-status-running-actions" class="hidden">
+                    <button type="button" id="processing-status-background-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Continue in the background</button>
+                </div>
+                <div id="processing-status-finished-actions" class="hidden">
+                    <button type="button" id="processing-status-close-refresh-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md">Close and update</button>
+                </div>
             </div>
         </div>
     </div>
