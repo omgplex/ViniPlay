@@ -29,11 +29,11 @@ The server-side backend resolves common CORS and browser compatibility issues by
 
 | DVR & Recording | Admin Activity Monitoring | Push Notifications |
 | :---: | :---: | :---: |
-| ![DVR](https://i.imgur.com/XVhT1pH.png) <br> [View Animation](https://i.imgur.com/2NPx0H4.gif) | ![Admin activity](https://i.imgur.com/4zaFF1v.png) | ![Notification](https://i.imgur.com/D4hFLoI.png) <br> [View Animation](https://i.imgur.com/uIAUHTm.gif) |
+| ![DVR](https://i.imgur.com/XVhT1pH.png) <br> [View Animation](https://github.com/ardoviniandrea/ViniPlay/blob/image-1/images/DVR.gif) | ![Admin activity](https://i.imgur.com/4zaFF1v.png) | ![Notification](https://i.imgur.com/D4hFLoI.png) <br> [View Animation](https://github.com/ardoviniandrea/ViniPlay/blob/image-1/images/notification.gif) |
 
 | Powerful Settings | Responsive Mobile View | Favorite Manager |
 | :---: | :---: | :---: |
-| ![Settings](https://i.imgur.com/FxOFq88.png) | ![Mobile TV Guide view](https://i.imgur.com/j8LjxSf.png) | ![Favorite manager](https://i.imgur.com/kKCnkFg.png) <br> [View Animation](https://i.imgur.com/st30sVn.gif) |
+| ![Settings](https://i.imgur.com/FxOFq88.png) | ![Mobile TV Guide view](https://i.imgur.com/j8LjxSf.png) | ![Favorite manager](https://i.imgur.com/kKCnkFg.png) <br> [View Animation](https://github.com/ardoviniandrea/ViniPlay/blob/image-1/images/Favorites.gif) |
 
 
 ---
