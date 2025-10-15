@@ -501,3 +501,73 @@ export const switchTab = (activeTab) => {
     else newPath = '/settings';
     navigate(newPath);
 };
+
+/**
+ * NEW: Shows and resets the processing status modal.
+ */
+export function showProcessingModal() {
+    const modal = UIElements.processingStatusModal;
+    const logContainer = UIElements.processingStatusLog;
+    const closeBtn = UIElements.processingStatusCloseBtn;
+
+    if (modal && logContainer && closeBtn) {
+        // Reset the modal state
+        logContainer.innerHTML = '';
+        closeBtn.classList.add('hidden');
+
+        // Add a listener to the close button
+        closeBtn.onclick = () => {
+            closeModal(modal);
+            // Optionally, refresh the settings page to show updated source statuses
+            updateUIFromSettings();
+        };
+
+        openModal(modal);
+    }
+}
+
+/**
+ * NEW: Updates the content of the processing status modal.
+ * @param {string} message - The log message to display.
+ * @param {string} type - The type of message ('info', 'success', 'error', 'final_success').
+ */
+export function updateProcessingStatus(message, type = 'info') {
+    const logContainer = UIElements.processingStatusLog;
+    const closeBtn = UIElements.processingStatusCloseBtn;
+
+    if (!logContainer) return;
+
+    const logEntry = document.createElement('p');
+    const timestamp = new Date().toLocaleTimeString();
+    let typeIndicator = '';
+    let colorClass = 'text-gray-400';
+
+    switch (type) {
+        case 'success':
+            typeIndicator = '[SUCCESS]';
+            colorClass = 'text-green-400';
+            break;
+        case 'final_success':
+            typeIndicator = '[SUCCESS]';
+            colorClass = 'text-green-400';
+            // Show the close button on final success
+            if (closeBtn) closeBtn.classList.remove('hidden');
+            break;
+        case 'error':
+            typeIndicator = '[ERROR]';
+            colorClass = 'text-red-400';
+            // Show the close button on error
+            if (closeBtn) closeBtn.classList.remove('hidden');
+            break;
+        case 'info':
+        default:
+            typeIndicator = '[INFO]';
+            break;
+    }
+
+    logEntry.innerHTML = `<span class="text-gray-500">${timestamp}</span> <span class="${colorClass} font-semibold">${typeIndicator}</span> <span class="${colorClass}">${message}</span>`;
+    logContainer.appendChild(logEntry);
+
+    // Auto-scroll to the bottom
+    logContainer.scrollTop = logContainer.scrollHeight;
+}
