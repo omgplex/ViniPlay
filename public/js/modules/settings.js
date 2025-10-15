@@ -6,14 +6,14 @@
 
 import { appState, guideState, UIElements } from './state.js';
 import { apiFetch, saveGlobalSetting, saveUserSetting } from './api.js';
-import { showNotification, openModal, closeModal, showConfirm, setButtonLoadingState, showProcessingModal } from './ui.js';
+// MODIFIED: Import isProcessingRunning for the button logic
+import { showNotification, openModal, closeModal, showConfirm, setButtonLoadingState, showProcessingModal, isProcessingRunning } from './ui.js'; 
 import { handleGuideLoad } from './guide.js';
 import { navigate } from './ui.js';
 import { ICONS } from './icons.js';
 
 let currentSourceTypeForEditor = 'url';
 let hardwareChecked = false; // Flag to prevent re-checking hardware on every UI update
-
 
 /**
  * Fetches the server's public IP and displays it.
