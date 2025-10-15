@@ -507,7 +507,7 @@ export const switchTab = (activeTab) => {
 };
 
 // Variable to track the last processing status to determine the action of the main button
-let isProcessingRunning = false;
+// let isProcessingRunning = false; //commenting this out as it's exported above
 
 /**
  * NEW: Initiates a refresh of the TV Guide with new data.
