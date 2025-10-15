@@ -13,7 +13,7 @@ import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './
 import { setupPlayerEventListeners, playChannel, stopAndCleanupPlayer } from './modules/player.js';
 import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
 // MODIFIED: Imported showBroadcastMessage
-import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu, showNotification, showBroadcastMessage } from './modules/ui.js';
+import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu, showNotification, showBroadcastMessage, updateProcessingStatus } from './modules/ui.js';
 // MODIFIED: Import navigateToProgramInGuide to handle deep links from notifications.
 import { loadAndScheduleNotifications, subscribeUserToPush, navigateToProgramInGuide } from './modules/notification.js';
 import { setupDvrEventListeners, handleDvrChannelClick, initDvrPage } from './modules/dvr.js';
@@ -86,6 +86,13 @@ function initializeSse() {
         // Automatically trigger the re-subscription process. The `true` flag forces it to
         // first unsubscribe the bad subscription from the browser before creating a new one.
         subscribeUserToPush(true); 
+    });
+
+    // NEW: Listen for real-time processing status updates
+    eventSource.addEventListener('processing-status', (event) => {
+        const data = JSON.parse(event.data);
+        // This function will be created in ui.js to update the modal
+        updateProcessingStatus(data.message, data.type);
     });
 
     // NEW: Listen for the 'force-logout' event
