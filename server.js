@@ -2299,7 +2299,7 @@ async function checkAndSendNotifications() {
                     programTitle: delivery.programTitle,
                     programStart: delivery.programStart,
                     channelName: delivery.channelName,
-                    channelLogo: delivery.channelLogo || 'https://i.imgur.com/rwa8SjI.png',
+                    channelLogo: delivery.channelLogo || 'https://i.imgur.com/8FwZLSr.png',
                     url: `/tvguide?channelId=${delivery.channelId}&programId=${delivery.programId}&programStart=${delivery.programStart}`
                 }
             });
