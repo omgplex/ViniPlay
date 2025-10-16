@@ -27,6 +27,16 @@ let blockConfigReload = false;
 // NEW: Exported variable to track if processing is running
 export let isProcessingRunning = false;
 
+let notificationHideTimeout = null;
+
+const hideNotification = () => {
+    if (notificationHideTimeout) {
+        clearTimeout(notificationHideTimeout);
+        notificationHideTimeout = null;
+    }
+    UIElements.notificationModal?.classList.add('hidden');
+};
+
 
 /**
  * Shows a notification message at the top-right of the screen.
@@ -42,13 +52,26 @@ export const showNotification = (message, isError = false, duration = 3000) => {
     }
 
     UIElements.notificationMessage.textContent = message;
-    
+
     UIElements.notificationBox.classList.remove('success-bg', 'error-bg');
     UIElements.notificationBox.classList.add(isError ? 'error-bg' : 'success-bg');
-    
+
     UIElements.notificationModal.classList.remove('hidden');
 
-    setTimeout(() => { UIElements.notificationModal.classList.add('hidden'); }, duration);
+    if (notificationHideTimeout) {
+        clearTimeout(notificationHideTimeout);
+    }
+
+    notificationHideTimeout = setTimeout(() => {
+        hideNotification();
+    }, duration);
+
+    if (!UIElements.notificationBox.dataset.dismissListener) {
+        UIElements.notificationBox.addEventListener('click', hideNotification);
+        UIElements.notificationBox.dataset.dismissListener = 'true';
+    }
+
+    UIElements.notificationBox.setAttribute('title', 'Click to dismiss');
 };
 
 /**

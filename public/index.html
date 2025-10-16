@@ -379,12 +379,18 @@
         .status-badge.error { background-color: #f97316; color: white; }
         .status-badge.cancelled { background-color: #6b7280; color: white; }
 
+        #main-header {
+            position: relative;
+        }
+
         #notification-modal-wrapper {
-            position: fixed;
-            top: 1.25rem; 
-            right: 1.25rem;
-            z-index: 100;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 150;
             pointer-events: none;
+            max-width: calc(100% - 2rem);
         }
         #notification-modal-wrapper.hidden { display: none; }
         #notification-box {
@@ -392,13 +398,18 @@
             padding: 0.5rem 1rem;
             border-radius: 0.5rem;
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-            pointer-events: all; 
+            pointer-events: all;
             opacity: 0;
             transform: translateY(-20px);
             transition: opacity 0.3s ease-out, transform 0.3s ease-out, background-color 0.2s ease-in-out;
-            min-width: 250px; 
+            min-width: 250px;
             text-align: center;
-            background-color: #ef4444; 
+            background-color: #ef4444;
+            cursor: pointer;
+            display: inline-flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
         }
         #notification-modal-wrapper:not(.hidden) #notification-box {
             opacity: 1;
@@ -610,6 +621,9 @@
                     <button id="tab-settings" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Settings</button>
                 </div>
                 <button id="logout-btn" class="text-sm bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-md transition-colors">Logout</button>
+            </div>
+            <div id="notification-modal-wrapper" class="hidden">
+                <div id="notification-box"><p id="notification-message"></p></div>
             </div>
         </header>
 
@@ -1332,10 +1346,6 @@
         </div>
     </div>
     
-    <div id="notification-modal-wrapper" class="hidden">
-        <div id="notification-box"><p id="notification-message"></p></div>
-    </div>
-
     <div id="confirm-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
         <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6">
             <h3 id="confirm-title" class="text-lg font-bold text-white mb-2"></h3>
