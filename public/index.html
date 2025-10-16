@@ -1129,7 +1129,7 @@
                             </div>
                             <div class="overflow-x-auto bg-gray-900/50 rounded-lg">
                                 <table class="min-w-full sources-table">
-                                    <thead><tr><th>Name</th><th>Type</th><th>URL / File Path</th><th>Status</th><th>Last Updated</th><th>Refresh</th><th>Active</th><th class="text-right">Actions</th></tr></thead>
+                                    <thead><tr><th>Name</th><th>Type</th><th>URL / File Path</th><th>Status</th><th>Last Updated</th><th>Refresh</th><th>Max Concurrent</th><th>Active</th><th class="text-right">Actions</th></tr></thead>
                                     <tbody id="m3u-sources-tbody"></tbody>
                                 </table>
                             </div>
@@ -1527,6 +1527,11 @@
                                 <option value="12">Every 12 Hours</option>
                                 <option value="24">Every 24 Hours</option>
                             </select>
+                        </div>
+                        <div id="source-editor-concurrency-container" class="hidden">
+                            <label for="source-editor-max-concurrent" class="block text-sm font-medium text-gray-400">Max Concurrent Channels</label>
+                            <input type="number" id="source-editor-max-concurrent" min="0" step="1" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" value="0">
+                            <p class="text-xs text-gray-500 mt-1">Set to 0 for unlimited channels.</p>
                         </div>
                     </div>
                 </div>

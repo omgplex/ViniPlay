@@ -451,6 +451,19 @@ function getSettings() {
             });
         }
         
+        (settings.m3uSources || []).forEach(source => {
+            const parsedLimit = parseInt(source.maxConcurrentChannels, 10);
+            if (Number.isNaN(parsedLimit) || parsedLimit < 0) {
+                if (source.maxConcurrentChannels !== 0 && source.maxConcurrentChannels !== undefined) {
+                    needsSave = true;
+                }
+                source.maxConcurrentChannels = 0;
+            } else if (source.maxConcurrentChannels !== parsedLimit) {
+                source.maxConcurrentChannels = parsedLimit;
+                needsSave = true;
+            }
+        });
+
         if (needsSave) {
             console.log('[SETTINGS_MIGRATE] Saving updated settings file after migration.');
             fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
@@ -465,6 +478,82 @@ function getSettings() {
 }
 
 // ... existing helper functions (saveSettings, fetchUrlContent, parseEpgTime, processAndMergeSources, updateAndScheduleSourceRefreshes) remain the same ...
+function getActiveChannelKeysForSource(sourceName) {
+    const keys = new Set();
+    activeStreamProcesses.forEach(info => {
+        if (info?.sourceName === sourceName && info.channelKey) {
+            keys.add(info.channelKey);
+        }
+    });
+    activeRedirectStreams.forEach(info => {
+        if (info?.sourceName === sourceName && info.channelKey) {
+            keys.add(info.channelKey);
+        }
+    });
+    return keys;
+}
+
+function checkSourceConcurrencyLimit(settings, sourceName, channelKey) {
+    if (!sourceName) {
+        return { allowed: true };
+    }
+
+    const sourceEntry = (settings.m3uSources || []).find(src => src.name === sourceName);
+    if (!sourceEntry) {
+        return { allowed: true };
+    }
+
+    const limit = parseInt(sourceEntry.maxConcurrentChannels, 10);
+    if (!limit || limit <= 0) {
+        return { allowed: true };
+    }
+
+    const activeKeys = getActiveChannelKeysForSource(sourceName);
+    if (channelKey && activeKeys.has(channelKey)) {
+        return { allowed: true };
+    }
+
+    if (activeKeys.size >= limit) {
+        const message = `Concurrent channel limit reached. Maximum of ${limit} channel${limit === 1 ? '' : 's'} allowed simultaneously for this account.`;
+        return { allowed: false, message, limit };
+    }
+
+    return { allowed: true };
+}
+
+function loadMergedChannels() {
+    if (!fs.existsSync(MERGED_M3U_PATH)) {
+        return [];
+    }
+    try {
+        return parseM3U(fs.readFileSync(MERGED_M3U_PATH, 'utf-8'));
+    } catch (error) {
+        console.error('[CONCURRENCY] Failed to load merged M3U content:', error.message);
+        return [];
+    }
+}
+
+function resolveChannelForConcurrency({ streamUrl, channelId, channelName }) {
+    const channels = loadMergedChannels();
+    let channel = null;
+
+    if (channelId) {
+        channel = channels.find(c => c.id === channelId);
+    }
+    if (!channel && streamUrl) {
+        channel = channels.find(c => c.url === streamUrl);
+    }
+    if (!channel && channelName) {
+        const targetName = channelName.toLowerCase();
+        channel = channels.find(c => (c.displayName || c.name || '').toLowerCase() === targetName);
+    }
+
+    const channelKey = channel ? (channel.id || channel.url || channel.displayName || streamUrl || channelName || null) : (streamUrl || channelName || null);
+    const sourceName = channel ? channel.source : null;
+    const channelLogo = channel ? channel.logo : null;
+    return { channel, sourceName, channelKey, channelLogo };
+}
+
 function saveSettings(settings) {
     try {
         fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
@@ -1154,7 +1243,7 @@ const upload = multer({
 
 app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, res) => {
     // FIX: Correctly read all possible fields from the form data, including 'xc'.
-    const { sourceType, name, url, isActive, id, refreshHours, xc } = req.body;
+    const { sourceType, name, url, isActive, id, refreshHours, xc, maxConcurrentChannels } = req.body;
     console.log(`[SOURCES_API] ${id ? 'Updating' : 'Adding'} source. Type: ${sourceType}, Name: ${name}`);
 
     if (!sourceType || !name) {
@@ -1234,6 +1323,11 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
             return res.status(400).json({ error: 'Existing file source requires a new file if original is missing.' });
         }
 
+        if (sourceType === 'm3u' && maxConcurrentChannels !== undefined) {
+            const parsedLimit = parseInt(maxConcurrentChannels, 10);
+            sourceToUpdate.maxConcurrentChannels = Number.isNaN(parsedLimit) || parsedLimit < 0 ? 0 : parsedLimit;
+        }
+
         saveSettings(settings);
         console.log(`[SOURCES_API] Source ${id} updated successfully.`);
         res.json({ success: true, message: 'Source updated successfully.', settings: getSettings() });
@@ -1298,6 +1392,11 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
             }
         }
 
+        if (sourceType === 'm3u') {
+            const parsedLimit = parseInt(maxConcurrentChannels, 10);
+            newSource.maxConcurrentChannels = Number.isNaN(parsedLimit) || parsedLimit < 0 ? 0 : parsedLimit;
+        }
+
         sourceList.push(newSource);
         saveSettings(settings);
         console.log(`[SOURCES_API] New source "${name}" added successfully (ID: ${newSource.id}).`);
@@ -1308,7 +1407,7 @@ app.post('/api/sources', requireAuth, upload.single('sourceFile'), async (req, r
 
 app.put('/api/sources/:sourceType/:id', requireAuth, (req, res) => {
     const { sourceType, id } = req.params;
-    const { name, path: newPath, isActive } = req.body;
+    const { name, path: newPath, isActive, maxConcurrentChannels } = req.body;
     console.log(`[SOURCES_API] Partial update source ID: ${id}, Type: ${sourceType}, isActive: ${isActive}`);
     
     const settings = getSettings();
@@ -1327,6 +1426,11 @@ app.put('/api/sources/:sourceType/:id', requireAuth, (req, res) => {
         source.path = newPath;
     }
     source.lastUpdated = new Date().toISOString();
+
+    if (sourceType === 'm3u' && maxConcurrentChannels !== undefined) {
+        const parsedLimit = parseInt(maxConcurrentChannels, 10);
+        source.maxConcurrentChannels = Number.isNaN(parsedLimit) || parsedLimit < 0 ? 0 : parsedLimit;
+    }
 
     saveSettings(settings);
     console.log(`[SOURCES_API] Source ${id} partially updated.`);
@@ -1692,6 +1796,24 @@ app.delete('/api/data', requireAuth, requireAdmin, (req, res) => {
 
 
 // MODIFIED: Stream endpoint now logs to history and has enhanced tracking.
+app.post('/api/stream/check-concurrency', requireAuth, (req, res) => {
+    const { streamUrl, channelId, channelName } = req.body || {};
+
+    if (!streamUrl && !channelId && !channelName) {
+        return res.json({ allowed: true });
+    }
+
+    const settings = getSettings();
+    const { sourceName, channelKey } = resolveChannelForConcurrency({ streamUrl, channelId, channelName });
+    const check = checkSourceConcurrencyLimit(settings, sourceName, channelKey);
+
+    if (!check.allowed) {
+        return res.status(429).json({ error: check.message });
+    }
+
+    res.json({ allowed: true });
+});
+
 app.get('/stream', requireAuth, async (req, res) => {
     const streamUrl = req.query.url;
     const profileId = req.query.profileId;
@@ -1753,6 +1875,14 @@ app.get('/stream', requireAuth, async (req, res) => {
     const channelName = channel ? channel.displayName || channel.name : 'Direct Stream';
     const channelId = channel ? channel.id : null;
     const channelLogo = channel ? channel.logo : null;
+    const sourceName = channel ? channel.source : null;
+    const channelKey = channel ? (channel.id || channel.url || streamUrl) : streamUrl;
+
+    const concurrencyResult = checkSourceConcurrencyLimit(settings, sourceName, channelKey);
+    if (!concurrencyResult.allowed) {
+        console.warn(`[CONCURRENCY] Limit reached for source ${sourceName || 'unknown'} while accessing ${channelKey}.`);
+        return res.status(429).type('text/plain').send(concurrencyResult.message);
+    }
     const streamProfileName = profile ? profile.name : 'Unknown Profile';
     
     console.log(`[STREAM] Using Profile='${profile.name}' (ID=${profile.id}), UserAgent='${userAgent.name}'`);
@@ -1794,6 +1924,9 @@ app.get('/stream', requireAuth, async (req, res) => {
                     clientIp,
                     streamKey,
                     isTranscoded, // NEW: Store transcoding status
+                    sourceName,
+                    channelKey,
+                    streamUrl,
                 };
                 activeStreamProcesses.set(streamKey, newStreamInfo);
                 console.log(`[STREAM] Started FFMPEG process with PID: ${ffmpeg.pid} for user ${userId} for stream key: ${streamKey}.`);
@@ -1889,9 +2022,21 @@ app.post('/api/activity/start-redirect', requireAuth, (req, res) => {
     const clientIp = req.clientIp;
     const startTime = new Date().toISOString();
 
+    const settings = getSettings();
+    const { channel, sourceName, channelKey, channelLogo: derivedLogo } = resolveChannelForConcurrency({ streamUrl, channelId, channelName });
+    const resolvedChannelId = channel ? channel.id : channelId;
+    const resolvedChannelName = channel ? channel.displayName || channel.name : channelName;
+    const resolvedLogo = channelLogo || derivedLogo || '';
+
+    const concurrencyResult = checkSourceConcurrencyLimit(settings, sourceName, channelKey);
+    if (!concurrencyResult.allowed) {
+        console.warn(`[CONCURRENCY] Redirect stream denied for source ${sourceName || 'unknown'} on channel ${channelKey}.`);
+        return res.status(429).json({ error: concurrencyResult.message });
+    }
+
     db.run(
         `INSERT INTO stream_history (user_id, username, channel_id, channel_name, start_time, status, client_ip, channel_logo, stream_profile_name) VALUES (?, ?, ?, ?, ?, 'playing', ?, ?, ?)`,
-        [userId, username, channelId, channelName, startTime, clientIp, channelLogo, 'Redirect'],
+        [userId, username, resolvedChannelId, resolvedChannelName, startTime, clientIp, resolvedLogo, 'Redirect'],
         function(err) {
             if (err) {
                 console.error('[REDIRECT_LOG] Error logging redirect stream start:', err.message);
@@ -1906,14 +2051,17 @@ app.post('/api/activity/start-redirect', requireAuth, (req, res) => {
                 streamKey,
                 userId,
                 username,
-                channelId,
-                channelName,
-                channelLogo,
+                channelId: resolvedChannelId,
+                channelName: resolvedChannelName,
+                channelLogo: resolvedLogo,
                 streamProfileName: 'Redirect',
                 startTime,
                 clientIp,
                 isTranscoded: false,
                 historyId,
+                sourceName,
+                channelKey,
+                streamUrl,
             });
             broadcastAdminUpdate(); // Notify admins
             // --- END NEW ---

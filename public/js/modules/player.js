@@ -5,7 +5,7 @@
 
 import { appState, guideState, UIElements } from './state.js';
 // MODIFIED: Added stopStream to the import
-import { saveUserSetting, stopStream, startRedirectStream, stopRedirectStream } from './api.js';
+import { saveUserSetting, stopStream, startRedirectStream, stopRedirectStream, checkStreamConcurrency } from './api.js';
 import { showNotification, openModal, closeModal } from './ui.js';
 import { castState, loadMedia, setLocalPlayerState } from './cast.js';
 
@@ -170,7 +170,7 @@ function updateStreamInfo() {
  * @param {string} name - The name of the channel to display.
  * @param {string} channelId - The unique ID of the channel.
  */
-export const playChannel = (url, name, channelId) => {
+export const playChannel = async (url, name, channelId) => {
     // On a fresh play request (not a retry), reset the retry counter
     if (!retryTimeout) {
         retryCount = 0;
@@ -199,25 +199,26 @@ export const playChannel = (url, name, channelId) => {
         currentRedirectHistoryId = null;
     }
     const profile = (guideState.settings.streamProfiles || []).find(p => p.id === profileId);
-    // If the selected profile is redirect, start a new logging session.
-    if (profile.command === 'redirect') {
-        const channel = guideState.channels.find(c => c.id === channelId);
-        startRedirectStream(url, channelId, name, channel ? channel.logo : '')
-            .then(historyId => {
-                if (historyId) {
-                    currentRedirectHistoryId = historyId;
-                }
-            });
-    }
-    // --- End Activity Logging ---
-
-    
     if (!profile) {
         return showNotification("Stream profile not found.", true);
     }
-    
-    const streamUrlToPlay = profile.command === 'redirect' ? url : `/stream?url=${encodeURIComponent(url)}&profileId=${profileId}&userAgentId=${userAgentId}`;
     const channel = guideState.channels.find(c => c.id === channelId);
+
+    if (profile.command === 'redirect') {
+        const historyId = await startRedirectStream(url, channelId, name, channel ? channel.logo : '');
+        if (!historyId) {
+            return; // Error already shown via apiFetch
+        }
+        currentRedirectHistoryId = historyId;
+    } else {
+        const concurrencyOk = await checkStreamConcurrency(url, channelId, name);
+        if (!concurrencyOk) {
+            return;
+        }
+    }
+    // --- End Activity Logging ---
+
+    const streamUrlToPlay = profile.command === 'redirect' ? url : `/stream?url=${encodeURIComponent(url)}&profileId=${profileId}&userAgentId=${userAgentId}`;
     const logo = channel ? channel.logo : '';
 
     if (castState.isCasting) {

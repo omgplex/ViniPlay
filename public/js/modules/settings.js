@@ -246,8 +246,11 @@ const renderSourceTable = (sourceType) => {
     const sources = guideState.settings[`${sourceType}Sources`] || [];
     tbody.innerHTML = '';
 
+    const hasConcurrency = sourceType === 'm3u';
+
     if (sources.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-gray-500 py-4">No ${sourceType.toUpperCase()} sources added.</td></tr>`;
+        const colSpan = hasConcurrency ? 9 : 8;
+        tbody.innerHTML = `<tr><td colspan="${colSpan}" class="text-center text-gray-500 py-4">No ${sourceType.toUpperCase()} sources added.</td></tr>`;
         return;
     }
 
@@ -255,21 +258,32 @@ const renderSourceTable = (sourceType) => {
         const pathDisplay = source.type === 'file' ? (source.path.split('/').pop() || source.path.split('\\').pop()) : source.path;
         const lastUpdated = new Date(source.lastUpdated).toLocaleString();
         const refreshText = source.type === 'url' && source.refreshHours > 0 ? `Every ${source.refreshHours}h` : 'Disabled';
+        const concurrencyText = hasConcurrency ? ((source.maxConcurrentChannels ?? 0) > 0 ? source.maxConcurrentChannels : 'Unlimited') : null;
         const tr = document.createElement('tr');
         tr.dataset.sourceId = source.id;
-        tr.innerHTML = `
-            <td>${source.name}</td>
-            <td><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${source.type === 'file' ? 'bg-blue-200 text-blue-800' : 'bg-purple-200 text-purple-800'}">${source.type}</span></td>
-            <td class="max-w-xs truncate" title="${pathDisplay}">${pathDisplay}</td>
-            <td><span class="text-xs font-medium text-gray-400">${source.statusMessage || 'N/A'}</span></td>
-            <td>${lastUpdated}</td>
-            <td>${refreshText}</td>
+        const columns = [
+            `<td>${source.name}</td>`,
+            `<td><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${source.type === 'file' ? 'bg-blue-200 text-blue-800' : 'bg-purple-200 text-purple-800'}">${source.type}</span></td>`,
+            `<td class="max-w-xs truncate" title="${pathDisplay}">${pathDisplay}</td>`,
+            `<td><span class="text-xs font-medium text-gray-400">${source.statusMessage || 'N/A'}</span></td>`,
+            `<td>${lastUpdated}</td>`,
+            `<td>${refreshText}</td>`
+        ];
+
+        if (hasConcurrency) {
+            columns.push(`<td>${concurrencyText}</td>`);
+        }
+
+        columns.push(`
             <td>
                 <label class="switch">
                     <input type="checkbox" class="activate-switch" ${source.isActive ? 'checked' : ''}>
                     <span class="slider"></span>
                 </label>
             </td>
+        `);
+
+        columns.push(`
             <td class="text-right">
                 <div class="flex items-center justify-end gap-3">
                     <button class="action-btn edit-source-btn" title="Edit Source">
@@ -280,7 +294,9 @@ const renderSourceTable = (sourceType) => {
                     </button>
                 </div>
             </td>
-        `;
+        `);
+
+        tr.innerHTML = columns.join('');
         tbody.appendChild(tr);
     });
 };
@@ -442,6 +458,16 @@ const openSourceEditor = (sourceType, source = null) => {
     UIElements.sourceEditorName.value = source ? source.name : '';
     UIElements.sourceEditorIsActive.checked = source ? source.isActive : true;
     UIElements.sourceEditorRefreshInterval.value = source ? (source.refreshHours || 0) : 0;
+
+    const isM3uSource = sourceType === 'm3u';
+    if (UIElements.sourceEditorConcurrencyContainer) {
+        UIElements.sourceEditorConcurrencyContainer.classList.toggle('hidden', !isM3uSource);
+    }
+    if (UIElements.sourceEditorMaxConcurrent) {
+        const maxConc = isM3uSource ? (source?.maxConcurrentChannels ?? 0) : 0;
+        UIElements.sourceEditorMaxConcurrent.value = maxConc;
+        UIElements.sourceEditorMaxConcurrent.disabled = !isM3uSource;
+    }
 
     // Default to 'url' tab unless source dictates otherwise
     let activeTab = 'url';
@@ -650,6 +676,11 @@ export function setupSettingsEventListeners() {
         formData.append('sourceType', sourceType);
         formData.append('name', UIElements.sourceEditorName.value);
         formData.append('isActive', UIElements.sourceEditorIsActive.checked);
+        if (sourceType === 'm3u' && UIElements.sourceEditorMaxConcurrent) {
+            const maxConcurrentRaw = parseInt(UIElements.sourceEditorMaxConcurrent.value, 10);
+            const normalizedMaxConcurrent = Number.isNaN(maxConcurrentRaw) || maxConcurrentRaw < 0 ? 0 : maxConcurrentRaw;
+            formData.append('maxConcurrentChannels', normalizedMaxConcurrent);
+        }
         
         if (currentSourceTypeForEditor === 'url') {
             formData.append('url', UIElements.sourceEditorUrl.value);

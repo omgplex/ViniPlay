@@ -313,6 +313,17 @@ export async function startRedirectStream(streamUrl, channelId, channelName, cha
     return null;
 }
 
+export async function checkStreamConcurrency(streamUrl, channelId, channelName) {
+    console.log('[API] Checking stream concurrency capacity.');
+    const res = await apiFetch('/api/stream/check-concurrency', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ streamUrl, channelId, channelName })
+    });
+
+    return !!(res && res.ok);
+}
+
 /**
  * NEW: Notifies the server that a "Redirect" stream has stopped.
  * @param {number} historyId - The history ID of the stream session to stop.
