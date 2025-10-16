@@ -11,7 +11,7 @@ import { checkAuthStatus, setupAuthEventListeners } from './modules/auth.js';
 import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './modules/guide.js';
 //-- ENHANCEMENT: Import playChannel to handle the remote channel change event.
 import { setupPlayerEventListeners, playChannel, stopAndCleanupPlayer } from './modules/player.js';
-import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings } from './modules/settings.js';
+import { setupSettingsEventListeners, populateTimezoneSelector, updateUIFromSettings, addRecommendedChannel } from './modules/settings.js';
 // MODIFIED: Imported showBroadcastMessage
 import { makeModalResizable, handleRouteChange, switchTab, handleConfirm, closeModal, makeColumnResizable, openMobileMenu, closeMobileMenu, showNotification, showBroadcastMessage, updateProcessingStatus, showConfirm, refreshGuideAfterProcessing } from './modules/ui.js';
 // MODIFIED: Import navigateToProgramInGuide to handle deep links from notifications.
@@ -20,6 +20,7 @@ import { setupDvrEventListeners, handleDvrChannelClick, initDvrPage } from './mo
 import { handleMultiViewChannelClick, populateChannelSelector, initMultiView } from './modules/multiview.js';
 import { setupDirectPlayerEventListeners, initDirectPlayer } from './modules/player_direct.js';
 import { initChannelsPage, updateChannelsPage } from './modules/channels.js';
+import { initPopularPage, updatePopularPage, updatePopularNowData } from './modules/popular.js';
 import { ICONS } from './modules/icons.js'; // MODIFIED: Import the new icon library
 //-- ENHANCEMENT: Import the new handler for channel selector clicks from the admin page.
 import { initActivityPage, setupAdminEventListeners, handleActivityUpdate, handleAdminChannelClick } from './modules/admin.js';
@@ -112,9 +113,10 @@ function initializeSse() {
     //-- ENHANCEMENT: Listen for real-time activity updates for the admin dashboard.
     eventSource.addEventListener('activity-update', (event) => {
         const data = JSON.parse(event.data);
+        updatePopularNowData(data.live || []);
         // This will only do something if the admin page is currently active.
         if (window.location.pathname.startsWith('/activity')) {
-            handleActivityUpdate(data.live);
+            handleActivityUpdate(data.live || []);
         }
     });
 
@@ -125,7 +127,7 @@ function initializeSse() {
         
         // Check which player is active and change its channel
         const currentPage = window.location.pathname;
-        if (currentPage.startsWith('/tvguide') || currentPage.startsWith('/channels')) {
+        if (currentPage.startsWith('/tvguide') || currentPage.startsWith('/channels') || currentPage.startsWith('/popular')) {
             // Stop the main player if it's open, then play the new channel.
             stopAndCleanupPlayer().then(() => {
                 showNotification(`An administrator has changed your channel to: ${channel.name}`, false, 4000);
@@ -141,6 +143,11 @@ function initializeSse() {
         console.log('[SSE] Received broadcast message from admin.');
         const data = JSON.parse(event.data);
         showBroadcastMessage(data.message);
+    });
+
+    eventSource.addEventListener('popular-update', (event) => {
+        const data = JSON.parse(event.data);
+        updatePopularNowData(data.live || []);
     });
 }
 
@@ -409,6 +416,7 @@ function setupCoreEventListeners() {
     };
 
     // Desktop Tabs
+    setupTabListener(UIElements.tabPopular, 'popular', updatePopularPage);
     setupTabListener(UIElements.tabGuide, 'guide');
     setupTabListener(UIElements.tabChannels, 'channels', updateChannelsPage);
     setupTabListener(UIElements.tabMultiview, 'multiview', initMultiView);
@@ -423,6 +431,7 @@ function setupCoreEventListeners() {
     UIElements.mobileMenuClose?.addEventListener('click', closeMobileMenu);
     UIElements.mobileMenuOverlay?.addEventListener('click', closeMobileMenu);
     
+    UIElements.mobileNavPopular?.addEventListener('click', () => switchTab('popular'));
     UIElements.mobileNavGuide?.addEventListener('click', () => switchTab('guide'));
     UIElements.mobileNavChannels?.addEventListener('click', () => switchTab('channels'));
     UIElements.mobileNavMultiview?.addEventListener('click', () => switchTab('multiview'));
@@ -452,6 +461,8 @@ function setupCoreEventListeners() {
                 loadAndScheduleNotifications();
             } else if (currentPage.startsWith('/activity')) { // NEW
                 initActivityPage();
+            } else if (currentPage.startsWith('/popular')) {
+                updatePopularPage();
             } else if (currentPage.startsWith('/channels')) {
                 updateChannelsPage();
             }
@@ -470,7 +481,7 @@ function setupCoreEventListeners() {
         appState.searchDebounceTimer = setTimeout(() => populateChannelSelector(), 250);
     });
     
-    UIElements.channelSelectorList?.addEventListener('click', (e) => {
+    UIElements.channelSelectorList?.addEventListener('click', async (e) => {
         const channelItem = e.target.closest('.channel-item');
         if (!channelItem) return;
 
@@ -482,6 +493,11 @@ function setupCoreEventListeners() {
             handleDvrChannelClick(channelItem);
         } else if (context === 'admin') {
             handleAdminChannelClick(channelItem);
+        } else if (context === 'recommended') {
+            await addRecommendedChannel({
+                id: channelItem.dataset.id,
+                name: channelItem.dataset.name,
+            });
         } else { // Default to multiview
             handleMultiViewChannelClick(channelItem);
         }
@@ -519,6 +535,7 @@ function setupCoreEventListeners() {
         mainHeaderObserver.observe(UIElements.mainHeader);
     }
 
+    initPopularPage();
     initChannelsPage();
 
     // monitor the processes of channel sources

@@ -38,6 +38,7 @@ export const guideState = {
     visibleChannels: [],
     scrollHandler: null, // Holds the reference to the throttled scroll handler for virtualization
     userNotifications: [], // Stores active program notifications for the current user
+    popularNow: [], // Tracks currently viewed channels for the Popular page
 };
 
 // State specific to the DVR

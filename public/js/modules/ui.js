@@ -16,6 +16,7 @@ import { finalizeGuideLoad, handleGuideLoad } from './guide.js';
 import { fetchConfig } from './api.js';
 import { initActivityPage } from './admin.js';
 import { updateChannelsPage } from './channels.js';
+import { updatePopularPage } from './popular.js';
 
 
 let confirmCallback = null;
@@ -338,7 +339,7 @@ export const handleRouteChange = () => {
     const wasMultiView = currentPage.startsWith('/multiview');
     const wasPlayer = currentPage.startsWith('/player');
     const rawPath = window.location.pathname;
-    const path = rawPath === '/' ? '/channels' : rawPath;
+    const path = rawPath === '/' ? '/popular' : rawPath;
 
     if (rawPath === '/') {
         window.history.replaceState({}, document.title, window.location.origin + path);
@@ -387,6 +388,7 @@ export const handleRouteChange = () => {
  * @param {string} path - The new path to render.
  */
 async function proceedWithRouteChange(path) {
+    const isPopular = path.startsWith('/popular');
     const isGuide = path.startsWith('/tvguide');
     const isChannels = path.startsWith('/channels');
     const isMultiView = path.startsWith('/multiview');
@@ -401,6 +403,8 @@ async function proceedWithRouteChange(path) {
     const isAdmin = appState.currentUser?.isAdmin;
     
     // Toggle desktop and mobile nav button visibility and active state
+    UIElements.tabPopular?.classList.toggle('active', isPopular);
+    UIElements.mobileNavPopular?.classList.toggle('active', isPopular);
     UIElements.tabGuide?.classList.toggle('active', isGuide);
     UIElements.mobileNavGuide?.classList.toggle('active', isGuide);
     
@@ -441,6 +445,9 @@ async function proceedWithRouteChange(path) {
     }
     
     // Toggle page visibility
+    UIElements.pagePopular?.classList.toggle('hidden', !isPopular);
+    UIElements.pagePopular?.classList.toggle('flex', isPopular);
+
     UIElements.pageGuide.classList.toggle('hidden', !isGuide);
     UIElements.pageGuide.classList.toggle('flex', isGuide);
     
@@ -501,6 +508,8 @@ async function proceedWithRouteChange(path) {
              }
         } else if (isNotifications) {
             await loadAndScheduleNotifications();
+        } else if (isPopular) {
+            updatePopularPage();
         } else if (isChannels) {
             updateChannelsPage();
         } else if (isMultiView) {
@@ -534,7 +543,8 @@ export const navigate = (path) => {
  */
 export const switchTab = (activeTab) => {
     let newPath;
-    if (activeTab === 'guide') newPath = '/tvguide';
+    if (activeTab === 'popular') newPath = '/popular';
+    else if (activeTab === 'guide') newPath = '/tvguide';
     else if (activeTab === 'channels') newPath = '/channels';
     else if (activeTab === 'multiview') newPath = '/multiview';
     else if (activeTab === 'player') newPath = '/player';

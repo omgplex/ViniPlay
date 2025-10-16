@@ -11,6 +11,9 @@ import { showNotification, openModal, closeModal, showConfirm, setButtonLoadingS
 import { handleGuideLoad } from './guide.js';
 import { navigate } from './ui.js';
 import { ICONS } from './icons.js';
+import { populateChannelSelector } from './multiview.js';
+import { sanitizeText, sanitizeAttr, getDisplayName } from './channels.js';
+import { updatePopularPage } from './popular.js';
 
 let currentSourceTypeForEditor = 'url';
 let hardwareChecked = false; // Flag to prevent re-checking hardware on every UI update
@@ -30,6 +33,65 @@ async function fetchAndDisplayPublicIp() {
         displayEl.textContent = 'Unavailable';
     }
 }
+
+function renderRecommendedChannelsSetting() {
+    const listEl = UIElements.recommendedChannelsList;
+    const emptyEl = UIElements.recommendedChannelsEmpty;
+    if (!listEl) return;
+
+    const ids = guideState.settings.recommendedChannelIds || [];
+    if (ids.length === 0) {
+        listEl.innerHTML = '';
+        if (emptyEl) emptyEl.classList.remove('hidden');
+        return;
+    }
+
+    if (emptyEl) emptyEl.classList.add('hidden');
+
+    const chips = ids.map(id => {
+        const channel = guideState.channels.find(ch => String(ch.id) === String(id));
+        const name = channel ? getDisplayName(channel) : 'Unknown Channel';
+        const displayName = sanitizeText(name);
+        const title = sanitizeAttr(name);
+        return `
+            <div class="recommended-chip flex items-center gap-2 bg-gray-900/60 border border-gray-700 rounded-full px-3 py-1 text-sm text-gray-200" data-channel-id="${sanitizeAttr(id)}">
+                <span class="truncate max-w-[160px]" title="${title}">${displayName}</span>
+                <button class="recommended-remove-btn text-gray-400 hover:text-red-400 transition-colors" data-channel-id="${sanitizeAttr(id)}" aria-label="Remove channel">&times;</button>
+            </div>
+        `;
+    }).join('');
+
+    listEl.innerHTML = chips;
+}
+
+document.addEventListener('guide-data-ready', renderRecommendedChannelsSetting);
+
+async function persistRecommendedChannels(ids) {
+    const updatedSettings = await saveGlobalSetting({ recommendedChannelIds: ids });
+    if (updatedSettings) {
+        guideState.settings = updatedSettings;
+        showNotification('Recommended channels updated.');
+        renderRecommendedChannelsSetting();
+        updatePopularPage();
+    }
+}
+
+export async function addRecommendedChannel(channel) {
+    if (!channel || typeof channel.id === 'undefined' || channel.id === null) return;
+    const normalizedId = String(channel.id);
+    const current = (guideState.settings.recommendedChannelIds || []).map(id => String(id));
+    if (current.includes(normalizedId)) {
+        showNotification('Channel is already in the recommended list.', false, 2500);
+        return;
+    }
+    await persistRecommendedChannels([...current, normalizedId]);
+}
+
+const removeRecommendedChannel = async (channelId) => {
+    const current = (guideState.settings.recommendedChannelIds || []).map(id => String(id));
+    const filtered = current.filter(id => id !== String(channelId));
+    await persistRecommendedChannels(filtered);
+};
 
 
 // --- NEW: Hardware Acceleration ---
@@ -263,6 +325,7 @@ export const updateUIFromSettings = async () => {
     settings.dvr.postBufferMinutes = settings.dvr.postBufferMinutes ?? 2;
     settings.dvr.maxConcurrentRecordings = settings.dvr.maxConcurrentRecordings ?? 1;
     settings.dvr.autoDeleteDays = settings.dvr.autoDeleteDays ?? 0;
+    settings.recommendedChannelIds = settings.recommendedChannelIds || [];
 
     // Update dropdowns and inputs
     UIElements.timezoneOffsetSelect.value = settings.timezoneOffset;
@@ -316,6 +379,8 @@ export const updateUIFromSettings = async () => {
     if (appState.currentUser?.isAdmin) {
         refreshUserList();
     }
+
+    renderRecommendedChannelsSetting();
 };
 
 
@@ -534,10 +599,24 @@ export function setupSettingsEventListeners() {
                 }
             });
         }
-    
+
     UIElements.addM3uBtn.addEventListener('click', () => openSourceEditor('m3u'));
     UIElements.addEpgBtn.addEventListener('click', () => openSourceEditor('epg'));
     UIElements.sourceEditorCancelBtn.addEventListener('click', () => closeModal(UIElements.sourceEditorModal));
+
+    UIElements.recommendedChannelsAddBtn?.addEventListener('click', () => {
+        document.body.dataset.channelSelectorContext = 'recommended';
+        populateChannelSelector();
+        openModal(UIElements.multiviewChannelSelectorModal);
+    });
+
+    UIElements.recommendedChannelsList?.addEventListener('click', (event) => {
+        const removeBtn = event.target.closest('.recommended-remove-btn');
+        if (!removeBtn) return;
+        const channelId = removeBtn.dataset.channelId;
+        if (!channelId) return;
+        removeRecommendedChannel(channelId);
+    });
 
     // --- Source Editor ---
     const switchSourceEditorTab = (tabType) => {
@@ -916,4 +995,3 @@ export function setupSettingsEventListeners() {
         e.target.value = '';
     });
 }
-

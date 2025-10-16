@@ -15,6 +15,7 @@ import { addOrRemoveNotification, findNotificationForProgram } from './notificat
 import { addOrRemoveDvrJob, findDvrJobForProgram } from './dvr.js';
 import { ICONS } from './icons.js'; // MODIFIED: Import the new icon library
 import { updateChannelsPage } from './channels.js';
+import { updatePopularPage } from './popular.js';
 
 // --- Virtualization Constants ---
 const ROW_HEIGHT = 96; // Height in pixels of a single channel row (.channel-info + .timeline-row)
@@ -302,6 +303,8 @@ export function finalizeGuideLoad(isFirstLoad = false) {
     populateGroupFilter();
     populateSourceFilter();
     updateChannelsPage();
+    updatePopularPage();
+    document.dispatchEvent(new Event('guide-data-ready'));
 
     appState.fuseChannels = new Fuse(guideState.channels, {
         keys: ['name', 'displayName', 'source', 'chno'],

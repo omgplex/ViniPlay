@@ -323,6 +323,24 @@ function broadcastAdminUpdate() {
             }
         });
     }
+
+    const popularSummaryMap = new Map();
+    combinedLiveActivity.forEach(stream => {
+        const key = stream.channelId || stream.channelName || stream.streamKey;
+        if (!popularSummaryMap.has(key)) {
+            popularSummaryMap.set(key, {
+                channelId: stream.channelId || key,
+                channelName: stream.channelName || 'Unknown Channel',
+                channelLogo: stream.channelLogo || null,
+                viewerCount: 0,
+            });
+        }
+        const entry = popularSummaryMap.get(key);
+        entry.viewerCount += 1;
+    });
+
+    const popularSummary = Array.from(popularSummaryMap.values());
+    broadcastSseToAll('popular-update', { live: popularSummary });
     console.log(`[SSE_ADMIN] Broadcasted combined activity update (${combinedLiveActivity.length} live streams) to all connected admins.`);
 }
 

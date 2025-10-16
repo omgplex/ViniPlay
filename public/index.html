@@ -612,7 +612,8 @@
             <div class="flex items-center gap-4">
                  <span id="user-display" class="text-sm text-gray-400 hidden sm:block"></span>
                 <div class="hidden lg:flex gap-2">
-                    <button id="tab-channels" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 active rounded-md transition-colors">Channels</button>
+                    <button id="tab-popular" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 active rounded-md transition-colors">Popular</button>
+                    <button id="tab-channels" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Channels</button>
                     <button id="tab-guide" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">TV Guide</button>
                     <button id="tab-multiview" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Multi-View</button>
                     <button id="tab-player" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Player</button>
@@ -629,6 +630,31 @@
         </header>
 
         <main class="flex-grow flex flex-col overflow-hidden">
+            <!-- Popular Page -->
+            <div id="page-popular" class="flex flex-grow flex-col overflow-y-auto custom-scrollbar p-4">
+                <div class="w-full max-w-7xl mx-auto space-y-8">
+                    <section id="popular-recommended-section" class="bg-gray-900/70 p-4 sm:p-6 rounded-xl shadow-lg hidden border border-gray-700">
+                        <div class="flex items-center justify-between border-b border-gray-700 pb-3 mb-4">
+                            <h2 class="text-xl font-bold text-white">Recommended</h2>
+                        </div>
+                        <div id="popular-recommended-empty" class="text-sm text-gray-400 bg-gray-900/50 border border-gray-700 rounded-lg p-6 text-center hidden">
+                            No recommended channels configured yet.
+                        </div>
+                        <div id="popular-recommended-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"></div>
+                    </section>
+
+                    <section id="popular-active-section" class="bg-gray-900/70 p-4 sm:p-6 rounded-xl shadow-lg border border-gray-700">
+                        <div class="flex items-center justify-between border-b border-gray-700 pb-3 mb-4">
+                            <h2 class="text-xl font-bold text-white">Popular Now</h2>
+                        </div>
+                        <div id="popular-active-empty" class="text-sm text-gray-400 bg-gray-900/50 border border-gray-700 rounded-lg p-6 text-center hidden">
+                            No one is watching channels at the moment.
+                        </div>
+                        <div id="popular-active-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"></div>
+                    </section>
+                </div>
+            </div>
+
             <!-- TV Guide Page -->
             <div id="page-guide" class="hidden flex-grow flex-col overflow-hidden">
                 <div id="unified-guide-header" class="relative flex-shrink-0 bg-gray-800 p-2 sm:p-4 border-b border-gray-700 flex flex-col sm:flex-row items-stretch sm:items-center sm:justify-between gap-3 z-40">
@@ -674,7 +700,7 @@
             </div>
 
             <!-- Channels Page -->
-            <div id="page-channels" class="flex flex-grow flex-col overflow-y-auto custom-scrollbar p-4">
+            <div id="page-channels" class="hidden flex-grow flex-col overflow-y-auto custom-scrollbar p-4">
                 <div class="w-full max-w-7xl mx-auto space-y-6">
                     <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
                         <div class="flex flex-col md:flex-row md:items-end gap-4">
@@ -1186,7 +1212,20 @@
                             </div>
                         </div>
                     </div>
-                    
+
+                    <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
+                        <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                            <h2 class="text-xl font-bold text-white">Popular Page Recommendations</h2>
+                            <button id="recommended-channels-add-btn" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-md flex items-center gap-2">
+                                <span data-icon="add"></span>
+                                Add Channel
+                            </button>
+                        </div>
+                        <p class="text-sm text-gray-400 mb-4">Select channels to feature in the Recommended section of the Popular page.</p>
+                        <div id="recommended-channels-empty" class="bg-gray-900/50 border border-gray-700 rounded-md p-4 text-sm text-gray-400">No recommended channels selected yet.</div>
+                        <div id="recommended-channels-list" class="mt-4 flex flex-wrap gap-3"></div>
+                    </div>
+
                     <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
                         <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Storage Management</h2>
                         <div class="space-y-4">
@@ -1274,7 +1313,10 @@
             <button id="mobile-menu-close" class="text-gray-400 hover:text-white text-3xl leading-none font-bold">&times;</button>
         </div>
         <nav class="flex flex-col gap-4">
-            <button id="mobile-nav-channels" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors active">
+            <button id="mobile-nav-popular" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors active">
+                <span class="flex items-center gap-2"><span data-icon="star"></span> Popular</span>
+            </button>
+            <button id="mobile-nav-channels" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors">
                 <span class="flex items-center gap-2"><span data-icon="grid"></span> Channels</span>
             </button>
             <button id="mobile-nav-guide" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors">

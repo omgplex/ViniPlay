@@ -13,19 +13,19 @@ let initialized = false;
 let searchTerm = '';
 let selectedCategory = 'all';
 
-const sanitizeText = (value) => `${value ?? ''}`
+export const sanitizeText = (value) => `${value ?? ''}`
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
-const sanitizeAttr = (value) => `${value ?? ''}`
+export const sanitizeAttr = (value) => `${value ?? ''}`
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
-const getDisplayName = (channel) => channel?.displayName || channel?.name || 'Unknown Channel';
+export const getDisplayName = (channel) => channel?.displayName || channel?.name || 'Unknown Channel';
 
 const getCategoryValue = (channel) => {
     const group = channel?.group;
@@ -34,7 +34,7 @@ const getCategoryValue = (channel) => {
 
 const getCategoryLabel = (value) => value === UNCATEGORIZED_VALUE ? 'Uncategorized' : value;
 
-const formatProgramWindow = (program) => {
+export const formatProgramWindow = (program) => {
     if (!program?.start || !program?.stop) return '';
     const start = new Date(program.start);
     const stop = new Date(program.stop);
@@ -43,7 +43,7 @@ const formatProgramWindow = (program) => {
     return `${start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${stop.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 };
 
-const getCurrentProgram = (channelId) => {
+export const getCurrentProgram = (channelId) => {
     const timeline = guideState.programs?.[channelId];
     if (!Array.isArray(timeline) || timeline.length === 0) return null;
 
@@ -94,7 +94,7 @@ function populateCategoryFilter() {
     }
 }
 
-function buildChannelCard(channel) {
+export function buildChannelCard(channel, options = {}) {
     const displayName = getDisplayName(channel);
     const categoryLabel = getCategoryLabel(getCategoryValue(channel));
     const currentProgram = getCurrentProgram(channel.id);
@@ -102,6 +102,11 @@ function buildChannelCard(channel) {
     const programWindow = currentProgram ? formatProgramWindow(currentProgram) : '';
     const logoUrl = channel.logo || 'https://placehold.co/96x96/1f2937/d1d5db?text=?';
     const showProgramInfo = Boolean(programTitle || programWindow);
+    const viewerCount = Number.isFinite(options.viewerCount) ? options.viewerCount : null;
+    const watcherText = viewerCount === 1 ? '1 watching' : `${viewerCount} watching`;
+    const viewerBadgeHTML = viewerCount && viewerCount > 0
+        ? `<span class="viewer-count-badge flex-shrink-0 bg-purple-600/80 text-white text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap">${sanitizeText(watcherText)}</span>`
+        : '';
     const programInfoHTML = `
             <div class="bg-gray-900/60 rounded-lg p-3">
                 <p class="text-xs font-semibold text-gray-400 tracking-wide uppercase mb-1">Now Playing</p>
@@ -110,6 +115,13 @@ function buildChannelCard(channel) {
                     : '<p class="text-sm text-gray-500 italic">No info</p>'}
             </div>
     `;
+    const hasStreamUrl = Boolean(channel.url);
+    const actionControl = hasStreamUrl
+        ? `<button class="watch-channel-btn bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition-colors" data-channel-id="${sanitizeAttr(channel.id)}">Watch Now</button>`
+        : `<div class="bg-gray-800 text-gray-500 text-sm px-4 py-2 rounded-md border border-gray-700 text-center select-none">Unavailable</div>`;
+    const footerHTML = viewerBadgeHTML
+        ? `<div class="mt-auto flex items-center justify-between gap-3 flex-wrap">${actionControl}${viewerBadgeHTML}</div>`
+        : `<div class="mt-auto">${actionControl}</div>`;
 
     return `
         <div class="channel-card bg-gray-800 border border-gray-700 rounded-xl p-4 shadow-lg flex flex-col gap-4" style="min-height: 240px;">
@@ -118,17 +130,13 @@ function buildChannelCard(channel) {
                      onerror="this.onerror=null; this.src='https://placehold.co/96x96/1f2937/d1d5db?text=?';"
                      alt="${sanitizeAttr(displayName)} logo"
                      class="w-16 h-16 rounded-lg object-contain bg-gray-900 flex-shrink-0">
-                <div class="min-w-0">
+                <div class="min-w-0 flex-grow">
                     <p class="text-xs uppercase tracking-wide text-blue-300">${sanitizeText(categoryLabel)}</p>
                     <h3 class="text-lg font-semibold text-white leading-tight truncate" title="${sanitizeAttr(displayName)}">${sanitizeText(displayName)}</h3>
                 </div>
             </div>
             ${programInfoHTML}
-            <div class="mt-auto">
-                <button class="watch-channel-btn bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition-colors" data-channel-id="${sanitizeAttr(channel.id)}">
-                    Watch Now
-                </button>
-            </div>
+            ${footerHTML}
         </div>
     `;
 }
