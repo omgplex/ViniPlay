@@ -19,6 +19,7 @@ import { loadAndScheduleNotifications, subscribeUserToPush, navigateToProgramInG
 import { setupDvrEventListeners, handleDvrChannelClick, initDvrPage } from './modules/dvr.js';
 import { handleMultiViewChannelClick, populateChannelSelector, initMultiView } from './modules/multiview.js';
 import { setupDirectPlayerEventListeners, initDirectPlayer } from './modules/player_direct.js';
+import { initChannelsPage, updateChannelsPage } from './modules/channels.js';
 import { ICONS } from './modules/icons.js'; // MODIFIED: Import the new icon library
 //-- ENHANCEMENT: Import the new handler for channel selector clicks from the admin page.
 import { initActivityPage, setupAdminEventListeners, handleActivityUpdate, handleAdminChannelClick } from './modules/admin.js';
@@ -124,7 +125,7 @@ function initializeSse() {
         
         // Check which player is active and change its channel
         const currentPage = window.location.pathname;
-        if (currentPage.startsWith('/tvguide') || currentPage === '/') {
+        if (currentPage.startsWith('/tvguide') || currentPage.startsWith('/channels')) {
             // Stop the main player if it's open, then play the new channel.
             stopAndCleanupPlayer().then(() => {
                 showNotification(`An administrator has changed your channel to: ${channel.name}`, false, 4000);
@@ -409,6 +410,7 @@ function setupCoreEventListeners() {
 
     // Desktop Tabs
     setupTabListener(UIElements.tabGuide, 'guide');
+    setupTabListener(UIElements.tabChannels, 'channels', updateChannelsPage);
     setupTabListener(UIElements.tabMultiview, 'multiview', initMultiView);
     setupTabListener(UIElements.tabPlayer, 'player', initDirectPlayer);
     setupTabListener(UIElements.tabDvr, 'dvr', initDvrPage);
@@ -422,6 +424,7 @@ function setupCoreEventListeners() {
     UIElements.mobileMenuOverlay?.addEventListener('click', closeMobileMenu);
     
     UIElements.mobileNavGuide?.addEventListener('click', () => switchTab('guide'));
+    UIElements.mobileNavChannels?.addEventListener('click', () => switchTab('channels'));
     UIElements.mobileNavMultiview?.addEventListener('click', () => switchTab('multiview'));
     UIElements.mobileNavPlayer?.addEventListener('click', () => switchTab('player'));
     UIElements.mobileNavDvr?.addEventListener('click', () => switchTab('dvr'));
@@ -449,6 +452,8 @@ function setupCoreEventListeners() {
                 loadAndScheduleNotifications();
             } else if (currentPage.startsWith('/activity')) { // NEW
                 initActivityPage();
+            } else if (currentPage.startsWith('/channels')) {
+                updateChannelsPage();
             }
         }
     });
@@ -513,6 +518,8 @@ function setupCoreEventListeners() {
         });
         mainHeaderObserver.observe(UIElements.mainHeader);
     }
+
+    initChannelsPage();
 
     // monitor the processes of channel sources
     document.addEventListener('background-process-finished', () => {

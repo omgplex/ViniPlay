@@ -15,6 +15,7 @@ import { initDirectPlayer, isDirectPlayerActive, cleanupDirectPlayer } from './p
 import { finalizeGuideLoad, handleGuideLoad } from './guide.js';
 import { fetchConfig } from './api.js';
 import { initActivityPage } from './admin.js';
+import { updateChannelsPage } from './channels.js';
 
 
 let confirmCallback = null;
@@ -336,7 +337,12 @@ export const tempBlockConfigReload = () => {
 export const handleRouteChange = () => {
     const wasMultiView = currentPage.startsWith('/multiview');
     const wasPlayer = currentPage.startsWith('/player');
-    const path = window.location.pathname;
+    const rawPath = window.location.pathname;
+    const path = rawPath === '/' ? '/channels' : rawPath;
+
+    if (rawPath === '/') {
+        window.history.replaceState({}, document.title, window.location.origin + path);
+    }
     
     if (wasMultiView && !path.startsWith('/multiview')) {
         if (isMultiViewActive()) {
@@ -381,7 +387,8 @@ export const handleRouteChange = () => {
  * @param {string} path - The new path to render.
  */
 async function proceedWithRouteChange(path) {
-    const isGuide = path.startsWith('/tvguide') || path === '/';
+    const isGuide = path.startsWith('/tvguide');
+    const isChannels = path.startsWith('/channels');
     const isMultiView = path.startsWith('/multiview');
     const isPlayer = path.startsWith('/player');
     const isDvr = path.startsWith('/dvr');
@@ -396,6 +403,9 @@ async function proceedWithRouteChange(path) {
     // Toggle desktop and mobile nav button visibility and active state
     UIElements.tabGuide?.classList.toggle('active', isGuide);
     UIElements.mobileNavGuide?.classList.toggle('active', isGuide);
+    
+    UIElements.tabChannels?.classList.toggle('active', isChannels);
+    UIElements.mobileNavChannels?.classList.toggle('active', isChannels);
     
     UIElements.tabMultiview?.classList.toggle('active', isMultiView);
     UIElements.mobileNavMultiview?.classList.toggle('active', isMultiView);
@@ -433,6 +443,9 @@ async function proceedWithRouteChange(path) {
     // Toggle page visibility
     UIElements.pageGuide.classList.toggle('hidden', !isGuide);
     UIElements.pageGuide.classList.toggle('flex', isGuide);
+    
+    UIElements.pageChannels?.classList.toggle('hidden', !isChannels);
+    UIElements.pageChannels?.classList.toggle('flex', isChannels);
     
     UIElements.pageMultiview.classList.toggle('hidden', !isMultiView);
     UIElements.pageMultiview.classList.toggle('flex', isMultiView);
@@ -488,6 +501,8 @@ async function proceedWithRouteChange(path) {
              }
         } else if (isNotifications) {
             await loadAndScheduleNotifications();
+        } else if (isChannels) {
+            updateChannelsPage();
         } else if (isMultiView) {
             initMultiView();
         } else if (isPlayer) {
@@ -520,6 +535,7 @@ export const navigate = (path) => {
 export const switchTab = (activeTab) => {
     let newPath;
     if (activeTab === 'guide') newPath = '/tvguide';
+    else if (activeTab === 'channels') newPath = '/channels';
     else if (activeTab === 'multiview') newPath = '/multiview';
     else if (activeTab === 'player') newPath = '/player';
     else if (activeTab === 'dvr') newPath = '/dvr';

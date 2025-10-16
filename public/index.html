@@ -612,7 +612,8 @@
             <div class="flex items-center gap-4">
                  <span id="user-display" class="text-sm text-gray-400 hidden sm:block"></span>
                 <div class="hidden lg:flex gap-2">
-                    <button id="tab-guide" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 active rounded-md transition-colors">TV Guide</button>
+                    <button id="tab-channels" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 active rounded-md transition-colors">Channels</button>
+                    <button id="tab-guide" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">TV Guide</button>
                     <button id="tab-multiview" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Multi-View</button>
                     <button id="tab-player" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">Player</button>
                     <button id="tab-dvr" class="tab-button text-sm sm:text-base font-medium py-2 px-4 text-gray-300 hover:bg-gray-700 rounded-md transition-colors">DVR</button>
@@ -629,7 +630,7 @@
 
         <main class="flex-grow flex flex-col overflow-hidden">
             <!-- TV Guide Page -->
-            <div id="page-guide" class="flex flex-grow flex-col overflow-hidden">
+            <div id="page-guide" class="hidden flex-grow flex-col overflow-hidden">
                 <div id="unified-guide-header" class="relative flex-shrink-0 bg-gray-800 p-2 sm:p-4 border-b border-gray-700 flex flex-col sm:flex-row items-stretch sm:items-center sm:justify-between gap-3 z-40">
                     <div class="flex items-center gap-2 sm:gap-3 date-nav-controls">
                         <span id="guide-date-display" class="text-base sm:text-lg font-semibold text-white"></span>
@@ -669,6 +670,31 @@
                         <div class="time-bar-cell"></div>
                         <div id="now-line" class="absolute top-0 bg-red-500 w-0.5 z-30 pointer-events-none hidden"></div>
                     </div>
+                </div>
+            </div>
+
+            <!-- Channels Page -->
+            <div id="page-channels" class="flex flex-grow flex-col overflow-y-auto custom-scrollbar p-4">
+                <div class="w-full max-w-7xl mx-auto space-y-6">
+                    <div class="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-lg">
+                        <div class="flex flex-col md:flex-row md:items-end gap-4">
+                            <div class="flex-grow">
+                                <label for="channels-search-input" class="block text-sm font-medium text-gray-400 mb-1">Search Channels</label>
+                                <input type="search" id="channels-search-input" placeholder="Search by name..." class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+                            <div class="w-full md:w-64">
+                                <label for="channels-category-filter" class="block text-sm font-medium text-gray-400 mb-1">Filter by Category</label>
+                                <select id="channels-category-filter" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="all">All Categories</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="channels-empty-state" class="hidden bg-gray-800 border border-gray-700 rounded-xl p-8 text-center text-gray-400">
+                        <span data-icon="info" class="mx-auto mb-3 text-gray-500"></span>
+                        <p id="channels-empty-message" class="text-sm">No channels match your search or filter.</p>
+                    </div>
+                    <div id="channels-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"></div>
                 </div>
             </div>
 
@@ -1248,7 +1274,10 @@
             <button id="mobile-menu-close" class="text-gray-400 hover:text-white text-3xl leading-none font-bold">&times;</button>
         </div>
         <nav class="flex flex-col gap-4">
-            <button id="mobile-nav-guide" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors active">
+            <button id="mobile-nav-channels" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors active">
+                <span class="flex items-center gap-2"><span data-icon="grid"></span> Channels</span>
+            </button>
+            <button id="mobile-nav-guide" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors">
                 <span class="flex items-center gap-2"><span data-icon="guide"></span> TV Guide</span>
             </button>
             <button id="mobile-nav-multiview" class="text-left tab-button text-lg font-medium py-2 px-3 text-gray-300 hover:bg-gray-800 rounded-md transition-colors">

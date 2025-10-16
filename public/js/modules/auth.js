@@ -27,6 +27,7 @@ const initializeUIElements = () => {
     UIElements.mainHeader = document.getElementById('main-header');
     UIElements.unifiedGuideHeader = document.getElementById('unified-guide-header');
     UIElements.pageGuide = document.getElementById('page-guide');
+    UIElements.pageChannels = document.getElementById('page-channels');
     UIElements.guideDateDisplay = document.getElementById('guide-date-display');
     UIElements.stickyCorner = document.querySelector('.sticky-corner');
     UIElements.channelColumnResizeHandle = document.getElementById('channel-column-resize-handle');
@@ -45,6 +46,13 @@ const initializeUIElements = () => {
     UIElements.mobileNavMenu = document.getElementById('mobile-nav-menu');
     UIElements.mobileMenuClose = document.getElementById('mobile-menu-close');
     UIElements.mobileNavGuide = document.getElementById('mobile-nav-guide');
+    UIElements.tabChannels = document.getElementById('tab-channels');
+    UIElements.mobileNavChannels = document.getElementById('mobile-nav-channels');
+    UIElements.channelsSearchInput = document.getElementById('channels-search-input');
+    UIElements.channelsCategoryFilter = document.getElementById('channels-category-filter');
+    UIElements.channelsGrid = document.getElementById('channels-grid');
+    UIElements.channelsEmptyState = document.getElementById('channels-empty-state');
+    UIElements.channelsEmptyMessage = document.getElementById('channels-empty-message');
     UIElements.mobileNavSettings = document.getElementById('mobile-nav-settings');
     UIElements.mobileNavLogoutBtn = document.getElementById('mobile-nav-logout-btn');
     UIElements.mobileMenuOverlay = document.getElementById('mobile-menu-overlay');
@@ -379,4 +387,3 @@ export function setupAuthEventListeners() {
         }
     });
 }
-
