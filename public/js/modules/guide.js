@@ -6,7 +6,7 @@
  * REFACTORED to use UI Virtualization for high-performance rendering of large channel lists.
  */
 
-import { appState, guideState, UIElements, dvrState } from './state.js';
+import { appState, guideState, UIElements, dvrState, hasPermission } from './state.js';
 import { saveUserSetting } from './api.js';
 import { parseM3U } from './utils.js';
 import { playChannel } from './player.js';
@@ -121,9 +121,10 @@ export function openProgramDetails(progItem) {
     const isProgramRelevant = programStopTime > now.getTime();
 
     // --- Notification Button Logic ---
+    const hasNotificationsAccess = hasPermission('notifications');
     if (programDetailsNotifyBtn) {
         const notification = findNotificationForProgram(programData, channelId);
-        if (isProgramRelevant) {
+        if (isProgramRelevant && hasNotificationsAccess) {
             programDetailsNotifyBtn.classList.remove('hidden');
             programDetailsNotifyBtn.textContent = notification ? 'Notification Set' : 'Notify Me';
             programDetailsNotifyBtn.disabled = !notification && Notification.permission === 'denied';
@@ -158,7 +159,7 @@ export function openProgramDetails(progItem) {
     }
 
     // --- DVR Record Button Logic (with permission check) ---
-    const hasDvrAccess = appState.currentUser?.isAdmin || appState.currentUser?.canUseDvr;
+    const hasDvrAccess = hasPermission('dvr');
     if (programDetailsRecordBtn && hasDvrAccess) {
         const dvrJob = findDvrJobForProgram(programData);
 

@@ -1107,7 +1107,7 @@
                                     <tr>
                                         <th class="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Username</th>
                                         <th class="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Role</th>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">DVR Enabled</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Feature Access</th>
                                         <th class="px-4 py-2 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
                                     </tr>
                                 </thead>
@@ -1587,15 +1587,43 @@
                     <label for="user-editor-password" class="block text-sm font-medium text-gray-400">New Password (optional)</label>
                     <input type="password" id="user-editor-password" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white">
                 </div>
-                <div class="flex items-center gap-6">
-                    <div class="flex items-center">
-                        <input id="user-editor-isAdmin" type="checkbox" class="h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500">
-                        <label for="user-editor-isAdmin" class="ml-2 block text-sm text-gray-300">Is Administrator</label>
+                <div class="flex items-center">
+                    <input id="user-editor-isAdmin" type="checkbox" class="h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500">
+                    <label for="user-editor-isAdmin" class="ml-2 block text-sm text-gray-300">Is Administrator</label>
+                </div>
+                <div>
+                    <span class="block text-sm font-medium text-gray-400 mb-2">Feature Access</span>
+                    <div class="grid grid-cols-2 gap-3">
+                        <label class="flex items-center">
+                            <input id="user-editor-permission-popular" type="checkbox" class="h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500">
+                            <span class="ml-2 text-sm text-gray-300">Popular</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input id="user-editor-permission-channels" type="checkbox" class="h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500">
+                            <span class="ml-2 text-sm text-gray-300">Channels</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input id="user-editor-permission-tvguide" type="checkbox" class="h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500">
+                            <span class="ml-2 text-sm text-gray-300">TV Guide</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input id="user-editor-permission-multiview" type="checkbox" class="h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500">
+                            <span class="ml-2 text-sm text-gray-300">Multi-View</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input id="user-editor-permission-direct-player" type="checkbox" class="h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500">
+                            <span class="ml-2 text-sm text-gray-300">Direct Player</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input id="user-editor-permission-dvr" type="checkbox" class="h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500">
+                            <span class="ml-2 text-sm text-gray-300">DVR</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input id="user-editor-permission-notifications" type="checkbox" class="h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500">
+                            <span class="ml-2 text-sm text-gray-300">Notifications</span>
+                        </label>
                     </div>
-                    <div class="flex items-center">
-                        <input id="user-editor-canUseDvr" type="checkbox" class="h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500">
-                        <label for="user-editor-canUseDvr" class="ml-2 block text-sm text-gray-300">Can use DVR</label>
-                    </div>
+                    <p class="mt-2 text-xs text-gray-500">Admins automatically have access to all features.</p>
                 </div>
                 <div class="flex justify-end gap-4 pt-4">
                     <button type="button" id="user-editor-cancel-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Cancel</button>

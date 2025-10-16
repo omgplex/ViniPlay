@@ -5,7 +5,7 @@
  * Initializes the app by setting up authentication, event listeners, and loading initial data.
  */
 
-import { appState, guideState, UIElements } from './modules/state.js';
+import { appState, guideState, UIElements, hasPermission } from './modules/state.js';
 import { apiFetch, fetchConfig } from './modules/api.js'; // IMPORTED fetchConfig
 import { checkAuthStatus, setupAuthEventListeners } from './modules/auth.js';
 import { handleGuideLoad, finalizeGuideLoad, setupGuideEventListeners } from './modules/guide.js';
@@ -245,14 +245,17 @@ export async function initMainApp() {
             }
         }
         
-        // Load the list of scheduled notifications for the UI
-        console.log('[MAIN] Loading and scheduling notifications...');
-        await loadAndScheduleNotifications();
+        const canAccessNotifications = hasPermission('notifications');
+        if (canAccessNotifications) {
+            console.log('[MAIN] Loading and scheduling notifications...');
+            await loadAndScheduleNotifications();
 
-        // Subscribe to push notifications
-        console.log('[MAIN] Attempting to subscribe to push notifications...');
-        await subscribeUserToPush();
-        console.log('[MAIN] Push notification subscription process initiated.');
+            console.log('[MAIN] Attempting to subscribe to push notifications...');
+            await subscribeUserToPush();
+            console.log('[MAIN] Push notification subscription process initiated.');
+        } else {
+            console.log('[MAIN] Notifications are disabled for this user. Skipping notification scheduling and push subscription.');
+        }
 
         // MODIFICATION: If we have a notification target, navigate to it now that the guide is loaded.
         // Otherwise, handle the regular route change.

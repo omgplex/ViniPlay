@@ -3,7 +3,7 @@
  * Manages all client-side functionality for the DVR page.
  */
 
-import { UIElements, dvrState, guideState, appState } from './state.js';
+import { UIElements, dvrState, guideState, appState, hasPermission } from './state.js';
 import { apiFetch } from './api.js';
 import { showNotification, showConfirm, openModal, closeModal } from './ui.js';
 import { handleSearchAndFilter } from './guide.js';
@@ -20,7 +20,7 @@ import { stopAndCleanupPlayer } from './player.js'; // **NEW: Import main player
  */
 export async function initDvrPage() {
     console.log('[DVR] Initializing DVR page...');
-    const hasDvrPermission = appState.currentUser?.isAdmin || appState.currentUser?.canUseDvr;
+    const hasDvrPermission = hasPermission('dvr');
 
     // Toggle visibility of DVR sections based on user permissions
     const manualRecSection = document.getElementById('manual-recording-section');
@@ -290,7 +290,7 @@ function renderCompletedRecordings() {
     UIElements.dvrRecordingsTableContainer.classList.toggle('hidden', !hasRecordings);
     
     // Show/hide the "Clear All" button only if user has DVR permission
-    const hasDvrPermission = appState.currentUser?.isAdmin || appState.currentUser?.canUseDvr;
+    const hasDvrPermission = hasPermission('dvr');
     UIElements.clearCompletedDvrBtn.classList.toggle('hidden', !hasRecordings || !hasDvrPermission);
     
     const tbody = UIElements.dvrRecordingsTbody;

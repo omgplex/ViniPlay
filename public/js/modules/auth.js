@@ -222,7 +222,7 @@ const showSetupScreen = () => {
 
 /**
  * Shows the main application container and hides the auth screen.
- * @param {object} user - The user object { username, isAdmin, canUseDvr }.
+ * @param {object} user - The user object { username, isAdmin, permissions }.
  */
 const showApp = (user) => {
     appState.currentUser = user;
@@ -237,7 +237,8 @@ const showApp = (user) => {
     initializeUIElements();
     console.log('[AUTH_UI] UI Elements initialized.');
 
-    console.log(`[AUTH_UI] Displaying main app for user: ${user.username} (Admin: ${user.isAdmin}, DVR: ${user.canUseDvr})`);
+    const dvrAccess = user.permissions?.dvr ? 'enabled' : 'disabled';
+    console.log(`[AUTH_UI] Displaying main app for user: ${user.username} (Admin: ${user.isAdmin}, DVR: ${dvrAccess})`);
 
     // MODIFIED: Removed redundant visibility toggling from this function.
     // This will now be handled exclusively by proceedWithRouteChange in ui.js,

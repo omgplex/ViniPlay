@@ -4,7 +4,7 @@
  * This includes navigation, modals, notifications, and other DOM manipulations.
  */
 
-import { UIElements, appState, guideState } from './state.js';
+import { UIElements, appState, guideState, getEffectivePermissions } from './state.js';
 import { refreshUserList, updateUIFromSettings } from './settings.js';
 import { loadAndScheduleNotifications, renderNotifications } from './notification.js';
 import { initMultiView, isMultiViewActive, cleanupMultiView } from './multiview.js';
@@ -398,85 +398,105 @@ async function proceedWithRouteChange(path) {
     const isNotifications = path.startsWith('/notifications');
     const isSettings = path.startsWith('/settings');
 
+    const isAdmin = appState.currentUser?.isAdmin;
+    const permissions = getEffectivePermissions();
+    const canAccess = {
+        popular: permissions.popular,
+        tvGuide: permissions.tvGuide,
+        channels: permissions.channels,
+        multiView: permissions.multiView,
+        directPlayer: permissions.directPlayer,
+        dvr: permissions.dvr,
+        notifications: permissions.notifications,
+    };
+
+    const routeAllowed =
+        (isPopular && canAccess.popular) ||
+        (isGuide && canAccess.tvGuide) ||
+        (isChannels && canAccess.channels) ||
+        (isMultiView && canAccess.multiView) ||
+        (isPlayer && canAccess.directPlayer) ||
+        (isDvr && canAccess.dvr) ||
+        (isNotifications && canAccess.notifications) ||
+        (isActivity && isAdmin) ||
+        (isSettings && isAdmin);
+
+    if (!routeAllowed) {
+        const fallbackOptions = [
+            { path: '/popular', allowed: canAccess.popular },
+            { path: '/channels', allowed: canAccess.channels },
+            { path: '/tvguide', allowed: canAccess.tvGuide },
+            { path: '/notifications', allowed: canAccess.notifications },
+            { path: '/dvr', allowed: canAccess.dvr },
+            { path: '/multiview', allowed: canAccess.multiView },
+            { path: '/player', allowed: canAccess.directPlayer },
+        ];
+        const fallback = fallbackOptions.find((option) => option.allowed);
+        if (fallback && fallback.path !== path) {
+            showNotification('You do not have access to that page.', true, 3500);
+            navigate(fallback.path);
+        } else {
+            showNotification('No accessible pages configured for your account. Contact an administrator.', true, 5000);
+        }
+        return;
+    }
+
     closeMobileMenu();
 
-    const isAdmin = appState.currentUser?.isAdmin;
-    
-    // Toggle desktop and mobile nav button visibility and active state
-    UIElements.tabPopular?.classList.toggle('active', isPopular);
-    UIElements.mobileNavPopular?.classList.toggle('active', isPopular);
-    UIElements.tabGuide?.classList.toggle('active', isGuide);
-    UIElements.mobileNavGuide?.classList.toggle('active', isGuide);
-    
-    UIElements.tabChannels?.classList.toggle('active', isChannels);
-    UIElements.mobileNavChannels?.classList.toggle('active', isChannels);
-    
-    UIElements.tabMultiview?.classList.toggle('active', isMultiView);
-    UIElements.mobileNavMultiview?.classList.toggle('active', isMultiView);
-    
-    UIElements.tabPlayer?.classList.toggle('active', isPlayer);
-    UIElements.mobileNavPlayer?.classList.toggle('active', isPlayer);
+    const showState = {
+        popular: isPopular && canAccess.popular,
+        tvGuide: isGuide && canAccess.tvGuide,
+        channels: isChannels && canAccess.channels,
+        multiView: isMultiView && canAccess.multiView,
+        directPlayer: isPlayer && canAccess.directPlayer,
+        dvr: isDvr && canAccess.dvr,
+        notifications: isNotifications && canAccess.notifications,
+        activity: isActivity && isAdmin,
+        settings: isSettings && isAdmin,
+    };
 
-    // DVR tab is visible to all users to see completed recordings
-    if (UIElements.tabDvr) UIElements.tabDvr.classList.toggle('active', isDvr);
-    if (UIElements.mobileNavDvr) UIElements.mobileNavDvr.classList.toggle('active', isDvr);
+    const updateNavState = (tabEl, mobileEl, canSee, isActive) => {
+        if (tabEl) {
+            tabEl.classList.toggle('hidden', !canSee);
+            tabEl.classList.toggle('active', canSee && isActive);
+            if (!canSee) tabEl.classList.remove('active');
+        }
+        if (mobileEl) {
+            mobileEl.classList.toggle('hidden', !canSee);
+            mobileEl.classList.toggle('active', canSee && isActive);
+            if (!canSee) mobileEl.classList.remove('active');
+        }
+    };
 
-    // Activity tab is for admins only
-    if (UIElements.tabActivity) {
-        UIElements.tabActivity.classList.toggle('active', isActivity && isAdmin);
-        UIElements.tabActivity.classList.toggle('hidden', !isAdmin);
-    }
-    if (UIElements.mobileNavActivity) {
-        UIElements.mobileNavActivity.classList.toggle('active', isActivity && isAdmin);
-        UIElements.mobileNavActivity.classList.toggle('hidden', !isAdmin);
-    }
-    
-    UIElements.tabNotifications?.classList.toggle('active', isNotifications);
-    UIElements.mobileNavNotifications?.classList.toggle('active', isNotifications);
+    updateNavState(UIElements.tabPopular, UIElements.mobileNavPopular, canAccess.popular, showState.popular);
+    updateNavState(UIElements.tabGuide, UIElements.mobileNavGuide, canAccess.tvGuide, showState.tvGuide);
+    updateNavState(UIElements.tabChannels, UIElements.mobileNavChannels, canAccess.channels, showState.channels);
+    updateNavState(UIElements.tabMultiview, UIElements.mobileNavMultiview, canAccess.multiView, showState.multiView);
+    updateNavState(UIElements.tabPlayer, UIElements.mobileNavPlayer, canAccess.directPlayer, showState.directPlayer);
+    updateNavState(UIElements.tabDvr, UIElements.mobileNavDvr, canAccess.dvr, showState.dvr);
+    updateNavState(UIElements.tabNotifications, UIElements.mobileNavNotifications, canAccess.notifications, showState.notifications);
+    updateNavState(UIElements.tabActivity, UIElements.mobileNavActivity, isAdmin, showState.activity);
+    updateNavState(UIElements.tabSettings, UIElements.mobileNavSettings, isAdmin, showState.settings);
 
-    // Settings tab is for admins only
-    if (UIElements.tabSettings) {
-        UIElements.tabSettings.classList.toggle('active', isSettings && isAdmin);
-        UIElements.tabSettings.classList.toggle('hidden', !isAdmin);
-    }
-    if (UIElements.mobileNavSettings) {
-        UIElements.mobileNavSettings.classList.toggle('active', isSettings && isAdmin);
-        UIElements.mobileNavSettings.classList.toggle('hidden', !isAdmin);
-    }
-    
-    // Toggle page visibility
-    UIElements.pagePopular?.classList.toggle('hidden', !isPopular);
-    UIElements.pagePopular?.classList.toggle('flex', isPopular);
+    const togglePage = (pageEl, shouldShow) => {
+        if (!pageEl) return;
+        pageEl.classList.toggle('hidden', !shouldShow);
+        pageEl.classList.toggle('flex', shouldShow);
+    };
 
-    UIElements.pageGuide.classList.toggle('hidden', !isGuide);
-    UIElements.pageGuide.classList.toggle('flex', isGuide);
-    
-    UIElements.pageChannels?.classList.toggle('hidden', !isChannels);
-    UIElements.pageChannels?.classList.toggle('flex', isChannels);
-    
-    UIElements.pageMultiview.classList.toggle('hidden', !isMultiView);
-    UIElements.pageMultiview.classList.toggle('flex', isMultiView);
-    
-    UIElements.pagePlayer.classList.toggle('hidden', !isPlayer);
-    UIElements.pagePlayer.classList.toggle('flex', isPlayer);
-    
-    // Show DVR page to everyone; content inside is handled by dvr.js
-    UIElements.pageDvr.classList.toggle('hidden', !isDvr); 
-    UIElements.pageDvr.classList.toggle('flex', isDvr);
-
-    UIElements.pageActivity.classList.toggle('hidden', !isActivity || !isAdmin);
-    UIElements.pageActivity.classList.toggle('flex', isActivity && isAdmin);
-    
-    UIElements.pageNotifications.classList.toggle('hidden', !isNotifications);
-    UIElements.pageNotifications.classList.toggle('flex', isNotifications);
-    
-    // Show settings page only to admins
-    UIElements.pageSettings.classList.toggle('hidden', !isSettings || !isAdmin);
-    UIElements.pageSettings.classList.toggle('flex', isSettings && isAdmin);
+    togglePage(UIElements.pagePopular, showState.popular);
+    togglePage(UIElements.pageGuide, showState.tvGuide);
+    togglePage(UIElements.pageChannels, showState.channels);
+    togglePage(UIElements.pageMultiview, showState.multiView);
+    togglePage(UIElements.pagePlayer, showState.directPlayer);
+    togglePage(UIElements.pageDvr, showState.dvr);
+    togglePage(UIElements.pageActivity, showState.activity);
+    togglePage(UIElements.pageNotifications, showState.notifications);
+    togglePage(UIElements.pageSettings, showState.settings);
     
     const appContainer = UIElements.appContainer; 
 
-    if (isGuide) {
+    if (showState.tvGuide) {
         if (appContainer) appContainer.classList.remove('header-collapsed');
         if (UIElements.guideContainer) UIElements.guideContainer.scrollTop = 0;
         
@@ -499,26 +519,26 @@ async function proceedWithRouteChange(path) {
     } else {
         if (appContainer) appContainer.classList.remove('header-collapsed');
         
-        if (isSettings && isAdmin) {
-             if (blockConfigReload) {
+        if (showState.settings) {
+            if (blockConfigReload) {
                 console.log(`%c[DEBUG] RACE_CONDITION_FIX: Navigation to Settings tab occurred while config reload was blocked. Skipping reload.`, 'color: #fca5a5; font-weight: bold;');
-             } else {
+            } else {
                 updateUIFromSettings();
                 if (appState.currentUser?.isAdmin) refreshUserList();
-             }
-        } else if (isNotifications) {
+            }
+        } else if (showState.notifications) {
             await loadAndScheduleNotifications();
-        } else if (isPopular) {
+        } else if (showState.popular) {
             updatePopularPage();
-        } else if (isChannels) {
+        } else if (showState.channels) {
             updateChannelsPage();
-        } else if (isMultiView) {
+        } else if (showState.multiView) {
             initMultiView();
-        } else if (isPlayer) {
+        } else if (showState.directPlayer) {
             initDirectPlayer();
-        } else if (isDvr) { // DVR page init is now called for all users
+        } else if (showState.dvr) {
             await initDvrPage();
-        } else if (isActivity && isAdmin) {
+        } else if (showState.activity) {
             await initActivityPage();
         }
     }

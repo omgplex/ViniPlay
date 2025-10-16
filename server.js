@@ -98,13 +98,36 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
     } else {
         console.log("[DB] Connected to the SQLite database.");
         db.serialize(() => {
-            db.run(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, isAdmin INTEGER DEFAULT 0, canUseDvr INTEGER DEFAULT 0)`, (err) => {
-                if (err) {
-                    console.error("[DB] Error creating 'users' table:", err.message);
-                } else {
-                    db.run("ALTER TABLE users ADD COLUMN canUseDvr INTEGER DEFAULT 0", () => {});
+            db.run(
+                `CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE,
+                    password TEXT,
+                    isAdmin INTEGER DEFAULT 0,
+                    canUseDvr INTEGER DEFAULT 0,
+                    canAccessPopular INTEGER DEFAULT 1,
+                    canAccessChannels INTEGER DEFAULT 1,
+                    canAccessGuide INTEGER DEFAULT 0,
+                    canAccessMultiView INTEGER DEFAULT 0,
+                    canAccessDirectPlayer INTEGER DEFAULT 0,
+                    canAccessNotifications INTEGER DEFAULT 1
+                )`,
+                (err) => {
+                    if (err) {
+                        console.error("[DB] Error creating 'users' table:", err.message);
+                    } else {
+                        [
+                            "ALTER TABLE users ADD COLUMN canUseDvr INTEGER DEFAULT 0",
+                            "ALTER TABLE users ADD COLUMN canAccessPopular INTEGER DEFAULT 1",
+                            "ALTER TABLE users ADD COLUMN canAccessChannels INTEGER DEFAULT 1",
+                            "ALTER TABLE users ADD COLUMN canAccessGuide INTEGER DEFAULT 0",
+                            "ALTER TABLE users ADD COLUMN canAccessMultiView INTEGER DEFAULT 0",
+                            "ALTER TABLE users ADD COLUMN canAccessDirectPlayer INTEGER DEFAULT 0",
+                            "ALTER TABLE users ADD COLUMN canAccessNotifications INTEGER DEFAULT 1",
+                        ].forEach((statement) => db.run(statement, () => {}));
+                    }
                 }
-            });
+            );
             db.run(`CREATE TABLE IF NOT EXISTS user_settings (user_id INTEGER NOT NULL, key TEXT NOT NULL, value TEXT, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY (user_id, key))`);
             db.run(`CREATE TABLE IF NOT EXISTS multiview_layouts (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, name TEXT NOT NULL, layout_data TEXT NOT NULL, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)`);
             db.run(`CREATE TABLE IF NOT EXISTS notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, channelId TEXT NOT NULL, channelName TEXT NOT NULL, channelLogo TEXT, programTitle TEXT NOT NULL, programDesc TEXT, programStart TEXT NOT NULL, programStop TEXT NOT NULL, notificationTime TEXT NOT NULL, programId TEXT NOT NULL, status TEXT DEFAULT 'pending', triggeredAt TEXT, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)`);
@@ -152,7 +175,8 @@ app.use((req, res, next) => {
     if (req.path === '/api/events') {
         return next();
     }
-    const user_info = req.session.userId ? `User ID: ${req.session.userId}, Admin: ${req.session.isAdmin}, DVR: ${req.session.canUseDvr}` : 'No session';
+    const dvrAccess = req.session?.permissions?.dvr ?? req.session?.canUseDvr;
+    const user_info = req.session.userId ? `User ID: ${req.session.userId}, Admin: ${req.session.isAdmin}, DVR: ${dvrAccess}` : 'No session';
     console.log(`[HTTP_TRACE] ${req.method} ${req.originalUrl} - IP: ${req.clientIp} - Session: [${user_info}]`);
     next();
 });
@@ -184,15 +208,144 @@ const requireAdmin = (req, res, next) => {
     return res.status(403).json({ error: 'Administrator privileges required.' });
 };
 const requireDvrAccess = (req, res, next) => {
-    if (req.session && (req.session.canUseDvr || req.session.isAdmin)) return next();
+    if (req.session && (req.session.isAdmin || req.session.permissions?.dvr)) return next();
     return res.status(403).json({ error: 'DVR access required.' });
 };
+
+const requirePermission = (permissionKey, errorMessage) => (req, res, next) => {
+    if (req.session && (req.session.isAdmin || req.session.permissions?.[permissionKey])) return next();
+    return res.status(403).json({ error: errorMessage || 'Access denied.' });
+};
+
+const requireNotificationsAccess = requirePermission('notifications', 'Notifications access required.');
+const requireMultiViewAccess = requirePermission('multiView', 'Multi-View access required.');
 
 // *** FIX: DVR Playback Access ***
 // Removed `requireDvrAccess` from this route. Now, any authenticated user can access
 // the /dvr directory to play back recorded files. The API endpoints for creating
 // and managing recordings remain protected by `requireDvrAccess`.
 app.use('/dvr', requireAuth, express.static(DVR_DIR));
+
+const DEFAULT_USER_PERMISSIONS = Object.freeze({
+    popular: true,
+    channels: true,
+    tvGuide: false,
+    multiView: false,
+    directPlayer: false,
+    dvr: false,
+    notifications: true,
+});
+
+const PERMISSION_COLUMN_MAP = Object.freeze({
+    popular: 'canAccessPopular',
+    channels: 'canAccessChannels',
+    tvGuide: 'canAccessGuide',
+    multiView: 'canAccessMultiView',
+    directPlayer: 'canAccessDirectPlayer',
+    notifications: 'canAccessNotifications',
+    dvr: 'canUseDvr',
+});
+
+const ADMIN_PERMISSIONS = Object.freeze(
+    Object.keys(DEFAULT_USER_PERMISSIONS).reduce((acc, key) => {
+        acc[key] = true;
+        return acc;
+    }, {})
+);
+
+function normalizePermissionsInput(permissions = {}, isAdmin = false) {
+    if (isAdmin) return { ...ADMIN_PERMISSIONS };
+    const normalized = {};
+    for (const key of Object.keys(DEFAULT_USER_PERMISSIONS)) {
+        const rawValue = permissions[key];
+        if (typeof rawValue === 'boolean') {
+            normalized[key] = rawValue;
+            continue;
+        }
+        if (typeof rawValue === 'string') {
+            const lower = rawValue.toLowerCase();
+            if (lower === 'true') {
+                normalized[key] = true;
+                continue;
+            }
+            if (lower === 'false') {
+                normalized[key] = false;
+                continue;
+            }
+        }
+        normalized[key] =
+            rawValue === '1' || rawValue === 1
+                ? true
+                : rawValue === '0' || rawValue === 0
+                    ? false
+                    : DEFAULT_USER_PERMISSIONS[key];
+    }
+    return normalized;
+}
+
+function mapPermissionsFromRow(row = {}, isAdmin = false) {
+    if (isAdmin) return { ...ADMIN_PERMISSIONS };
+    const mapped = {};
+    for (const [key, column] of Object.entries(PERMISSION_COLUMN_MAP)) {
+        const raw = row[column];
+        mapped[key] = raw === 1 || raw === true;
+    }
+    for (const key of Object.keys(DEFAULT_USER_PERMISSIONS)) {
+        if (typeof mapped[key] === 'undefined') {
+            mapped[key] = DEFAULT_USER_PERMISSIONS[key];
+        }
+    }
+    return mapped;
+}
+
+function permissionsToColumnValues(permissions = {}) {
+    const columnValues = {};
+    for (const [key, column] of Object.entries(PERMISSION_COLUMN_MAP)) {
+        columnValues[column] = permissions[key] ? 1 : 0;
+    }
+    return columnValues;
+}
+
+function applyPermissionsToSession(session, permissions = {}, isAdmin = false) {
+    const effective = isAdmin ? { ...ADMIN_PERMISSIONS } : { ...permissions };
+    session.permissions = effective;
+    session.canUseDvr = effective.dvr;
+    for (const [key, column] of Object.entries(PERMISSION_COLUMN_MAP)) {
+        session[column] = effective[key];
+    }
+    return effective;
+}
+
+function buildUserResponse(row = {}) {
+    const isAdmin = row.isAdmin === 1 || row.isAdmin === true;
+    const permissions = mapPermissionsFromRow(row, isAdmin);
+    return {
+        id: row.id,
+        username: row.username,
+        isAdmin,
+        permissions,
+    };
+}
+
+function extractPermissionsFromBody(body = {}) {
+    const permissions = typeof body.permissions === 'object' && body.permissions !== null ? { ...body.permissions } : {};
+    for (const [key, column] of Object.entries(PERMISSION_COLUMN_MAP)) {
+        if (typeof permissions[key] !== 'undefined') continue;
+        const directValue = body[key];
+        if (typeof directValue !== 'undefined') {
+            permissions[key] = directValue;
+            continue;
+        }
+        const columnValue = body[column];
+        if (typeof columnValue !== 'undefined') {
+            permissions[key] = columnValue;
+        }
+    }
+    if (typeof body.canUseDvr !== 'undefined') {
+        permissions.dvr = body.canUseDvr;
+    }
+    return permissions;
+}
 
 // --- Helper Functions ---
 /**
@@ -953,7 +1106,14 @@ app.post('/api/auth/setup-admin', (req, res) => {
                 console.error('[AUTH_API] Error hashing password during admin setup:', err);
                 return res.status(500).json({ error: 'Error hashing password.' });
             }
-            db.run("INSERT INTO users (username, password, isAdmin, canUseDvr) VALUES (?, ?, 1, 1)", [username, hash], function(err) {
+            const adminPermissions = normalizePermissionsInput({}, true);
+            const permissionColumns = permissionsToColumnValues(adminPermissions);
+            const permissionColumnNames = Object.keys(permissionColumns);
+            const permissionPlaceholders = permissionColumnNames.map(() => '?').join(', ');
+            const insertSql = `INSERT INTO users (username, password, isAdmin, ${permissionColumnNames.join(', ')}) VALUES (?, ?, ?, ${permissionPlaceholders})`;
+            const insertParams = [username, hash, 1, ...permissionColumnNames.map((col) => permissionColumns[col])];
+
+            db.run(insertSql, insertParams, function(err) {
                 if (err) {
                     console.error('[AUTH_API] Error inserting admin user:', err.message);
                     return res.status(500).json({ error: err.message });
@@ -961,9 +1121,9 @@ app.post('/api/auth/setup-admin', (req, res) => {
                 req.session.userId = this.lastID;
                 req.session.username = username;
                 req.session.isAdmin = true;
-                req.session.canUseDvr = true;
+                const effectivePermissions = applyPermissionsToSession(req.session, adminPermissions, true);
                 console.log(`[AUTH_API] Admin user "${username}" created successfully (ID: ${this.lastID}). Session set.`);
-                res.json({ success: true, user: { username: req.session.username, isAdmin: req.session.isAdmin, canUseDvr: req.session.canUseDvr } });
+                res.json({ success: true, user: { id: req.session.userId, username: req.session.username, isAdmin: true, permissions: effectivePermissions } });
             });
         });
     });
@@ -991,11 +1151,12 @@ app.post('/api/auth/login', (req, res) => {
                 req.session.userId = user.id;
                 req.session.username = user.username;
                 req.session.isAdmin = user.isAdmin === 1;
-                req.session.canUseDvr = user.canUseDvr === 1;
+                const permissions = mapPermissionsFromRow(user, req.session.isAdmin);
+                const effectivePermissions = applyPermissionsToSession(req.session, permissions, req.session.isAdmin);
                 console.log(`[AUTH_API] User "${username}" (ID: ${user.id}) logged in successfully. Session set.`);
                 res.json({
                     success: true,
-                    user: { username: user.username, isAdmin: user.isAdmin === 1, canUseDvr: user.canUseDvr === 1 }
+                    user: { id: user.id, username: user.username, isAdmin: req.session.isAdmin, permissions: effectivePermissions }
                 });
             } else {
                 console.warn(`[AUTH_API] Login failed for username "${username}": Incorrect password.`);
@@ -1022,8 +1183,32 @@ app.post('/api/auth/logout', (req, res) => {
 app.get('/api/auth/status', (req, res) => {
     console.log(`[AUTH_API] GET /api/auth/status - Checking session ID: ${req.sessionID}`);
     if (req.session && req.session.userId) {
-        console.log(`[AUTH_API_STATUS] Valid session found for user "${req.session.username}" (ID: ${req.session.userId}). Responding with isLoggedIn: true.`);
-        res.json({ isLoggedIn: true, user: { username: req.session.username, isAdmin: req.session.isAdmin, canUseDvr: req.session.canUseDvr } });
+        const respond = (permissions) => {
+            console.log(`[AUTH_API_STATUS] Valid session found for user "${req.session.username}" (ID: ${req.session.userId}). Responding with isLoggedIn: true.`);
+            res.json({ isLoggedIn: true, user: { id: req.session.userId, username: req.session.username, isAdmin: req.session.isAdmin, permissions } });
+        };
+
+        if (req.session.permissions) {
+            return respond(req.session.permissions);
+        }
+
+        const selectSql = `
+            SELECT isAdmin, canUseDvr, canAccessPopular, canAccessChannels,
+                   canAccessGuide, canAccessMultiView, canAccessDirectPlayer, canAccessNotifications
+            FROM users
+            WHERE id = ?
+        `;
+        db.get(selectSql, [req.session.userId], (err, row) => {
+            if (err || !row) {
+                console.warn(`[AUTH_API_STATUS] Could not refresh permissions for session user ID ${req.session.userId}. Error: ${err?.message}`);
+                const fallback = req.session.isAdmin ? ADMIN_PERMISSIONS : { ...DEFAULT_USER_PERMISSIONS };
+                applyPermissionsToSession(req.session, fallback, req.session.isAdmin);
+                return respond(req.session.permissions);
+            }
+            const permissions = mapPermissionsFromRow(row, row.isAdmin === 1);
+            applyPermissionsToSession(req.session, permissions, row.isAdmin === 1);
+            respond(req.session.permissions);
+        });
     } else {
         console.log('[AUTH_API_STATUS] No valid session found. Responding with isLoggedIn: false.');
         res.json({ isLoggedIn: false });
@@ -1032,30 +1217,44 @@ app.get('/api/auth/status', (req, res) => {
 // ... existing User Management API Endpoints ...
 app.get('/api/users', requireAdmin, (req, res) => {
     console.log('[USER_API] Fetching all users.');
-    db.all("SELECT id, username, isAdmin, canUseDvr FROM users ORDER BY username", [], (err, rows) => {
+    const selectSql = `
+        SELECT id, username, isAdmin, canUseDvr, canAccessPopular, canAccessChannels, canAccessGuide,
+               canAccessMultiView, canAccessDirectPlayer, canAccessNotifications
+        FROM users
+        ORDER BY username
+    `;
+    db.all(selectSql, [], (err, rows) => {
         if (err) {
             console.error('[USER_API] Error fetching users:', err.message);
             return res.status(500).json({ error: err.message });
         }
         console.log(`[USER_API] Found ${rows.length} users.`);
-        res.json(rows);
+        res.json(rows.map(buildUserResponse));
     });
 });
 
 app.post('/api/users', requireAdmin, (req, res) => {
     console.log('[USER_API] Adding new user.');
-    const { username, password, isAdmin, canUseDvr } = req.body;
+    const { username, password, isAdmin } = req.body;
     if (!username || !password) {
         console.warn('[USER_API] Add user failed: Username and/or password missing.');
         return res.status(400).json({ error: "Username and password are required." });
     }
-    
+
+    const requestedPermissions = extractPermissionsFromBody(req.body);
+    const normalizedPermissions = normalizePermissionsInput(requestedPermissions, !!isAdmin);
+    const permissionColumns = permissionsToColumnValues(normalizedPermissions);
+    const permissionColumnNames = Object.keys(permissionColumns);
+    const permissionPlaceholders = permissionColumnNames.map(() => '?').join(', ');
+    const insertSql = `INSERT INTO users (username, password, isAdmin, ${permissionColumnNames.join(', ')}) VALUES (?, ?, ?, ${permissionPlaceholders})`;
+
     bcrypt.hash(password, saltRounds, (err, hash) => {
         if (err) {
             console.error('[USER_API] Error hashing password for new user:', err);
             return res.status(500).json({ error: 'Error hashing password' });
         }
-        db.run("INSERT INTO users (username, password, isAdmin, canUseDvr) VALUES (?, ?, ?, ?)", [username, hash, isAdmin ? 1 : 0, canUseDvr ? 1 : 0], function (err) {
+        const paramsWithHash = [username, hash, isAdmin ? 1 : 0, ...permissionColumnNames.map((col) => permissionColumns[col])];
+        db.run(insertSql, paramsWithHash, function (err) {
             if (err) {
                 console.error('[USER_API] Error inserting new user:', err.message);
                 return res.status(400).json({ error: "Username already exists." });
@@ -1068,8 +1267,23 @@ app.post('/api/users', requireAdmin, (req, res) => {
 
 app.put('/api/users/:id', requireAdmin, (req, res) => {
     const { id } = req.params;
-    const { username, password, isAdmin, canUseDvr } = req.body;
-    console.log(`[USER_API] Updating user ID: ${id}. Username: ${username}, IsAdmin: ${isAdmin}, CanUseDvr: ${canUseDvr}`);
+    const { username, password, isAdmin } = req.body;
+    const requestedPermissions = extractPermissionsFromBody(req.body);
+    const normalizedPermissions = normalizePermissionsInput(requestedPermissions, !!isAdmin);
+    const permissionColumns = permissionsToColumnValues(normalizedPermissions);
+    const permissionColumnNames = Object.keys(permissionColumns);
+    const permissionAssignments = permissionColumnNames.map((col) => `${col} = ?`).join(', ');
+
+    console.log(`[USER_API] Updating user ID: ${id}. Username: ${username}, IsAdmin: ${isAdmin}`);
+
+    const finalizeSessionUpdate = () => {
+        if (req.session.userId == id) {
+            req.session.username = username;
+            req.session.isAdmin = !!isAdmin;
+            applyPermissionsToSession(req.session, normalizedPermissions, !!isAdmin);
+            console.log(`[USER_API] Current user's session (ID: ${id}) updated.`);
+        }
+    };
 
     const updateUser = () => {
         if (password) {
@@ -1078,33 +1292,27 @@ app.put('/api/users/:id', requireAdmin, (req, res) => {
                     console.error('[USER_API] Error hashing password during user update:', err);
                     return res.status(500).json({ error: 'Error hashing password' });
                 }
-                db.run("UPDATE users SET username = ?, password = ?, isAdmin = ?, canUseDvr = ? WHERE id = ?", [username, hash, isAdmin ? 1 : 0, canUseDvr ? 1 : 0, id], (err) => {
+                const updateSql = `UPDATE users SET username = ?, password = ?, isAdmin = ?, ${permissionAssignments} WHERE id = ?`;
+                const params = [username, hash, isAdmin ? 1 : 0, ...permissionColumnNames.map((col) => permissionColumns[col]), id];
+                db.run(updateSql, params, (err) => {
                     if (err) {
                         console.error(`[USER_API] Error updating user ${id} with new password:`, err.message);
                         return res.status(500).json({ error: err.message });
                     }
-                    if (req.session.userId == id) {
-                        req.session.username = username;
-                        req.session.isAdmin = isAdmin;
-                        req.session.canUseDvr = canUseDvr;
-                        console.log(`[USER_API] Current user's session (ID: ${id}) updated.`);
-                    }
+                    finalizeSessionUpdate();
                     console.log(`[USER_API] User ${id} updated successfully (with password change).`);
                     res.json({ success: true });
                 });
             });
         } else {
-            db.run("UPDATE users SET username = ?, isAdmin = ?, canUseDvr = ? WHERE id = ?", [username, isAdmin ? 1 : 0, canUseDvr ? 1 : 0, id], (err) => {
+            const updateSql = `UPDATE users SET username = ?, isAdmin = ?, ${permissionAssignments} WHERE id = ?`;
+            const params = [username, isAdmin ? 1 : 0, ...permissionColumnNames.map((col) => permissionColumns[col]), id];
+            db.run(updateSql, params, (err) => {
                 if (err) {
                     console.error(`[USER_API] Error updating user ${id} without password change:`, err.message);
                     return res.status(500).json({ error: err.message });
                 }
-                 if (req.session.userId == id) {
-                    req.session.username = username;
-                    req.session.isAdmin = isAdmin;
-                    req.session.canUseDvr = canUseDvr;
-                    console.log(`[USER_API] Current user's session (ID: ${id}) updated.`);
-                 }
+                finalizeSessionUpdate();
                 console.log(`[USER_API] User ${id} updated successfully (without password change).`);
                 res.json({ success: true });
             });
@@ -1568,7 +1776,7 @@ app.post('/api/user/settings', requireAuth, (req, res) => {
 });
 // --- Notification Endpoints ---
 // ... existing endpoints ...
-app.get('/api/notifications/vapid-public-key', requireAuth, (req, res) => {
+app.get('/api/notifications/vapid-public-key', requireAuth, requireNotificationsAccess, (req, res) => {
     console.log('[PUSH_API] Request for VAPID public key.');
     if (!vapidKeys.publicKey) {
         console.error('[PUSH_API] VAPID public key not available on the server.');
@@ -1577,7 +1785,7 @@ app.get('/api/notifications/vapid-public-key', requireAuth, (req, res) => {
     res.send(vapidKeys.publicKey);
 });
 
-app.post('/api/notifications/subscribe', requireAuth, (req, res) => {
+app.post('/api/notifications/subscribe', requireAuth, requireNotificationsAccess, (req, res) => {
     console.log(`[PUSH_API] Subscribe request for user ${req.session.userId}.`);
     const subscription = req.body;
     const userId = req.session.userId;
@@ -1604,7 +1812,7 @@ app.post('/api/notifications/subscribe', requireAuth, (req, res) => {
     );
 });
 
-app.post('/api/notifications/unsubscribe', requireAuth, (req, res) => {
+app.post('/api/notifications/unsubscribe', requireAuth, requireNotificationsAccess, (req, res) => {
     console.log(`[PUSH_API] Unsubscribe request for user ${req.session.userId}.`);
     const { endpoint } = req.body;
     if (!endpoint) {
@@ -1626,7 +1834,7 @@ app.post('/api/notifications/unsubscribe', requireAuth, (req, res) => {
     });
 });
 
-app.post('/api/notifications', requireAuth, (req, res) => {
+app.post('/api/notifications', requireAuth, requireNotificationsAccess, (req, res) => {
     const { channelId, channelName, channelLogo, programTitle, programDesc, programStart, programStop, scheduledTime, programId } = req.body;
     const userId = req.session.userId;
 
@@ -1668,7 +1876,7 @@ app.post('/api/notifications', requireAuth, (req, res) => {
         }
     );
 });
-app.get('/api/notifications', requireAuth, (req, res) => {
+app.get('/api/notifications', requireAuth, requireNotificationsAccess, (req, res) => {
     console.log(`[PUSH_API] Fetching notifications for user ${req.session.userId}.`);
     const query = `
         SELECT
@@ -1706,7 +1914,7 @@ app.get('/api/notifications', requireAuth, (req, res) => {
 });
 
 // MODIFIED: Reordered this route to be BEFORE the /:id route to fix the 404 error.
-app.delete('/api/notifications/past', requireAuth, (req, res) => {
+app.delete('/api/notifications/past', requireAuth, requireNotificationsAccess, (req, res) => {
     const userId = req.session.userId;
     const now = new Date().toISOString();
     console.log(`[PUSH_API] Clearing all past notifications for user ${userId}.`);
@@ -1725,7 +1933,7 @@ app.delete('/api/notifications/past', requireAuth, (req, res) => {
     );
 });
 
-app.delete('/api/notifications/:id', requireAuth, (req, res) => {
+app.delete('/api/notifications/:id', requireAuth, requireNotificationsAccess, (req, res) => {
     const { id } = req.params;
     console.log(`[PUSH_API] Deleting notification ID: ${id} for user ${req.session.userId}.`);
     db.run(`DELETE FROM notifications WHERE id = ? AND user_id = ?`,
@@ -2350,7 +2558,7 @@ app.post('/api/admin/broadcast', requireAuth, requireAdmin, (req, res) => {
 });
 
 // ... existing Multi-View Layout API Endpoints ...
-app.get('/api/multiview/layouts', requireAuth, (req, res) => {
+app.get('/api/multiview/layouts', requireAuth, requireMultiViewAccess, (req, res) => {
     console.log(`[LAYOUT_API] Fetching layouts for user ${req.session.userId}.`);
     db.all("SELECT id, name, layout_data FROM multiview_layouts WHERE user_id = ?", [req.session.userId], (err, rows) => {
         if (err) {
@@ -2366,7 +2574,7 @@ app.get('/api/multiview/layouts', requireAuth, (req, res) => {
     });
 });
 
-app.post('/api/multiview/layouts', requireAuth, (req, res) => {
+app.post('/api/multiview/layouts', requireAuth, requireMultiViewAccess, (req, res) => {
     const { name, layout_data } = req.body;
     console.log(`[LAYOUT_API] Saving layout "${name}" for user ${req.session.userId}.`);
     if (!name || !layout_data) {
@@ -2389,7 +2597,7 @@ app.post('/api/multiview/layouts', requireAuth, (req, res) => {
     );
 });
 
-app.delete('/api/multiview/layouts/:id', requireAuth, (req, res) => {
+app.delete('/api/multiview/layouts/:id', requireAuth, requireMultiViewAccess, (req, res) => {
     const { id } = req.params;
     console.log(`[LAYOUT_API] Deleting layout ID: ${id} for user ${req.session.userId}.`);
     db.run("DELETE FROM multiview_layouts WHERE id = ? AND user_id = ?", [id, req.session.userId], function(err) {
@@ -2868,7 +3076,7 @@ app.get('/api/dvr/jobs', requireAuth, (req, res) => {
             if (err) return res.status(500).json({ error: 'Failed to retrieve all recording jobs.' });
             res.json(rows);
         });
-    } else if (req.session.canUseDvr) {
+    } else if (req.session.permissions?.dvr) {
         // Users with DVR access see only their own jobs
         const query = "SELECT * FROM dvr_jobs WHERE user_id = ? ORDER BY startTime DESC";
         db.all(query, [req.session.userId], (err, rows) => {
@@ -2898,7 +3106,7 @@ app.get('/api/dvr/recordings', requireAuth, (req, res) => {
 // MODIFIED: Loosened permission to requireAuth, as non-DVR users now see the DVR page.
 app.get('/api/dvr/storage', requireAuth, (req, res) => {
     // Only return storage info if user has DVR access, otherwise return empty state.
-    if (!req.session.canUseDvr && !req.session.isAdmin) {
+    if (!req.session.permissions?.dvr && !req.session.isAdmin) {
         return res.json({ total: 0, used: 0, percentage: 0 });
     }
     try {

@@ -6,7 +6,7 @@
 
 // Global state for the application's status
 export const appState = {
-    currentUser: null, // { username, isAdmin }
+    currentUser: null, // { username, isAdmin, permissions }
     appInitialized: false,
     player: null, // mpegts.js player instance
     searchDebounceTimer: null,
@@ -17,6 +17,34 @@ export const appState = {
     currentSourceTypeForEditor: 'url',
     swRegistration: null, // To hold the service worker registration
     isNavigating: false, // NEW: Flag to prevent race conditions during navigation
+};
+
+export const DEFAULT_USER_PERMISSIONS = Object.freeze({
+    popular: true,
+    channels: true,
+    tvGuide: false,
+    multiView: false,
+    directPlayer: false,
+    dvr: false,
+    notifications: true,
+});
+
+export const ADMIN_USER_PERMISSIONS = Object.freeze(
+    Object.keys(DEFAULT_USER_PERMISSIONS).reduce((acc, key) => {
+        acc[key] = true;
+        return acc;
+    }, {})
+);
+
+export const getEffectivePermissions = () => {
+    if (!appState.currentUser) return { ...DEFAULT_USER_PERMISSIONS };
+    if (appState.currentUser.isAdmin) return { ...ADMIN_USER_PERMISSIONS };
+    return { ...DEFAULT_USER_PERMISSIONS, ...(appState.currentUser.permissions || {}) };
+};
+
+export const hasPermission = (key) => {
+    const permissions = getEffectivePermissions();
+    return Boolean(permissions[key]);
 };
 
 // State specific to the TV Guide

@@ -5,7 +5,7 @@
  */
 
 import { showNotification, showConfirm, navigate, openModal, closeModal } from './ui.js';
-import { UIElements, guideState, appState } from './state.js';
+import { UIElements, guideState, appState, hasPermission } from './state.js';
 import { handleSearchAndFilter, scrollToChannel, openProgramDetails } from './guide.js';
 import { getVapidKey, subscribeToPush, addProgramNotification, getProgramNotifications, deleteProgramNotification, unsubscribeFromPush, clearPastNotifications } from './api.js';
 import { ICONS } from './icons.js'; // MODIFIED: Import the new icon library
@@ -16,6 +16,10 @@ const notificationChannel = new BroadcastChannel('viniplay-notifications');
 
 notificationChannel.onmessage = (event) => {
     if (event.data && event.data.type === 'refresh-notifications') {
+        if (!hasPermission('notifications')) {
+            console.log('[NOTIF_CHANNEL] Ignoring refresh signal: notifications disabled for this user.');
+            return;
+        }
         console.log('[NOTIF_CHANNEL] Received refresh signal. Reloading notifications.');
         loadAndScheduleNotifications();
     }
@@ -65,6 +69,10 @@ async function unsubscribeCurrentUser() {
  */
 export async function subscribeUserToPush(force = false) {
     console.log(`[NOTIF] Initiating push subscription process. Force mode: ${force}`);
+    if (!hasPermission('notifications')) {
+        console.log('[NOTIF] Skipping push subscription: notifications disabled for this user.');
+        return;
+    }
     if (!appState.swRegistration) {
         console.warn('[NOTIF] Service worker not registered yet. Cannot subscribe.');
         return;
@@ -119,6 +127,10 @@ export async function subscribeUserToPush(force = false) {
 }
 
 export const loadAndScheduleNotifications = async () => {
+    if (!hasPermission('notifications')) {
+        console.log('[NOTIF] loadAndScheduleNotifications skipped: notifications disabled for this user.');
+        return;
+    }
     console.log('[NOTIF] Loading all scheduled notifications from backend.');
     try {
         const notifications = await getProgramNotifications();

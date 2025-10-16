@@ -4,7 +4,7 @@
  * data sources, player settings, and user management.
  */
 
-import { appState, guideState, UIElements } from './state.js';
+import { appState, guideState, UIElements, DEFAULT_USER_PERMISSIONS } from './state.js';
 import { apiFetch, saveGlobalSetting, saveUserSetting } from './api.js';
 // MODIFIED: Import isProcessingRunning for the button logic
 import { showNotification, openModal, closeModal, showConfirm, setButtonLoadingState, showProcessingModal, isProcessingRunning } from './ui.js'; 
@@ -17,6 +17,73 @@ import { updatePopularPage } from './popular.js';
 
 let currentSourceTypeForEditor = 'url';
 let hardwareChecked = false; // Flag to prevent re-checking hardware on every UI update
+
+const PERMISSION_CONFIG = [
+    { key: 'popular', label: 'Popular', elementKey: 'userEditorPermissionPopular' },
+    { key: 'channels', label: 'Channels', elementKey: 'userEditorPermissionChannels' },
+    { key: 'tvGuide', label: 'TV Guide', elementKey: 'userEditorPermissionTvguide' },
+    { key: 'multiView', label: 'Multi-View', elementKey: 'userEditorPermissionMultiview' },
+    { key: 'directPlayer', label: 'Direct Player', elementKey: 'userEditorPermissionDirectPlayer' },
+    { key: 'dvr', label: 'DVR', elementKey: 'userEditorPermissionDvr' },
+    { key: 'notifications', label: 'Notifications', elementKey: 'userEditorPermissionNotifications' },
+];
+
+const PERMISSION_LABELS = PERMISSION_CONFIG.reduce((acc, item) => {
+    acc[item.key] = item.label;
+    return acc;
+}, {});
+
+const applyPermissionsToForm = (permissions = {}) => {
+    PERMISSION_CONFIG.forEach(({ key, elementKey }) => {
+        const checkbox = UIElements[elementKey];
+        if (!checkbox) return;
+        const value = typeof permissions[key] === 'boolean' ? permissions[key] : DEFAULT_USER_PERMISSIONS[key];
+        checkbox.checked = value;
+        checkbox.dataset.prevChecked = value ? 'true' : 'false';
+    });
+};
+
+const lockPermissionsForAdmin = (isAdmin) => {
+    PERMISSION_CONFIG.forEach(({ elementKey }) => {
+        const checkbox = UIElements[elementKey];
+        if (!checkbox) return;
+        if (isAdmin) {
+            checkbox.dataset.prevChecked = checkbox.checked ? 'true' : 'false';
+            checkbox.checked = true;
+            checkbox.disabled = true;
+        } else {
+            const prev = checkbox.dataset.prevChecked;
+            if (typeof prev !== 'undefined') {
+                checkbox.checked = prev === 'true';
+            }
+            checkbox.disabled = false;
+        }
+    });
+};
+
+const getPermissionsFromForm = () => {
+    const values = {};
+    PERMISSION_CONFIG.forEach(({ key, elementKey }) => {
+        const checkbox = UIElements[elementKey];
+        if (checkbox) {
+            values[key] = checkbox.checked;
+        }
+    });
+    return values;
+};
+
+const buildPermissionBadges = (user) => {
+    if (user.isAdmin) {
+        return '<div class="flex flex-wrap gap-2"><span class="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-200">All Features</span></div>';
+    }
+    const permissions = user.permissions || {};
+    const enabled = PERMISSION_CONFIG.filter(({ key }) => permissions[key]);
+    if (enabled.length === 0) {
+        return '<div class="flex flex-wrap gap-2"><span class="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full bg-gray-700 text-gray-300">None</span></div>';
+    }
+    const badges = enabled.map(({ label }) => `<span class="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-500/20 text-blue-200">${label}</span>`).join('');
+    return `<div class="flex flex-wrap gap-2">${badges}</div>`;
+};
 
 /**
  * Fetches the server's public IP and displays it.
@@ -410,7 +477,7 @@ export const refreshUserList = async () => {
             <tr data-user-id="${user.id}">
                 <td class="px-4 py-3 whitespace-nowrap text-sm text-white">${user.username}</td>
                 <td class="px-4 py-3 whitespace-nowrap text-sm">${user.isAdmin ? '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-200 text-green-800">Admin</span>' : '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800">User</span>'}</td>
-                <td class="px-4 py-3 whitespace-nowrap text-sm">${user.canUseDvr ? '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-200 text-blue-800">Yes</span>' : '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800">No</span>'}</td>
+                <td class="px-4 py-3 text-xs">${buildPermissionBadges(user)}</td>
                 <td class="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
                     <button class="text-blue-400 hover:text-blue-600 edit-user-btn">Edit</button>
                     <button class="text-red-400 hover:text-red-600 ml-4 delete-user-btn" ${appState.currentUser.username === user.username ? 'disabled' : ''}>Delete</button>
@@ -431,8 +498,14 @@ const openUserEditor = (user = null) => {
     UIElements.userEditorId.value = user ? user.id : '';
     UIElements.userEditorUsername.value = user ? user.username : '';
     UIElements.userEditorPassword.value = '';
-    UIElements.userEditorIsAdmin.checked = user ? user.isAdmin : false;
-    UIElements.userEditorCanUseDvr.checked = user ? user.canUseDvr : false;
+    const isAdmin = user ? user.isAdmin : false;
+    UIElements.userEditorIsAdmin.checked = isAdmin;
+    const initialPermissions = {
+        ...DEFAULT_USER_PERMISSIONS,
+        ...(user?.permissions || {})
+    };
+    applyPermissionsToForm(initialPermissions);
+    lockPermissionsForAdmin(isAdmin);
     UIElements.userEditorTitle.textContent = user ? 'Edit User' : 'Add New User';
     UIElements.userEditorError.classList.add('hidden');
     openModal(UIElements.userEditorModal);
@@ -931,6 +1004,9 @@ export function setupSettingsEventListeners() {
     // --- User Management ---
     UIElements.addUserBtn.addEventListener('click', () => openUserEditor());
     UIElements.userEditorCancelBtn.addEventListener('click', () => closeModal(UIElements.userEditorModal));
+    if (UIElements.userEditorIsAdmin) {
+        UIElements.userEditorIsAdmin.addEventListener('change', (e) => lockPermissionsForAdmin(e.target.checked));
+    }
     UIElements.userEditorForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const id = UIElements.userEditorId.value;
@@ -938,7 +1014,7 @@ export function setupSettingsEventListeners() {
             username: UIElements.userEditorUsername.value, 
             password: UIElements.userEditorPassword.value, 
             isAdmin: UIElements.userEditorIsAdmin.checked,
-            canUseDvr: UIElements.userEditorCanUseDvr.checked
+            permissions: getPermissionsFromForm()
         };
         if (!body.password) delete body.password;
 
