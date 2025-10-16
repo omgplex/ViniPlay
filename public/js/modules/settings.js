@@ -249,8 +249,8 @@ const renderSourceTable = (sourceType) => {
     const hasConcurrency = sourceType === 'm3u';
 
     if (sources.length === 0) {
-        const colSpan = hasConcurrency ? 9 : 8;
-        tbody.innerHTML = `<tr><td colspan="${colSpan}" class="text-center text-gray-500 py-4">No ${sourceType.toUpperCase()} sources added.</td></tr>`;
+        const emptyStateColumns = hasConcurrency ? 9 : 8;
+        tbody.innerHTML = `<tr><td colspan="${emptyStateColumns}" class="text-center text-gray-500 py-6 text-xs">No ${sourceType.toUpperCase()} sources added.</td></tr>`;
         return;
     }
 
@@ -258,45 +258,40 @@ const renderSourceTable = (sourceType) => {
         const pathDisplay = source.type === 'file' ? (source.path.split('/').pop() || source.path.split('\\').pop()) : source.path;
         const lastUpdated = new Date(source.lastUpdated).toLocaleString();
         const refreshText = source.type === 'url' && source.refreshHours > 0 ? `Every ${source.refreshHours}h` : 'Disabled';
-        const concurrencyText = hasConcurrency ? ((source.maxConcurrentChannels ?? 0) > 0 ? source.maxConcurrentChannels : 'Unlimited') : null;
+        const concurrencyCell = hasConcurrency
+            ? ((source.maxConcurrentChannels ?? 0) > 0
+                ? `<td class="text-xs text-gray-200"><span class="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-500/20 text-blue-200">${source.maxConcurrentChannels}</span></td>`
+                : '<td class="text-xs text-gray-400">Unlimited</td>')
+            : '';
         const tr = document.createElement('tr');
         tr.dataset.sourceId = source.id;
-        const columns = [
-            `<td>${source.name}</td>`,
-            `<td><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${source.type === 'file' ? 'bg-blue-200 text-blue-800' : 'bg-purple-200 text-purple-800'}">${source.type}</span></td>`,
-            `<td class="max-w-xs truncate" title="${pathDisplay}">${pathDisplay}</td>`,
-            `<td><span class="text-xs font-medium text-gray-400">${source.statusMessage || 'N/A'}</span></td>`,
-            `<td>${lastUpdated}</td>`,
-            `<td>${refreshText}</td>`
-        ];
-
-        if (hasConcurrency) {
-            columns.push(`<td>${concurrencyText}</td>`);
-        }
-
-        columns.push(`
-            <td>
+        tr.innerHTML = `
+            <td class="text-xs font-semibold text-white">${source.name}</td>
+            <td class="text-xs">
+                <span class="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full ${source.type === 'file' ? 'bg-blue-500/20 text-blue-200' : source.type === 'xc' ? 'bg-emerald-500/20 text-emerald-200' : 'bg-purple-500/20 text-purple-200'}">${source.type.toUpperCase()}</span>
+            </td>
+            <td class="text-xs text-gray-200 break-all leading-relaxed" title="${pathDisplay}">${pathDisplay}</td>
+            <td class="text-xs text-gray-400 leading-relaxed">${source.statusMessage || 'No status yet.'}</td>
+            <td class="text-xs text-gray-200">${lastUpdated}</td>
+            <td class="text-xs text-gray-200">${refreshText}</td>
+            ${concurrencyCell}
+            <td class="text-xs text-center align-middle">
                 <label class="switch">
                     <input type="checkbox" class="activate-switch" ${source.isActive ? 'checked' : ''}>
                     <span class="slider"></span>
                 </label>
             </td>
-        `);
-
-        columns.push(`
-            <td class="text-right">
+            <td class="text-xs text-right">
                 <div class="flex items-center justify-end gap-3">
                     <button class="action-btn edit-source-btn" title="Edit Source">
                         ${ICONS.edit}
                     </button>
-                     <button class="action-btn delete-source-btn" title="Delete Source">
+                    <button class="action-btn delete-source-btn" title="Delete Source">
                         ${ICONS.trash}
                     </button>
                 </div>
             </td>
-        `);
-
-        tr.innerHTML = columns.join('');
+        `;
         tbody.appendChild(tr);
     });
 };
