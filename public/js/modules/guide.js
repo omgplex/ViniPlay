@@ -416,7 +416,7 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
         rowContainer.style.top = '0';
         rowContainer.style.left = '0';
         rowContainer.style.display = 'grid';
-        rowContainer.style.gridTemplateColumns = 'var(--channel-col-width, 180px) 1fr';
+        rowContainer.style.gridTemplateColumns = 'var(--channel-col-width, 270px) 1fr';
 
         contentWrapper.appendChild(rowContainer);
         guideGrid.appendChild(contentWrapper);
@@ -431,10 +431,14 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
             const sourceColors = ['bg-blue-600', 'bg-green-600', 'bg-pink-600', 'bg-yellow-500', 'bg-indigo-600', 'bg-red-600'];
             const sourceColorMap = new Map();
             let colorIndex = 0;
+            const sanitizeAttr = (value) => `${value ?? ''}`.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 
             for (let i = startIndex; i < endIndex; i++) {
                 const channel = channelsToRender[i];
                 const channelName = channel.displayName || channel.name;
+                const channelGroup = channel.group || 'Uncategorized';
+                const safeChannelNameAttr = sanitizeAttr(channelName);
+                const safeChannelGroupAttr = sanitizeAttr(channelGroup);
 
                 if (!sourceColorMap.has(channel.source)) {
                     sourceColorMap.set(channel.source, sourceColors[colorIndex % sourceColors.length]);
@@ -454,8 +458,9 @@ const renderGuide = (channelsToRender, resetScroll = false) => {
                     <div class="channel-info p-2 flex items-center justify-between cursor-pointer" data-url="${channel.url}" data-name="${channelName}" data-id="${channel.id}" data-channel-index="${i}">
                         <div class="flex items-center overflow-hidden flex-grow min-w-0">
                             <img src="${channel.logo}" onerror="this.onerror=null; this.src='https://placehold.co/48x48/1f2937/d1d5db?text=?';" class="w-12 h-12 object-contain mr-3 flex-shrink-0 rounded-md bg-gray-700">
-                            <div class="flex-grow min-w-0 channel-details">
-                                <span class="font-semibold text-sm truncate block">${channelName}</span>
+                            <div class="flex flex-col flex-grow min-w-0 channel-details">
+                                <span class="font-semibold text-sm truncate block" title="${safeChannelNameAttr}">${channelName}</span>
+                                <span class="text-xs text-gray-400 truncate" title="${safeChannelGroupAttr}">${channelGroup}</span>
                                 <div class="flex items-center gap-2 mt-1">
                                     ${chnoBadgeHTML}
                                     ${sourceBadgeHTML}

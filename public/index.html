@@ -115,7 +115,7 @@
         }
         #guide-grid {
             display: grid;
-            grid-template-columns: var(--channel-col-width, 180px) 1fr; /* Sticky channel info, then scrollable timeline */
+            grid-template-columns: var(--channel-col-width, 270px) 1fr; /* Sticky channel info, then scrollable timeline */
             grid-auto-rows: min-content; /* Rows size to content, important for first row sticky */
             position: relative; /* For now-line absolute positioning */
             min-width: fit-content; /* Ensure grid stretches to contain wide timeline */
@@ -129,7 +129,7 @@
             z-index: 45; /* FIX: Increased z-index to be above all other headers */
             background-color: #1a2233; /* Match channel-info background */
             height: 64px; /* Explicit height, matches time-bar-cell */
-            width: var(--channel-col-width, 180px); 
+            width: var(--channel-col-width, 270px); 
             border-bottom: 1px solid #374151;
             border-right: 1px solid #374151;
             box-sizing: border-box;
@@ -188,7 +188,7 @@
             border-right: 1px solid #374151;
             box-sizing: border-box;
             height: 96px; 
-            width: var(--channel-col-width, 180px); 
+            width: var(--channel-col-width, 270px); 
         }
 
         .timeline-row {

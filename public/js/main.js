@@ -381,7 +381,7 @@ function restoreDimensions() {
         console.log(`[MAIN] Restored channel column width: ${guideState.settings.channelColumnWidth}px`);
     } else if (UIElements.guideGrid) {
          // Set default if not in settings (or if it's the first run)
-         const defaultChannelWidth = window.innerWidth < 768 ? 64 : 180;
+         const defaultChannelWidth = window.innerWidth < 768 ? 64 : 270;
          UIElements.guideGrid.style.setProperty('--channel-col-width', `${defaultChannelWidth}px`);
          console.log(`[MAIN] Set default channel column width: ${defaultChannelWidth}px`);
     }
