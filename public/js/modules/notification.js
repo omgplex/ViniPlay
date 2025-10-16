@@ -108,7 +108,9 @@ export async function subscribeUserToPush(force = false) {
     } catch (error) {
         console.error('[NOTIF] Failed to subscribe user:', error);
         if (Notification.permission === 'denied') {
-            showNotification('Notifications are blocked by your browser. Please enable them manually.', true, 8000);
+            if (window.location.pathname.startsWith('/notifications')) {
+                showNotification('Notifications are blocked by your browser. Please enable them manually.', true, 8000);
+            }
         } else {
             showNotification('Failed to set up notifications. Check browser console.', true);
         }
@@ -153,7 +155,9 @@ export const addOrRemoveNotification = async (programDetails) => {
         );
     } else {
         if (Notification.permission === 'denied') {
-             showNotification('Notifications are blocked. Please enable them in site settings.', true, 8000);
+             if (window.location.pathname.startsWith('/notifications')) {
+                 showNotification('Notifications are blocked. Please enable them in site settings.', true, 8000);
+             }
              return;
         }
 
