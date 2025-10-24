@@ -5,7 +5,7 @@
 **A powerful, self-hosted IPTV player with a modern web interface.**
 
 Stream your M3U playlists with EPG data, manage users, cast to your TV, and watch multiple channels at once.
-Join my discord to talk with the community. <div align="center">Join my <a href="https://discord.gg/DXxvAw22Us">discord</a> to talk with the community.
+<div align="center">Join my <a href="https://discord.gg/DXxvAw22Us">discord</a> to talk with the community.
 <p>
     <img src="https://img.shields.io/badge/docker-ready-blue.svg?style=for-the-badge&logo=docker" alt="Docker Ready">
     <img src="https://img.shields.io/badge/platform-node-green.svg?style=for-the-badge&logo=node.js" alt="Node.js Backend">
